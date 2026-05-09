@@ -1,8 +1,34 @@
 services:
+  pyclaudir-init:
+    # Pre-create ./access.json and ./plugins.json from their .example
+    # files if they don't exist.
+    image: alpine:3.19
+    volumes:
+      - ./:/host
+    command: >
+      sh -c '
+        if [ -f /host/access.json ]; then
+          echo "[pyclaudir-init] access.json already present on host, leaving it alone"
+        else
+          cp /host/access.json.example /host/access.json
+          echo "[pyclaudir-init] seeded access.json from access.json.example"
+        fi
+
+        if [ -f /host/plugins.json ]; then
+          echo "[pyclaudir-init] plugins.json already present on host, leaving it alone"
+        else
+          cp /host/plugins.json.example /host/plugins.json
+          echo "[pyclaudir-init] seeded plugins.json from plugins.json.example"
+        fi
+      '
+
   pyclaudir:
     build: .
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      pyclaudir-init:
+        condition: service_completed_successfully
     volumes:
       # Persistent data: SQLite, memories, session_id, cc_logs
       - ./data:/app/data
@@ -19,13 +45,14 @@ services:
       # Claude Code auth + session files (pre-authenticate on host first)
       - ~/.claude:/root/.claude
       - ~/.claude.json:/root/.claude.json
-      # Access policy — single-file bind mount so /allow, /deny, /policy
-      # mutations from Telegram persist across restarts. The host file
-      # must exist before `docker compose up` (it is gitignored; copy
-      # access.json.example → access.json on first setup). Atomic
-      # tmp+rename onto a single-file bind mount returns EBUSY, so
-      # save_access has a fallback to in-place write for this case.
+      # Access policy — single-file bind mount so /allow, /deny, /dmpolicy
+      # mutations from Telegram persist across restarts. The pyclaudir-init
+      # sidecar above guarantees the host file exists before this mount is
+      # set up.
       - ./access.json:/app/access.json
+      # Plugin config — bind-mounted so host edits apply on restart without
+      # needing --build. Read once at boot. pyclaudir-init seeds it.
+      - ./plugins.json:/app/plugins.json
     working_dir: /app
     # Graceful shutdown: give CC subprocess time to save state
     stop_grace_period: 15s
