@@ -253,3 +253,34 @@ ssh root@your-server-ip
 claude   # follow the login flow
 cd ~/pyclaudir && docker compose restart
 ```
+
+### macOS Docker credentials
+
+If you run pyclaudir in Docker on macOS and see `Not logged in · Please
+run /login` even though `claude login` succeeded on the host, that's
+because macOS stores the OAuth token in the Keychain — the container's
+bind mount of `~/.claude` doesn't carry it. (Linux hosts write
+`~/.claude/.credentials.json` natively, so they don't hit this.)
+
+**Easiest fix:** don't use Docker on macOS. Run with `uv` instead — the
+subprocess inherits your shell's Keychain access:
+
+```bash
+uv sync --extra dev
+uv run python -m pyclaudir
+```
+
+**If you really need Docker on macOS:** export the Keychain entry to a
+file once, then bring up the stack:
+
+```bash
+security find-generic-password -s "Claude Code-credentials" -w \
+  > ~/.claude/.credentials.json
+chmod 600 ~/.claude/.credentials.json
+docker compose up -d
+```
+
+The OAuth token rotates periodically. When it does, the file goes
+stale and the same error returns — re-run the export to refresh. There
+is no automated refresh, which is why the `uv` path is recommended for
+day-to-day macOS use.

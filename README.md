@@ -28,14 +28,14 @@ cp .env.example .env && nano .env
 #   set PYCLAUDIR_OWNER_ID  (your numeric Telegram user id, from @userinfobot)
 #   update if necessary: PYCLAUDIR_MODEL and PYCLAUDIR_EFFORT
 
-cp prompts/project.md.example prompts/project.md && nano prompts/project.md
-#   set bot name, language, personality
+cp access.json.example access.json
+#   give access to extra DMs and groups, you can use /access and /deny commands after bot started to update the list
 
 cp plugins.json.example plugins.json && nano plugins.json
 #   single source of truth for the bot's capability surface — see below
 
-cp access.json.example access.json
-#   give access to extra DMs and groups, you can use /access and /deny commands after bot started to update the list
+cp prompts/project.md.example prompts/project.md && nano prompts/project.md
+#   set bot name, language, personality
 
 docker compose up -d --build
 docker compose logs -f                                                    # run harness, wait for "pyclaudir is live"
@@ -47,11 +47,14 @@ DM your bot. It replies.
 **No Docker?** You need Python 3.11+ and the Claude Code CLI (`claude --version`).
 
 ```bash
-uv sync --extra dev && uv run python -m pyclaudir                        # run harness, wait for "pyclaudir is live"
-uv run python -m pyclaudir.scripts.trace --follow   # tail Claude Code I/O
+uv sync --extra dev
+uv run python -m pyclaudir                                               # run harness, wait for "pyclaudir is live"
+uv run python -m pyclaudir.scripts.trace --follow                        # tail Claude Code I/O
 ```
 
-**On Windows?** Easiest path: install [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/) and run the Quickstart from **Git Bash** or **WSL** — all commands above work as written. From PowerShell, swap `nano` for `notepad` (the rest of the commands are fine; `cp` is an alias for `Copy-Item`). From `cmd.exe`, additionally swap `cp` → `copy` and `&&` chaining still works. Docker Desktop's `docker compose` runs identically on Windows.
+**On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. Easiest fix: skip Docker on Mac and run with `uv` (above). If you need Docker, see [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
+
+**On Windows with Docker?** Use [WSL](https://docs.microsoft.com/en-us/windows/wsl), but make sure you logged in to Claude Code inside WSL, so that there is `~/.claude/.credentials.json`.
 
 ## What you can do with it
 
