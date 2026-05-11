@@ -52,9 +52,9 @@ cp plugins.json.example plugins.json && nano plugins.json
 cp prompts/project.md.example prompts/project.md && nano prompts/project.md
 #   set bot name, language, personality
 
-docker compose up -d --build                                              # build 
-docker compose logs -f                                                    # run, wait for "pyclaudir is live"
-docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # monitor, Claude Code I/O logs
+docker compose up -d --build                                              # build and run, wait for "pyclaudir is live"
+docker compose logs -f                                                    # [optional] monitor logs
+docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # [optional] monitor Claude Code I/O logs
 ```
 
 DM your bot. It replies.
@@ -67,8 +67,8 @@ DM your bot. It replies.
 
 ```bash
 uv sync --extra dev
-uv run python -m pyclaudir                                               # run , wait for "pyclaudir is live"
-uv run python -m pyclaudir.scripts.trace --follow                        # monitor, Claude Code I/O logs
+uv run python -m pyclaudir                                               # run, wait for "pyclaudir is live"
+uv run python -m pyclaudir.scripts.trace --follow                        # [optional] monitor, Claude Code I/O logs
 ```
 
 ## What you can do with it
