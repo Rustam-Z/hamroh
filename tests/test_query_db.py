@@ -63,7 +63,10 @@ async def test_query_db_executes_select(tmp_path: Path) -> None:
         await insert_message(
             db,
             ChatMessage(
-                chat_id=-1, message_id=1, user_id=42, direction="in",
+                chat_id=-1,
+                message_id=1,
+                user_id=42,
+                direction="in",
                 timestamp=datetime(2026, 4, 11, 10, 31, tzinfo=timezone.utc),
                 text="hi",
             ),
@@ -74,6 +77,66 @@ async def test_query_db_executes_select(tmp_path: Path) -> None:
         assert result.is_error is False
         assert "direction\ttext" in result.content
         assert "in\thi" in result.content
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_query_db_respects_user_limit(tmp_path: Path) -> None:
+    """A user-supplied LIMIT must not collide with the ROW_CAP appender."""
+    cfg = Config.for_test(tmp_path)
+    cfg.ensure_dirs()
+    db = await Database.open(cfg.db_path)
+    try:
+        for i in range(5):
+            await insert_message(
+                db,
+                ChatMessage(
+                    chat_id=-1,
+                    message_id=i,
+                    user_id=42,
+                    direction="in",
+                    timestamp=datetime(2026, 4, 11, 10, 31, tzinfo=timezone.utc),
+                    text=f"msg-{i}",
+                ),
+            )
+        ctx = ToolContext(database=db)
+        tool = QueryDbTool(ctx)
+        result = await tool.run(
+            QueryDbArgs(
+                sql="SELECT text FROM messages ORDER BY message_id DESC LIMIT 2"
+            )
+        )
+        assert result.is_error is False, result.content
+        assert result.data == {"row_count": 2}
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_query_db_clamps_oversized_limit(tmp_path: Path) -> None:
+    """A user LIMIT above ROW_CAP must be clamped to ROW_CAP rows."""
+    cfg = Config.for_test(tmp_path)
+    cfg.ensure_dirs()
+    db = await Database.open(cfg.db_path)
+    try:
+        for i in range(150):
+            await insert_message(
+                db,
+                ChatMessage(
+                    chat_id=-1,
+                    message_id=i,
+                    user_id=42,
+                    direction="in",
+                    timestamp=datetime(2026, 4, 11, 10, 31, tzinfo=timezone.utc),
+                    text=f"msg-{i}",
+                ),
+            )
+        ctx = ToolContext(database=db)
+        tool = QueryDbTool(ctx)
+        result = await tool.run(QueryDbArgs(sql="SELECT text FROM messages LIMIT 120"))
+        assert result.is_error is False, result.content
+        assert result.data == {"row_count": 100}
     finally:
         await db.close()
 

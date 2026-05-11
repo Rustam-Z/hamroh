@@ -83,7 +83,7 @@ The mode is determined by what the skill's body instructs, not by frontmatter.
 
 | Tool | What it does |
 |---|---|
-| `query_db` | Read-only SELECT over `messages`, `users`, `reminders`. Max 100 rows. Reactions are JSON on `messages.reactions` — query with `json_extract(reactions, '$."👍"')`. |
+| `query_db` | Read-only SELECT over `messages`, `users`, `reminders`, `tool_calls`, `reactions`. Max 100 rows (user `LIMIT` is respected and clamped). Note: `messages` uses `timestamp`, not `created_at`. Reactions are JSON on `messages.reactions` — query with `json_extract(reactions, '$."👍"')`. |
 | `now` | Return the current UTC timestamp. |
 
 ---
