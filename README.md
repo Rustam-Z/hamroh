@@ -3,30 +3,40 @@
 </p>
 
 <p align="center">
-  Run personal self-evolving AI assistant in Telegram. With your rules. Lightweight. 
+  **pyclaudir** is a framework for running your own persistent AI companion/assistant on Telegram — one you fully own, control, can extend, one that learns from you.
 </p>
 
 ---
 
-Most AI tools wait. Pyclaudir doesn't. It lives in your Telegram, remembers every conversation, and pings you the moment something matters — a trend turning, a Jira ticket due, a build that broke at 3am. 
+**pyclaudir** runs a persistent AI assistant in your Telegram. Not a chatbot — an agent that has memory, runs scheduled tasks, can monitor things, and can be extended with any tool you wire up.
 
-Brief it before bed: "research global tech trends, find problems worth solving in Uzbekistan, write the analysis and ship a prototype." Wake up to a report, a pitch, and a working demo. That's the difference between a chatbot and an assistant.
+You own everything: the memory files, the skill playbooks, the MCP connections, the logs, the tokens. Nothing is routed through a third-party product. You can read every decision it made and change any rule from a DM.
 
-It learns you. Every day it reflects on what worked and writes new rules into its own playbook — with your approval. Drop it in a group chat and it tracks who's blocked, what shipped, what slipped. DM it and it's your personal chief of staff. Plain markdown files you actually own. Your rules. One process you control end to end.
+Out of the box it:
+- Stays in your group chat and joins conversations when it has something useful to say
+- Runs *self-reflection* — reviews what it got wrong and proposes new rules for your approval
+- Executes scheduled research tasks in background subagents while staying responsive to messages
+- Remembers context across restarts via file-based memory
 
-Out of the box: messaging, memory, reminders, web, vision. Want shell access? Code editing? Plug in any other MCP server — GitHub, Jira, Notion, Slack, your own — same one-entry pattern, stdio or remote HTTP/SSE with auth headers. Runs on your laptop or any small VPS. Works with your existing Claude Code subscription.
+It is extendable: add MCPs to connect it to anything: GitHub, Jira, email, calendar, your own APIs. Add skills, build custom tools.
 
-**Try it live:** a running instance lives in the [@rustamz_workshop](https://t.me/rustamz_workshop) Telegram group — join and message the bot to see it in action before you install.
+The goal is a [Jarvis](https://www.youtube.com/watch?v=Qav7NJIsKL4&t=2s) — an AI that lives with you, monitors what matters, and acts on your behalf. pyclaudir is the foundation.
+
+Runs on a laptop or small VPS.
+
+> **Try it live:** a running instance lives in the [@rustamz_workshop](https://t.me/rustamz_workshop) Telegram group — join and message Luna, assistant running on top of pyclaudir, to see it in action before you install.
 
 ## Quickstart (3 minutes)
 
-Pre-requisite: Login to Claude Code CLI.
+Pre-requisite: Login to Claude Code CLI. Uses your Claude Code subscription, or API.
 
 ```bash
+# Instructions for Linux OS
+
 git clone https://github.com/Rustam-Z/pyclaudir && cd pyclaudir
 
 cp .env.example .env && nano .env
-#   set TELEGRAM_BOT_TOKEN  (from @BotFather)
+#   set TELEGRAM_BOT_TOKEN  (create a bot in @BotFather and copy its token here)
 #   set PYCLAUDIR_OWNER_ID  (your numeric Telegram user id, from @userinfobot)
 #   update if necessary: PYCLAUDIR_MODEL and PYCLAUDIR_EFFORT
 
@@ -39,9 +49,9 @@ cp plugins.json.example plugins.json && nano plugins.json
 cp prompts/project.md.example prompts/project.md && nano prompts/project.md
 #   set bot name, language, personality
 
-docker compose up -d --build
-docker compose logs -f                                                    # run harness, wait for "pyclaudir is live"
-docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # tail Claude Code I/O
+docker compose up -d --build                                              # build 
+docker compose logs -f                                                    # run, wait for "pyclaudir is live"
+docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # monitor, Claude Code I/O logs
 ```
 
 DM your bot. It replies.
@@ -50,8 +60,8 @@ DM your bot. It replies.
 
 ```bash
 uv sync --extra dev
-uv run python -m pyclaudir                                               # run harness, wait for "pyclaudir is live"
-uv run python -m pyclaudir.scripts.trace --follow                        # tail Claude Code I/O
+uv run python -m pyclaudir                                               # run , wait for "pyclaudir is live"
+uv run python -m pyclaudir.scripts.trace --follow                        # monitor, Claude Code I/O logs
 ```
 
 **On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. Easiest fix: skip Docker on Mac and run with `uv` (above). If you need Docker, see [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
@@ -60,44 +70,20 @@ uv run python -m pyclaudir.scripts.trace --follow                        # tail 
 
 ## What you can do with it
 
-**Overnight engineer.** Brief it before bed — *"build a Stripe checkout
-against a mock Customer table"*. Wake up to a pushed branch and a
-working prototype.
+Use as a **personal assistant.** Set reminders, take notes, ask it to research things and report back. It remembers context across restarts. Every day it reviews its own behavior and proposes improvements — you approve, it learns.
 
-**Market watch.** Point it at a topic, get pinged the second a trend
-turns. Reads RSS, scrapes pages, summarises competitor release notes —
-all from one Telegram thread. *Uses the always-on `WebFetch` and
-`WebSearch`.*
+Use as a **team companion.** Drop it in a group chat. It tracks conversations, answers questions, and stays quiet when it has nothing useful to add. Ask it to summarize the last 24 hours, create a GitHub issue from a bug you described, or watch a repo and notify the team when something ships. Or review code, or write code, or create a bug report.
 
-**Team co-pilot for startups.** Your team already lives in Telegram —
-now their AI does too. Drop the bot in the group chat and it tracks
-who's blocked, what shipped, what slipped. Catch a bug
-mid-conversation? Tell it — the Jira ticket files itself, with the
-right repro steps and the right reporter. Need a stand-up summary?
-It reads the last 24 hours of chat and writes one. Hand it the
-backlog at 6am, get a clean board by 9. No context switch out of
-Telegram, no extra dashboards to babysit.
-
-**Personal assistant.** Reminders, notes, daily check-ins. Persistent
-across sessions because everything writes to plain markdown files you
-actually own. *Always on.*
+Use as an **automation layer.** Wire up MCPs and schedule agents to do real work while you sleep — fetch news, check deploys, monitor competitors, draft reports. Results land in Telegram when they're ready.
 
 ### Try saying
 
-Concrete one-liners you can DM the bot today (assumes you named it
-`Luna` in `prompts/project.md`):
-
-- *"@Luna every weekday at 9am, read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `query_db` + `send_message`. Ships on by default.
-- *"@Luna every Monday at 8am, pull top AI stories from Hacker News and TechCrunch and message me a briefing."* — `set_reminder` + `WebFetch` + `WebSearch`. Default tools.
-- *"@Luna each evening at 9pm, ask me what I shipped today and append it to my journal."* — appends to `data/memories/journal.md` via `append_memory`. Default tools.
-- *"@Luna remind me to take meds at 9pm daily, and nag me if I don't react with 👍 within 10 min."* — `set_reminder` + `add_reaction` + `query_db` to check the reaction.
-- *"@Luna watch https://example.com/changelog hourly and ping me the moment a new entry mentions 'pricing'."* — cron `set_reminder` + `WebFetch`. Diff state lives in a memory file.
-- *"@Luna every Friday at 5pm, review this week's git log on `~/code/myapp` and open a PR if the README has drifted."* — needs `tool_groups.bash: true` and `tool_groups.code: true` in `plugins.json`, plus `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for the PR.
-- *"@Luna every morning at 7am, DM me my Jira tickets due this week, grouped by project."* — needs `JIRA_*` env vars.
-- *"@Luna poll the group on lunch spots — Ramen, Burrito, Salad — and message me the result at 11:45."* — `create_poll` + `set_reminder` + `stop_poll`. Default tools.
-
-The pattern: you describe the *outcome* in chat, the bot picks the
-tools and schedules itself. No YAML, no cron syntax to memorise.
+- *"hey reschedule the meeting, and message X"*
+- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `query_db` + `send_message`. Ships on by default.
+- *"pull the top AI stories from Hacker News and send me a briefing"* — `WebFetch` + `WebSearch`, default tools.
+- *"watch https://example.com/changelog hourly and ping me the moment a new entry mentions 'pricing'."* — cron `set_reminder` + `WebFetch`. Diff state lives in a memory file.
+- *"review this week's git log on `~/code/myapp` and open a PR if the README has drifted."* — needs `tool_groups.bash: true` and `tool_groups.code: true` in `plugins.json`, plus `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for the PR.
+- *"every morning at 7am, DM me my Jira tickets due this week, grouped by project."* — needs `JIRA_*` env vars.
 
 <!-- TODO: 30s GIF demo for the README header once we have one -->
 
@@ -107,6 +93,8 @@ tools and schedules itself. No YAML, no cron syntax to memorise.
 > [docs/](docs/) — full technical manual, deployment walkthrough, tools
 > reference, and the systems pyclaudir descends from. Start at
 > [docs/README.md](docs/README.md).
+
+Out of the box: messaging, memory, reminders, web, vision. Want shell access? Code editing? Plug in any other MCP server — GitHub, Jira, Notion, Slack, your own — same one-entry pattern, stdio or remote HTTP/SSE with auth headers.
 
 ### The four setup files
 
@@ -215,6 +203,8 @@ Details: [docs/documentation.md](docs/documentation.md).
 - Idle-time sweeps: if no Telegram message for N hours, run a low-stakes routine (lint, dep audit, memory cleanup) and only ping if it finds something.
 - Self-followups
 
+**Make it yours.** Almost every axis is pluggable without touching the core — drop a `BaseTool` into [pyclaudir/tools/](pyclaudir/tools/), append an MCP server to `plugins.json`, add a skill at `skills/<name>/SKILL.md`, reshape the persona in `prompts/project.md`, or run a fleet with separate `PYCLAUDIR_DATA_DIR` paths. Full recipes in [docs/documentation.md](docs/documentation.md#adding-a-new-tool).
+
 Per-tool descriptions, the `plugins.json` schema, and how to add a new MCP / disable a built-in tool / hide a skill: [docs/tools.md](docs/tools.md).
 
 ## Architecture
@@ -245,100 +235,15 @@ The system prompt is two files: [prompts/system.md](prompts/system.md)
 (your overlay — gitignored, copy from
 [prompts/project.md.example](prompts/project.md.example)).
 
-## Extending
-
-Almost every axis of the bot is pluggable without touching the core:
-
-- **Add a built-in tool.** Drop a `BaseTool` subclass into
-  [pyclaudir/tools/](pyclaudir/tools/) — one file, Pydantic args
-  model, async `run`. The local MCP server auto-discovers it on
-  restart. No registry edits, no wiring.
-- **Plug in an external MCP server.** Append an entry to
-  [`plugins.json`](plugins.json.example). Three transports
-  supported, exactly as the [MCP spec](https://modelcontextprotocol.io)
-  defines them: `stdio` (local subprocess; auth via `env`), `http`
-  (remote streamable HTTP; auth via static `headers`), and `sse`
-  (same shape as http). `${VAR}` references pull credentials from
-  `.env`. The example file ships sample Jira, GitLab, and GitHub
-  entries you can keep, edit, or delete; nothing in the code path
-  treats them as special. Any other MCP server (Notion, Linear,
-  Slack, Postgres, Playwright, GitHub-remote, your own) drops in the
-  same way — no Python edit.
-  To hide a wired-in MCP without removing credentials, flip
-  `enabled: false` on its entry.
-- **Disable a built-in tool you don't use.** List it in
-  `builtin_tools_disabled` in `plugins.json` (e.g. `create_poll`,
-  `stop_poll`, `render_html`, `render_latex`, `send_photo`). The
-  tool is filtered at MCP registration time — the model can't see or
-  invoke it. Trims the surface area without code changes.
-- **Add a skill.** Drop a playbook at `skills/<name>/SKILL.md` (see
-  [Agent Skills spec](https://agentskills.io/specification)) and the
-  bot reads it on demand. Two ship today: `self-reflection` (daily
-  learning loop) and `render-style` (house style for `render_html`).
-  To hide one without deleting it, list its directory name in
-  `skills_disabled` in `plugins.json`.
-- **Reshape the persona.** Name, voice, language, house rules,
-  default behaviours — all live in `prompts/project.md`. Edit and
-  restart; no code change.
-- **Run a fleet.** One process is one bot. Want a per-team bot,
-  per-project bot, work/personal split? Run multiple instances with
-  different `.env` files and `PYCLAUDIR_DATA_DIR` paths — they share
-  nothing.
-
-**Observability** — live tagged log (`[RX]` / `[TX]` / `[CC.tool→]`),
-human-readable session replay (`uv run python -m pyclaudir.scripts.trace --follow`;
-add `--session <id>` to pin one), raw wire log in
-`data/cc_logs/<session>.stream.jsonl`, plus `sqlite3 data/pyclaudir.db`
-for cross-session queries. Talk to the bot's own session interactively
-with `claude --resume $(cat data/session_id) --fork-session`.
-
 ## Security
 
-The bot is public-facing — anyone in an allowed chat can talk to it.
-Enforced in code:
-
-- **Tight default surface.** By default no shell, no file edits, no reads
-  outside `data/memories/`, no subagents — by default. The CC
-  subprocess is spawned with
-  `--allowedTools mcp__pyclaudir,WebFetch,WebSearch` (plus opt-in
-  groups when their env flag is set) and a deny list covering every
-  gated tool. See [docs/tools.md](docs/tools.md).
-- **Web access is read-only,** with private/internal URLs refused at
-  the prompt layer. A determined prompt injection could still get
-  one through — **don't host pyclaudir next to sensitive internal
-  endpoints**.
-- **Memory writes are guarded** — path-hardened, 64 KiB cap,
-  read-before-write, no delete tool.
-- **`query_db` is read-only** (single SELECT, sqlglot-validated,
-  100-row cap).
-- **Rate limit** of 20 DM/min per user (owner exempt; groups not
-  limited).
-- **Inbound text is scrubbed** for tokens/keys before hitting SQLite.
-- **Owner-only commands** check `effective_user.id == PYCLAUDIR_OWNER_ID`.
-- **Wedged subprocesses** are killed and respawned. Crash-loops give
-  up after 10 crashes in 10 min and notify the owner.
+The bot is public-facing and the security model is enforced in code, not by hope — see [Security model](docs/documentation.md#security-model) for the full list of rails and [docs/tools.md](docs/tools.md) for the per-tool surface.
 
 ## Contributing
 
-Issues and PRs welcome. Three rules before you start:
+Issues and PRs welcome.
 
-- **Run the suite** — `uv run python -m pytest -q`. 346 tests today;
-  keep them green.
-- **Persona-agnostic code.** Don't hardcode bot names, owner-specific
-  strings, or chat ids in `pyclaudir/`. Persona lives in
-  `prompts/project.md` and stays there.
-- **Default surface stays tight.** The bot ships off-by-default for
-  shell, code editing, and subagents. External MCPs spawn only when
-  their `${VAR}` credentials are set in `.env` (the example file's
-  Jira / GitLab / GitHub entries follow this pattern, but they're
-  examples — not first-class). New capabilities follow the same
-  rule — gated behind a `tool_groups` flag in `plugins.json` or
-  behind a credentialled `mcps[]` entry, unless they're strictly
-  safer than the current base.
-
-Architecture deep-dive before bigger changes:
-[docs/documentation.md](docs/documentation.md) and
-[docs/reference-architectures.md](docs/reference-architectures.md).
+Architecture deep-dive before bigger changes: [docs/documentation.md](docs/documentation.md).
 
 ## License
 
