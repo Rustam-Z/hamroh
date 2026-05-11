@@ -22,7 +22,7 @@ Out of the box it:
 
 It is extendable: add MCPs to connect it to anything: GitHub, Jira, email, calendar, your own APIs. Add skills, build custom tools.
 
-Runs on a laptop or small VPS.
+Runs on a laptop or small VPS. No preference yet? [Contabo](https://contabo.com/en/vps/) or [Hetzner](https://www.hetzner.com/cloud/) are cheap and have worked well for us.
 
 The goal is a [Jarvis](https://www.youtube.com/watch?v=Qav7NJIsKL4&t=2s) — an AI that lives with you, monitors what matters, and acts on your behalf. pyclaudir is the foundation.
 
