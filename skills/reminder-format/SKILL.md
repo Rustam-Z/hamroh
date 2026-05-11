@@ -1,6 +1,6 @@
 ---
 name: reminder-format
-description: House format for the text passed to set_reminder. Read before calling set_reminder, and again before editing a reminder (cancel + re-create). Three rules — open with "This is a reminder", state the goal in one line, then list numbered steps the future-self should run when the reminder fires. Keeps fired <reminder> envelopes self-explanatory and actionable.
+description: House format for the text passed to set_reminder. Read before calling set_reminder, and again before editing a reminder (cancel + re-create). Three rules — open with the literal marker <THIS IS A REMINDER>, state the goal in one line, then list numbered steps the future-self should run when the reminder fires. Keeps fired <reminder> envelopes self-explanatory and actionable.
 license: MIT
 compatibility: Requires the set_reminder tool.
 ---
@@ -19,8 +19,9 @@ a fresh turn. Past-you is briefing future-you. Write it that way.
 ## The three rules
 
 1. **Opening line.** The first line of `text` is exactly
-   `This is a reminder.` — literal, including the period. It anchors
-   future-you immediately, before any envelope parsing.
+   `<THIS IS A REMINDER>` — literal, including the angle brackets and
+   uppercase. It anchors future-you immediately, before any envelope
+   parsing.
 2. **Goal line.** One short sentence right after the opener, prefixed
    `Goal:`. State *why* this reminder exists — the outcome past-you
    wanted.
@@ -32,7 +33,7 @@ a fresh turn. Past-you is briefing future-you. Write it that way.
 ## Example
 
 ```
-This is a reminder.
+<THIS IS A REMINDER>
 Goal: follow up with Alice on the GitLab MR she opened yesterday.
 1. Read the MR status via WebFetch.
 2. If still open, DM Alice asking if she needs review help.
@@ -42,5 +43,5 @@ Goal: follow up with Alice on the GitLab MR she opened yesterday.
 ## Don'ts
 
 - No markdown headers, no prose paragraphs in place of steps.
-- Don't skip the opener even for one-liners — the literal phrase is
+- Don't skip the opener even for one-liners — the literal marker is
   the cue.

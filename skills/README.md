@@ -22,7 +22,9 @@ skills/
 │   └── README.md
 ├── reminder-format/       ← house format for set_reminder text
 │   └── SKILL.md
-└── trend-digest/           ← on-demand WORLD + UZBEKISTAN digest
+├── trends/                ← on-demand global digest (tech / AI / finance / economy)
+│   └── SKILL.md
+└── trends-uzbekistan/     ← on-demand Uzbek-scene digest
     └── SKILL.md
 ```
 
@@ -32,8 +34,9 @@ skills/
 |---|---|---|
 | [self-reflection](self-reflection/) | invoked | Daily two-phase loop: introspect last 24h of outbound behavior, stress-test pending lessons against scenarios, propose promote / refine / discard rules to the owner. Triggered by an auto-seeded reminder; refused without a real `<reminder>` envelope. |
 | [render-style](render-style/) | reference | Style guide for the `render_html` tool — dark dashboard / timeline / architecture-diagram look with CSS tokens, layout rules, and three copy-paste HTML skeletons. Read on the agent's own initiative before any `render_html` call. |
-| [reminder-format](reminder-format/) | reference | Three-rule format for the `set_reminder` text argument — `"This is a reminder."` opener, `Goal:` line, numbered steps. Read before creating or editing any reminder so fired `<reminder>` envelopes are self-explanatory. |
-| [trend-digest](trend-digest/) | invoked | On-demand WORLD + UZBEKISTAN digest. Sweeps tech / finance / AI-lab / earnings sources globally and Uzbek VC, fintech, gov-tech, and Telegram channels locally, then synthesises a two-minute digest with money-making angles. Triggered by a reminder containing `<skill name="trend-digest">run</skill>`. |
+| [reminder-format](reminder-format/) | reference | Three-rule format for the `set_reminder` text argument — `<THIS IS A REMINDER>` opener, `Goal:` line, numbered steps. Read before creating or editing any reminder so fired `<reminder>` envelopes are self-explanatory. |
+| [trends](trends/) | invoked | On-demand global digest — tech, startup, AI, finance, future, economy. Sweeps X / Reddit / HN / Business Insider / LinkedIn / big-tech earnings / AI-lab blogs. Triggered by a reminder containing `<skill name="trends">run</skill>`. |
+| [trends-uzbekistan](trends-uzbekistan/) | invoked | On-demand Uzbek-scene digest — local startups, VC, fintech, gov tech, hackathons. Sweeps Uzbek Telegram channels (uzbekvc / uzbekfintech / uzbbanking / skartariss / stanbsse) and spot.uz. Triggered by a reminder containing `<skill name="trends-uzbekistan">run</skill>`. |
 
 ## Skill modes
 
