@@ -22,17 +22,20 @@ Out of the box it:
 
 It is extendable: add MCPs to connect it to anything: GitHub, Jira, email, calendar, your own APIs. Add skills, build custom tools.
 
-Runs on a laptop or small VPS. No preference yet? [Contabo](https://contabo.com/en/vps/) or [Hetzner](https://www.hetzner.com/cloud/) are cheap and have worked well for us.
+Runs on a laptop or small VPS.
 
 The goal is a [Jarvis](https://www.youtube.com/watch?v=Qav7NJIsKL4&t=2s) — an AI that lives with you, monitors what matters, and acts on your behalf. pyclaudir is the foundation.
 
 ## Quickstart (3 minutes)
 
-Pre-requisite: Login to Claude Code CLI. Uses your Claude Code subscription, or API.
+If you don't know where to run, I recommend [Contabo](https://contabo.com/en/vps/) or [Hetzner](https://www.hetzner.com/cloud/).
+ 
+Pre-requisite: 
+* Install Docker compose
+* Install Claude Code CLI. Login, you can use Claude Code subscription, or API
 
+**Instructions for running on Linux**
 ```bash
-# Instructions for Linux OS
-
 git clone https://github.com/Rustam-Z/pyclaudir && cd pyclaudir
 
 cp .env.example .env && nano .env
@@ -49,24 +52,24 @@ cp plugins.json.example plugins.json && nano plugins.json
 cp prompts/project.md.example prompts/project.md && nano prompts/project.md
 #   set bot name, language, personality
 
-docker compose up -d --build                                              # build 
-docker compose logs -f                                                    # run, wait for "pyclaudir is live"
-docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # monitor, Claude Code I/O logs
+docker compose up -d --build                                              # build and run, wait for "pyclaudir is live"
+docker compose logs -f                                                    # [optional] monitor logs
+docker compose exec pyclaudir python -m pyclaudir.scripts.trace --follow  # [optional] monitor Claude Code I/O logs
 ```
 
 DM your bot. It replies.
+
+**On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. See [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
+
+**On Windows with Docker?** Preferably use Linux. For windows. [WSL](https://docs.microsoft.com/en-us/windows/wsl), but make sure you logged in to Claude Code inside WSL, so that there is `~/.claude/.credentials.json`.
 
 **No Docker?** You need Python 3.11+ and the Claude Code CLI (`claude --version`).
 
 ```bash
 uv sync --extra dev
-uv run python -m pyclaudir                                               # run , wait for "pyclaudir is live"
-uv run python -m pyclaudir.scripts.trace --follow                        # monitor, Claude Code I/O logs
+uv run python -m pyclaudir                                               # run, wait for "pyclaudir is live"
+uv run python -m pyclaudir.scripts.trace --follow                        # [optional] monitor, Claude Code I/O logs
 ```
-
-**On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. Easiest fix: skip Docker on Mac and run with `uv` (above). If you need Docker, see [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
-
-**On Windows with Docker?** Use [WSL](https://docs.microsoft.com/en-us/windows/wsl), but make sure you logged in to Claude Code inside WSL, so that there is `~/.claude/.credentials.json`.
 
 ## What you can do with it
 
