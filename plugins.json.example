@@ -41,7 +41,7 @@
     },
     {
       "name": "mcp-atlassian",
-      "type": "sse",
+      "type": "http",
       "url": "https://mcp.atlassian.com/v1/sse",
       "allowed_tools": [
         "mcp__mcp-atlassian"
