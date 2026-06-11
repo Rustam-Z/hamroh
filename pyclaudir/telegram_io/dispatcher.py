@@ -19,6 +19,7 @@ from typing import Protocol
 
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import (
+    AIORateLimiter,
     Application,
     CommandHandler,
     ContextTypes,
@@ -137,8 +138,15 @@ class TelegramDispatcher:
         self.chat_titles: dict[int, str] = (
             chat_titles if chat_titles is not None else {}
         )
+        # AIORateLimiter queues outbound calls under Telegram's flood
+        # limits and honours 429 retry_after, so a long multi-chunk reply
+        # can't trip flood control and abort the turn via the tool-error
+        # breaker.
         self.application: Application = (
-            Application.builder().token(config.telegram_bot_token).build()
+            Application.builder()
+            .token(config.telegram_bot_token)
+            .rate_limiter(AIORateLimiter())
+            .build()
         )
         self._wire_handlers()
 

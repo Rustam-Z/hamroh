@@ -8,7 +8,6 @@ license = { text = "MIT" }
 authors = [{ name = "rustam_z" }]
 
 dependencies = [
-    "python-telegram-bot>=21.6,<22",
     "mcp>=1.2.0",
     "uvicorn>=0.30",
     "starlette>=0.37",
@@ -20,6 +19,7 @@ dependencies = [
     "pyyaml>=6.0",
     "pypdf>=5.0",
     "playwright>=1.40",
+    "python-telegram-bot[rate-limiter]>=21.6,<22",
 ]
 
 [project.optional-dependencies]

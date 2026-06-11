@@ -51,6 +51,10 @@ _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     # Slack tokens
     re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]+\b"),
+    # Telegram bot tokens: <numeric bot id>:<~35-char secret>. The lookahead
+    # requires a letter in the tail so numeric chat_id:message_id pairs
+    # never match.
+    re.compile(r"\b\d{6,12}:(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{30,40}\b"),
     # JWT (three base64url segments separated by dots, first starts with eyJ)
     re.compile(r"\beyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"),
     # PEM private-key blocks (drop the entire block)

@@ -21,6 +21,11 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+#: Rows older than this are dropped on every insert — strangers DMing the
+#: bot must not grow the table without bound.
+RETENTION_DAYS = 30
+
+
 async def insert_unauthorized_message(
     db: Database,
     *,
@@ -31,8 +36,13 @@ async def insert_unauthorized_message(
     """Log an inbound message that failed the access gate.
 
     ``refusal_sent`` is ``True`` exactly on the row whose arrival
-    triggered the one-time "private assistant" reply.
+    triggered the one-time "private assistant" reply. Each insert also
+    prunes rows older than :data:`RETENTION_DAYS`.
     """
+    await db.execute(
+        "DELETE FROM unauthorized_messages "
+        f"WHERE timestamp < datetime('now', '-{RETENTION_DAYS} days')",
+    )
     await db.execute(
         """
         INSERT INTO unauthorized_messages

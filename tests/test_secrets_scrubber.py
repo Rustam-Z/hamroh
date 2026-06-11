@@ -72,6 +72,20 @@ def test_postgres_dsn_with_password_redacted() -> None:
     assert "connect:" in out
 
 
+def test_telegram_bot_token_redacted() -> None:
+    text = "my bot token is 8123456789:AAHkqM3vJxYzW9QnLpTbCdEfGhIjKlMnOpQ"
+    out = scrub(text)
+    assert "AAHkqM3vJxYzW9QnLpTbCdEfGhIjKlMnOpQ" not in out
+    assert REDACTION in out
+
+
+def test_numeric_id_pair_untouched() -> None:
+    # chat_id:message_id-style numeric pairs must never be redacted.
+    text = "rows 1234567890:123456789012345678901234567890123 joined"
+    out = scrub(text)
+    assert out == text
+
+
 def test_dsn_without_password_untouched() -> None:
     # No credentials embedded — not a match
     text = "visit https://example.com/path?q=1"
