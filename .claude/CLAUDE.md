@@ -22,7 +22,6 @@
 ## Documentation
 
 - Update README.md, it should be human readable, don't use difficult termins/words.
-- REFERENCES.md is used as a refence to backend, android code and ios code.
 - Keep commetns simple for human to understand.
 
 ## Limits

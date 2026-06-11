@@ -52,7 +52,7 @@ the repo root:
 
 The full per-tool list and the schema reference live in
 [tools.md](tools.md); the loader is `pyclaudir/plugins.py`; the
-allow/deny argv is assembled in `pyclaudir/cc_worker.py`.
+allow/deny argv is assembled in `pyclaudir/cc_worker/spec.py`.
 
 ## Full configuration
 
@@ -115,12 +115,12 @@ Telegram listener  →  Engine (buffer + send/inject)  →  Claude worker  →  
                                SQLite                                   MCP server (HTTP, localhost:0)
 ```
 
-1. **Telegram listener** (`pyclaudir/telegram_io.py`). Uses
+1. **Telegram listener** (`pyclaudir/telegram_io/`). Uses
    python-telegram-bot v21 in polling mode. For each message it does two
    things: save it to SQLite, then hand it to the engine. Owner-only
    commands (`/kill`, `/health`, `/audit`, the access commands) skip the
    engine and run directly.
-2. **Engine** (`pyclaudir/engine.py`). Holds the pending message buffer,
+2. **Engine** (`pyclaudir/engine/`). Holds the pending message buffer,
    the debounce timer, the mid-turn processing flag, and the inject path.
    Bundles messages that arrive close together. If a new message comes in
    while Claude is mid-reply, the engine sends it via `worker.inject()` so
@@ -128,7 +128,7 @@ Telegram listener  →  Engine (buffer + send/inject)  →  Claude worker  →  
    `send_message` call (we call this "dropped text"), the engine sends a
    corrective `<error>...</error>` block to nudge Claude into using the
    tool.
-3. **Claude worker** (`pyclaudir/cc_worker.py`). Starts the `claude`
+3. **Claude worker** (`pyclaudir/cc_worker/`). Starts the `claude`
    process and watches it. Reads stream-json events from stdout, saves
    stderr for diagnostics, stores `session_id` so a restart can resume
    the same conversation, and starts Claude again after a crash —
@@ -534,7 +534,7 @@ Sample (DM with one message):
 
 The `httpx`/`mcp` per-poll noise is silenced by default. To bring it
 back for debugging, comment the relevant lines in
-`pyclaudir/__main__.py:_setup_logging()`.
+`pyclaudir/startup.py:_setup_logging()`.
 
 ### 2. The replayable session viewer (`pyclaudir.scripts.trace`)
 
@@ -717,7 +717,7 @@ is enforced by code, not by hope, and tested in
 - **No subprocess calls in tools.** AST scan rejects `subprocess.*`,
   `os.system`, `os.popen`, `asyncio.create_subprocess_*` anywhere
   under `pyclaudir/tools/`. The *only* place those primitives are
-  allowed is `cc_worker.py`, which spawns `claude` itself.
+  allowed is `cc_worker/worker.py`, which spawns `claude` itself.
 - **Owner-only privileged commands.** `/kill`, `/health`, `/audit`,
   `/access`, `/allow`, `/deny`, `/policy` check
   `update.effective_user.id == PYCLAUDIR_OWNER_ID` before running and
@@ -874,22 +874,39 @@ pyclaudir/
 │   ├── sync-memories.sh        # rsync helper for server ↔ local sync
 │   └── prune-backups.sh        # archive stale prompt backups (keep newest 50)
 ├── pyclaudir/
-│   ├── __main__.py             # entrypoint + log setup
+│   ├── __main__.py             # entrypoint: reminder loop + async main
+│   ├── startup.py              # boot wiring: stores, MCP, spec, callbacks, teardown
 │   ├── access.py               # hot-reloadable access.json gate
 │   ├── config.py
-│   ├── db/{database.py,messages.py,reminders.py,migrations/}
-│   ├── telegram_io.py
-│   ├── engine.py               # debouncer, queue, inject, control loop
-│   ├── cc_worker.py            # subprocess + raw capture + crash recovery
+│   ├── plugins.py              # plugins.json loader + validation
+│   ├── db/{database.py,messages.py,reminders.py,unauthorized.py,migrations/}
+│   ├── telegram_io/
+│   │   ├── dispatcher.py       # inbound pipeline: gate, rate limit, persist, forward
+│   │   ├── commands.py         # owner-only commands (/kill /health /audit ...)
+│   │   └── attachments.py      # inbound photo/document ingest
+│   ├── engine/
+│   │   ├── engine.py           # debouncer, queue, inject, control loop
+│   │   ├── typing_indicator.py # "typing..." indicator state + refresh loop
+│   │   └── format.py           # inbound batch → <msg> XML with reply chains
+│   ├── cc_worker/
+│   │   ├── worker.py           # subprocess lifecycle + crash recovery + breaker
+│   │   ├── event_handlers.py   # stream-json event dispatch
+│   │   ├── raw_capture.py      # raw CC stdout/stderr capture files
+│   │   ├── spec.py             # spawn spec + locked-down argv assembly
+│   │   └── events.py           # TurnResult / CrashLoop dataclasses
 │   ├── cc_schema.py            # ControlAction JSON schema (flat — see §5.15)
 │   ├── cc_failure_classifier.py # CC stderr/text → user-facing message map
 │   ├── mcp_server.py           # FastMCP host + tool auto-discovery
-│   ├── memory_store.py         # path-hardened markdown store
-│   ├── attachments_store.py    # path-hardened read of data/attachments/
-│   ├── render_store.py         # writable PNG store under data/renders/
+│   ├── storage/
+│   │   ├── path_safety.py      # shared traversal-hardened path resolver
+│   │   ├── memory.py           # path-hardened markdown store
+│   │   ├── attachments.py      # path-hardened read of data/attachments/
+│   │   └── render.py           # writable PNG store under data/renders/
 │   ├── instructions_store.py   # path-hardened read+append of project.md
 │   ├── skills_store.py         # path-hardened read of skills/
 │   ├── secrets_scrubber.py     # redacts tokens before persistence
+│   ├── input_normalizer.py     # strips Unicode obfuscation at the boundary
+│   ├── formatting.py           # markdown → Telegram HTML
 │   ├── rate_limiter.py
 │   ├── transcript.py           # [RX]/[TX]/[CC.*] log helpers
 │   ├── models.py
