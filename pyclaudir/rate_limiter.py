@@ -61,9 +61,11 @@ class RateLimiter:
         """Increment ``user_id``'s counter in the current bucket.
 
         No-op for the owner. If the post-increment count is above
-        ``self.limit`` the increment is capped and :class:`RateLimitExceeded`
-        is raised. The exception's ``notify`` field is True only for the
-        very first over-limit call in this bucket for this user.
+        ``self.limit``, :class:`RateLimitExceeded` is raised. The exception's
+        ``notify`` field is True only for the very first over-limit call in
+        this bucket for this user. Increment-and-read and the notice flip are
+        each a single atomic statement, so concurrent calls for the same user
+        can't slip past the limit or notify twice.
         """
         if self.owner_id is not None and user_id == self.owner_id:
             return
@@ -71,35 +73,28 @@ class RateLimiter:
         now = int(time.time())
         bucket = self._bucket(now)
 
-        await self.db.execute(
+        row = await self.db.execute_returning(
             """
             INSERT INTO rate_limits(user_id, bucket_start, count, notice_sent)
             VALUES (?, ?, 1, 0)
             ON CONFLICT(user_id, bucket_start) DO UPDATE SET count = count + 1
+            RETURNING count
             """,
-            (user_id, bucket),
-        )
-
-        row = await self.db.fetch_one(
-            "SELECT count, notice_sent FROM rate_limits WHERE user_id=? AND bucket_start=?",
             (user_id, bucket),
         )
         if row is None:  # pragma: no cover - should be impossible
             return
         count = int(row["count"])
-        notice_sent = int(row["notice_sent"])
 
         if count > self.limit:
-            await self.db.execute(
-                "UPDATE rate_limits SET count=? WHERE user_id=? AND bucket_start=?",
-                (self.limit, user_id, bucket),
+            # One-shot notice: only the call that flips the flag notifies.
+            flipped = await self.db.execute_returning(
+                "UPDATE rate_limits SET notice_sent=1 "
+                "WHERE user_id=? AND bucket_start=? AND notice_sent=0 "
+                "RETURNING 1",
+                (user_id, bucket),
             )
-            notify = notice_sent == 0
-            if notify:
-                await self.db.execute(
-                    "UPDATE rate_limits SET notice_sent=1 WHERE user_id=? AND bucket_start=?",
-                    (user_id, bucket),
-                )
+            notify = flipped is not None
             retry_after = max(1, bucket + self.window - now)
 
             await self.db.execute(

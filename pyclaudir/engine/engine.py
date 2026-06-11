@@ -534,13 +534,15 @@ class Engine:
 
         if self._turn.dropped_text_retries < max_retries:
             # Recoverable — inject the corrective reminder and let the
-            # model try again.
+            # model try again. Mark the turn as live BEFORE the await so
+            # a message arriving mid-send can't see an idle engine and
+            # kick a second turn into the same worker.
+            self._is_processing.set()
             error_xml = (
                 "<error>You produced text but did not call send_message. "
                 "Use the tool — text content blocks are invisible to the user.</error>"
             )
             await self._worker.send(error_xml)
-            self._is_processing.set()
             if self._typing.chats:
                 await self._start_typing(set(self._typing.chats))
             return

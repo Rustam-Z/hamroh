@@ -288,9 +288,18 @@ class CcWorker:
             self._stderr_log = new_stderr.open("a", encoding="utf-8")
             log.info("raw cc capture renamed to %s", new_stream.name)
         except OSError:
-            log.exception("failed to rename raw cc capture files")
-            self._stream_log = None
-            self._stderr_log = None
+            log.exception("failed to rename raw cc capture files; keeping capture alive")
+            # A rename failure must not silently disable capture for the
+            # rest of the worker's lifetime. Reopen whichever name each
+            # file actually lives under (a partial failure may have
+            # renamed one of the two); a later init event retries the
+            # rename via the ``pending-`` guard above.
+            if not self._stream_log_path.exists() and new_stream.exists():
+                self._stream_log_path = new_stream
+            if not self._stderr_log_path.exists() and new_stderr.exists():
+                self._stderr_log_path = new_stderr
+            self._stream_log = self._stream_log_path.open("a", encoding="utf-8")
+            self._stderr_log = self._stderr_log_path.open("a", encoding="utf-8")
 
     def _write_stream_line(self, raw: bytes) -> None:
         if self._stream_log is None:

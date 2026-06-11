@@ -104,6 +104,23 @@ class Database:
         await self._conn.execute(sql, tuple(params or ()))
         await self._conn.commit()
 
+    async def execute_returning(
+        self, sql: str, params: Iterable | None = None
+    ) -> aiosqlite.Row | None:
+        """Execute a statement with a ``RETURNING`` clause and commit.
+
+        Returns the first returned row, or None when the statement matched
+        nothing. Lets write-and-read happen in one atomic statement instead
+        of an execute + fetch pair that other coroutines could interleave.
+        """
+        cursor = await self._conn.execute(sql, tuple(params or ()))
+        try:
+            row = await cursor.fetchone()
+        finally:
+            await cursor.close()
+        await self._conn.commit()
+        return row
+
     async def fetch_all(self, sql: str, params: Iterable | None = None) -> list[aiosqlite.Row]:
         cursor = await self._conn.execute(sql, tuple(params or ()))
         try:

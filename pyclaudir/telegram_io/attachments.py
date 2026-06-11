@@ -89,7 +89,7 @@ def _human_size(n: int) -> str:
 
 def _classify_attachment(ext: str, mime: str | None) -> str | None:
     """Return ``"image"``, ``"pdf"``, ``"text"`` or ``None`` (rejected)."""
-    if ext in _IMAGE_EXTS or (mime and mime.startswith("image/") and ext in _IMAGE_EXTS):
+    if ext in _IMAGE_EXTS or (mime and mime.startswith("image/")):
         return "image"
     if ext == "pdf" or mime == "application/pdf":
         return "pdf"

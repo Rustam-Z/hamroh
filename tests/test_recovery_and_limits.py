@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -93,6 +94,29 @@ async def test_rate_limiter_notice_fires_once_per_bucket(tmp_path: Path) -> None
         with pytest.raises(RateLimitExceeded) as third:
             await rl.check_and_record(99)
         assert third.value.notify is False
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_concurrent_calls_notify_once(tmp_path: Path) -> None:
+    """Racing calls can't slip past the limit or send the notice twice."""
+    db = await _open(tmp_path)
+    try:
+        rl = RateLimiter(db=db, limit=3, window_seconds=60)
+
+        async def one_call() -> RateLimitExceeded | None:
+            try:
+                await rl.check_and_record(8)
+            except RateLimitExceeded as exc:
+                return exc
+            return None
+
+        outcomes = await asyncio.gather(*(one_call() for _ in range(10)))
+        rejections = [o for o in outcomes if o is not None]
+        assert len(rejections) == 7, "exactly limit=3 of 10 racing calls may pass"
+        notifies = [r for r in rejections if r.notify]
+        assert len(notifies) == 1, "throttle notice must fire exactly once per bucket"
     finally:
         await db.close()
 

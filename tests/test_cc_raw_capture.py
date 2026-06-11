@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 
 from pyclaudir.cc_schema import schema_json
 from pyclaudir.cc_worker import CcSpawnSpec, CcWorker
@@ -134,6 +135,37 @@ def test_capture_appends_across_reopen(tmp_path: Path) -> None:
     text = (tmp_path / "cc_logs" / "sticky.stream.jsonl").read_text()
     assert '"first":true' in text
     assert '"second":true' in text
+
+
+def test_capture_survives_rename_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed rename must not disable capture — the handles reopen under
+    the pending name and writes keep landing."""
+    worker = CcWorker(_spec(tmp_path, with_logs=True), Config.for_test(tmp_path))
+    worker._open_raw_logs()
+    assert worker._stream_log_path is not None
+    pending_stream = worker._stream_log_path
+    worker._write_stream_line(b'{"before":true}\n')
+
+    def boom(self: Path, target: Path) -> Path:
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(Path, "rename", boom)
+    worker._handle_event({
+        "type": "system",
+        "subtype": "init",
+        "session_id": "doomed-sid",
+    })
+
+    # Capture is still alive under the pending name.
+    assert worker._stream_log is not None, "stream capture was disabled by rename failure"
+    assert worker._stderr_log is not None, "stderr capture was disabled by rename failure"
+    worker._write_stream_line(b'{"after":true}\n')
+    worker._close_raw_logs()
+    text = pending_stream.read_text()
+    assert '"before":true' in text
+    assert '"after":true' in text
 
 
 def test_capture_appends_when_pending_renames_to_existing(tmp_path: Path) -> None:
