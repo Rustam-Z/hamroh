@@ -7,11 +7,10 @@ module was split into ``format`` + ``engine`` submodules.
 
 from __future__ import annotations
 
-from .engine import (
+from .engine import Engine, ErrorNotify
+from .typing_indicator import (
     MIN_TYPING_VISIBLE_SECONDS,
     TYPING_REFRESH_SECONDS,
-    Engine,
-    ErrorNotify,
     TypingAction,
 )
 from .format import (

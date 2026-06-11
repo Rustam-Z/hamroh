@@ -47,7 +47,7 @@ async def test_reset_session_clears_id_and_restarts(
     dispatcher = _dispatcher(cfg)
     kills: list[int] = []
     monkeypatch.setattr(
-        "pyclaudir.telegram_io.dispatcher.os.kill",
+        "pyclaudir.telegram_io.commands.os.kill",
         lambda _pid, sig: kills.append(sig),
     )
     update = _update(OWNER)
@@ -72,7 +72,7 @@ async def test_reset_session_ignores_non_owner(
     dispatcher = _dispatcher(cfg)
     kills: list[int] = []
     monkeypatch.setattr(
-        "pyclaudir.telegram_io.dispatcher.os.kill",
+        "pyclaudir.telegram_io.commands.os.kill",
         lambda _pid, sig: kills.append(sig),
     )
 

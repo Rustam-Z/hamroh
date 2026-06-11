@@ -27,20 +27,14 @@ import json
 import logging
 import os
 import time
-from pathlib import Path
-from typing import Any, IO
+from typing import Any
 
 from ..config import Config
-from ..models import ControlAction
 from ..tools.base import Heartbeat
-from ..transcript import (
-    log_cc_result,
-    log_cc_text,
-    log_cc_tool_result,
-    log_cc_tool_use,
-    log_cc_user,
-)
+from ..transcript import log_cc_user
+from .event_handlers import CcEventHandlerMixin
 from .events import CrashLoop, TurnResult
+from .raw_capture import RawCapture
 from .spec import CcSpawnSpec, FORBIDDEN_FLAG, build_argv
 
 # Pinned to the parent package name so log captures keyed on
@@ -61,7 +55,7 @@ STALE_SESSION_PATTERNS: tuple[str, ...] = (
 )
 
 
-class CcWorker:
+class CcWorker(CcEventHandlerMixin):
     """Manage one ``claude`` subprocess and pump messages through it.
 
     Crash recovery: if the subprocess exits unexpectedly we record the time,
@@ -158,13 +152,9 @@ class CcWorker:
         #: for self-inflicted exits.
         self._supervisor_abort_reason: str | None = None
         self._tool_error_abort_task: asyncio.Task | None = None
-        # Raw-capture state. We open with "pending-<ts>" names if we don't
-        # know the session id at start time, then rename to "<sid>.*" once
-        # the system/init event tells us.
-        self._stream_log: IO[str] | None = None
-        self._stream_log_path: Path | None = None
-        self._stderr_log: IO[str] | None = None
-        self._stderr_log_path: Path | None = None
+        #: Raw stdout/stderr capture — see :class:`RawCapture`. No-ops
+        #: entirely when ``spec.cc_logs_dir`` is None.
+        self._capture = RawCapture(spec.cc_logs_dir)
 
     @property
     def session_id(self) -> str | None:
@@ -193,7 +183,7 @@ class CcWorker:
             enabled_features or "[base only]",
             len(self.spec.mcp_allowed_tools),
         )
-        self._open_raw_logs()
+        self._capture.open(self._session_id)
         self._proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.PIPE,
@@ -208,119 +198,6 @@ class CcWorker:
         self._stderr_task = asyncio.create_task(
             self._read_stderr(), name="cc-stderr"
         )
-
-    # ------------------------------------------------------------------
-    # Raw stdout/stderr capture
-    # ------------------------------------------------------------------
-
-    def _open_raw_logs(self) -> None:
-        """Open the per-session raw-capture files in append mode.
-
-        If we know the session id (resume case) we open with the final name.
-        Otherwise we open with a ``pending-<ts>`` name and rename later when
-        :meth:`_handle_event` sees the system/init payload.
-        """
-        if self.spec.cc_logs_dir is None:
-            return
-        self.spec.cc_logs_dir.mkdir(parents=True, exist_ok=True)
-        sid = self._session_id
-        prefix = sid if sid else f"pending-{int(time.time() * 1000)}"
-        self._stream_log_path = self.spec.cc_logs_dir / f"{prefix}.stream.jsonl"
-        self._stderr_log_path = self.spec.cc_logs_dir / f"{prefix}.stderr.log"
-        try:
-            self._stream_log = self._stream_log_path.open("a", encoding="utf-8")
-            self._stderr_log = self._stderr_log_path.open("a", encoding="utf-8")
-            log.info(
-                "raw cc capture: stream=%s stderr=%s",
-                self._stream_log_path.name, self._stderr_log_path.name,
-            )
-        except OSError:
-            log.exception("failed to open cc raw-capture files; capture disabled")
-            self._stream_log = None
-            self._stderr_log = None
-
-    def _close_raw_logs(self) -> None:
-        for handle in (self._stream_log, self._stderr_log):
-            if handle is not None:
-                try:
-                    handle.flush()
-                    handle.close()
-                except Exception:  # pragma: no cover
-                    log.exception("error closing cc raw log")
-        self._stream_log = None
-        self._stderr_log = None
-
-    def _maybe_rename_raw_logs(self) -> None:
-        """Rename ``pending-*`` files to ``<session_id>.*`` once we learn it."""
-        if self._session_id is None:
-            return
-        if self._stream_log_path is None or self._stderr_log_path is None:
-            return
-        if not self._stream_log_path.name.startswith("pending-"):
-            return
-        if self.spec.cc_logs_dir is None:
-            return
-        new_stream = self.spec.cc_logs_dir / f"{self._session_id}.stream.jsonl"
-        new_stderr = self.spec.cc_logs_dir / f"{self._session_id}.stderr.log"
-        try:
-            # Close, rename, reopen in append mode so the file handle
-            # continues to point at the renamed file. macOS would let us
-            # rename without closing, but we close to keep the code portable
-            # to platforms that lock open files.
-            for handle in (self._stream_log, self._stderr_log):
-                if handle is not None:
-                    handle.flush()
-                    handle.close()
-            # If a previous run already created files for this session id
-            # (resume case after a crash), we append to them by deleting
-            # the empty pending file and reopening the existing one.
-            if new_stream.exists():
-                self._stream_log_path.unlink(missing_ok=True)
-            else:
-                self._stream_log_path.rename(new_stream)
-            if new_stderr.exists():
-                self._stderr_log_path.unlink(missing_ok=True)
-            else:
-                self._stderr_log_path.rename(new_stderr)
-            self._stream_log_path = new_stream
-            self._stderr_log_path = new_stderr
-            self._stream_log = new_stream.open("a", encoding="utf-8")
-            self._stderr_log = new_stderr.open("a", encoding="utf-8")
-            log.info("raw cc capture renamed to %s", new_stream.name)
-        except OSError:
-            log.exception("failed to rename raw cc capture files; keeping capture alive")
-            # A rename failure must not silently disable capture for the
-            # rest of the worker's lifetime. Reopen whichever name each
-            # file actually lives under (a partial failure may have
-            # renamed one of the two); a later init event retries the
-            # rename via the ``pending-`` guard above.
-            if not self._stream_log_path.exists() and new_stream.exists():
-                self._stream_log_path = new_stream
-            if not self._stderr_log_path.exists() and new_stderr.exists():
-                self._stderr_log_path = new_stderr
-            self._stream_log = self._stream_log_path.open("a", encoding="utf-8")
-            self._stderr_log = self._stderr_log_path.open("a", encoding="utf-8")
-
-    def _write_stream_line(self, raw: bytes) -> None:
-        if self._stream_log is None:
-            return
-        try:
-            self._stream_log.write(raw.decode("utf-8", errors="replace"))
-            if not raw.endswith(b"\n"):
-                self._stream_log.write("\n")
-            self._stream_log.flush()
-        except Exception:  # pragma: no cover
-            log.exception("failed to write to cc stream log")
-
-    def _write_stderr_line(self, decoded: str) -> None:
-        if self._stderr_log is None:
-            return
-        try:
-            ts = time.strftime("%Y-%m-%d %H:%M:%S")
-            self._stderr_log.write(f"{ts} {decoded}\n")
-            self._stderr_log.flush()
-        except Exception:  # pragma: no cover
-            log.exception("failed to write to cc stderr log")
 
     async def stop(self) -> None:
         self._stop_supervisor.set()
@@ -363,7 +240,7 @@ class CcWorker:
             self._proc = None
             self._stdout_task = None
             self._stderr_task = None
-            self._close_raw_logs()
+            self._capture.close()
 
     # ------------------------------------------------------------------
     # Crash supervisor
@@ -617,7 +494,7 @@ class CcWorker:
                     break
                 # Capture the raw bytes *before* parsing so even malformed
                 # or partial events are preserved on disk.
-                self._write_stream_line(line)
+                self._capture.write_stream(line)
                 try:
                     event = json.loads(line.decode("utf-8"))
                 except json.JSONDecodeError:
@@ -640,7 +517,7 @@ class CcWorker:
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 self._stderr_tail.append(decoded)
                 self._stderr_tail = self._stderr_tail[-10:]
-                self._write_stderr_line(decoded)
+                self._capture.write_stderr(decoded)
                 if decoded:
                     log.warning("cc stderr: %s", decoded)
         except asyncio.CancelledError:
@@ -735,193 +612,3 @@ class CcWorker:
         self._tool_error_abort_task = asyncio.create_task(
             self._terminate_proc(), name="cc-tool-error-abort",
         )
-
-    def _handle_event(self, event: dict[str, Any]) -> None:
-        """Parse one stream-json event from the CC subprocess.
-
-        Stream-json events come in several shapes; we only care about a few:
-
-        - ``{"type": "system", "subtype": "init", "session_id": "..."}``
-          — captured so we can persist + resume.
-        - ``{"type": "assistant", "message": {"content": [...]}}`` — text and
-          tool-use blocks.
-        - ``{"type": "result", ...}`` — turn finished. The structured-output
-          payload is parsed into a :class:`ControlAction`.
-
-        Anything else (tool_use, tool_result, ping at this layer) is ignored —
-        side effects already happened via the MCP server.
-        """
-        etype = event.get("type")
-        if etype != "user":
-            self._relay_top_level_error(event, etype)
-        if etype == "system" and event.get("subtype") == "init":
-            self._on_system_init(event)
-            return
-        if self._current_turn is None:
-            self._current_turn = TurnResult()
-        if etype == "assistant":
-            self._on_assistant_event(event)
-        elif etype == "user":
-            self._on_user_event(event)
-        elif etype == "result":
-            self._on_result_event(event)
-
-    def _relay_top_level_error(
-        self, event: dict[str, Any], etype: str | None,
-    ) -> None:
-        """Generic relay of any error-shaped top-level field.
-
-        Per-tool ``is_error`` lives inside ``user``-typed events and is
-        handled by the tool-error breaker; the caller skips those to
-        avoid double-logging.
-        """
-        err_bits: list[str] = []
-        if event.get("is_error"):
-            err_bits.append("is_error=true")
-        api_err = event.get("api_error_status")
-        if api_err:
-            err_bits.append(f"api_error_status={api_err}")
-        err = event.get("error")
-        if err:
-            err_bits.append(f"error={err}")
-        if err_bits:
-            log.error(
-                "cc reported error in %s/%s event: %s",
-                etype, event.get("subtype") or "-", ", ".join(err_bits),
-            )
-
-    def _on_system_init(self, event: dict[str, Any]) -> None:
-        """Capture the CC session id and surface MCP-server init failures."""
-        sid = event.get("session_id")
-        if isinstance(sid, str):
-            self._session_id = sid
-            log.info("cc session id %s", sid)
-            self._maybe_rename_raw_logs()
-        for server in event.get("mcp_servers") or ():
-            if not isinstance(server, dict):
-                continue
-            status = server.get("status")
-            if status != "connected":
-                log.error(
-                    "mcp server %s did not connect (status=%s) — its "
-                    "tools won't be available this session",
-                    server.get("name", "?"), status,
-                )
-
-    def _on_assistant_event(self, event: dict[str, Any]) -> None:
-        """Process one assistant event's content blocks (text / tool_use /
-        thinking). Side effects: append to ``text_blocks``, set
-        ``control`` when StructuredOutput lands, log everything."""
-        assert self._current_turn is not None
-        message = event.get("message") or {}
-        for block in message.get("content") or []:
-            self._handle_assistant_block(block)
-
-    def _handle_assistant_block(self, block: dict[str, Any]) -> None:
-        assert self._current_turn is not None
-        btype = block.get("type")
-        if btype == "text":
-            txt = block.get("text", "")
-            if txt:
-                self._current_turn.text_blocks.append(txt)
-                log_cc_text(txt)
-        elif btype == "tool_use":
-            self._handle_assistant_tool_use(block)
-        elif btype == "thinking":
-            # Extended-thinking blocks (visible only with the right
-            # model + flag). Treat like text but with its own tag.
-            log_cc_text("(thinking) " + block.get("thinking", ""))
-
-    def _handle_assistant_tool_use(self, block: dict[str, Any]) -> None:
-        assert self._current_turn is not None
-        tool_name = block.get("name", "?")
-        tool_input = block.get("input")
-        log_cc_tool_use(
-            tool_name=tool_name,
-            tool_use_id=str(block.get("id", "")),
-            args=tool_input,
-        )
-        # StructuredOutput is the definitive turn-end signal. Claudir
-        # confirmed: the action lives in the tool_use event's input
-        # field, NOT in the result event payload.
-        if tool_name == "StructuredOutput" and isinstance(tool_input, dict):
-            try:
-                self._current_turn.control = ControlAction.model_validate(tool_input)
-            except Exception:
-                log.warning(
-                    "could not parse StructuredOutput input: %r",
-                    tool_input,
-                )
-
-    def _on_user_event(self, event: dict[str, Any]) -> None:
-        """The other half of the channel: tool_result blocks the runtime
-        injects back into the conversation as a synthetic user message."""
-        message = event.get("message") or {}
-        for block in message.get("content") or []:
-            if block.get("type") == "tool_result":
-                self._handle_tool_result_block(block)
-
-    def _handle_tool_result_block(self, block: dict[str, Any]) -> None:
-        raw = block.get("content")
-        if isinstance(raw, list):
-            # Sometimes a list of {"type":"text","text":...}
-            text = " ".join(
-                (b.get("text", "") if isinstance(b, dict) else str(b))
-                for b in raw
-            )
-        else:
-            text = "" if raw is None else str(raw)
-        is_error = bool(block.get("is_error", False))
-        log_cc_tool_result(
-            tool_use_id=str(block.get("tool_use_id", "")),
-            content=text,
-            is_error=is_error,
-        )
-        if is_error:
-            self._record_tool_error()
-
-    def _on_result_event(self, event: dict[str, Any]) -> None:
-        """Turn complete. Parse the structured-output payload, finalise the
-        :class:`TurnResult`, and hand it to the engine via the result queue."""
-        assert self._current_turn is not None
-        payload = self._extract_result_payload(event)
-        if isinstance(payload, dict):
-            try:
-                self._current_turn.control = ControlAction.model_validate(payload)
-            except Exception:
-                log.warning("could not parse control action from %r", payload)
-        self._current_turn.stderr_tail = list(self._stderr_tail)
-        self._current_turn.dropped_text = (
-            bool(self._current_turn.text_blocks) and self._current_turn.control is None
-        )
-        ctrl = self._current_turn.control
-        log_cc_result(
-            action=ctrl.action if ctrl else None,
-            reason=ctrl.reason if ctrl else None,
-        )
-        # Turn finished cleanly; defuse the watchdog so a stale deadline
-        # from this turn can't trip the breaker after the fact.
-        self._cancel_tool_error_watchdog()
-        self._result_queue.put_nowait(self._current_turn)
-        self._current_turn = None
-
-    def _extract_result_payload(self, event: dict[str, Any]) -> Any:
-        """Pull the structured-output payload out of a result event.
-
-        Structured output is delivered in ``event["result"]`` when the JSON
-        schema is enforced. Older CC versions stream it via ``event["output"]``
-        or stuff it into the last text block. JSON-encoded strings are
-        decoded; everything else is returned as-is.
-        """
-        assert self._current_turn is not None
-        payload = (
-            event.get("result")
-            or event.get("output")
-            or (self._current_turn.text_blocks[-1] if self._current_turn.text_blocks else None)
-        )
-        if isinstance(payload, str):
-            try:
-                return json.loads(payload)
-            except json.JSONDecodeError:
-                return None
-        return payload
