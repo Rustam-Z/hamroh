@@ -87,9 +87,8 @@ async def test_inbound_and_outbound_coexist(db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_upsert_user_increments_count(db: Database) -> None:
-    ts = datetime(2026, 4, 11, 10, 0, tzinfo=timezone.utc)
-    await upsert_user(db, chat_id=-100, user_id=42, username="a", first_name="A", timestamp=ts)
-    await upsert_user(db, chat_id=-100, user_id=42, username="a", first_name="A", timestamp=ts)
+    await upsert_user(db, _msg(message_id=1))
+    await upsert_user(db, _msg(message_id=2))
     row = await db.fetch_one("SELECT message_count FROM users")
     assert row["message_count"] == 2
 

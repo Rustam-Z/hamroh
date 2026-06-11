@@ -7,8 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..transcript import log_outbound
-from .base import BaseTool, ToolResult, record_outbound
+from .base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
 
 log = logging.getLogger(__name__)
 
@@ -98,31 +97,17 @@ class CreatePollTool(BaseTool):
             args.chat_id, message_id, poll_id,
         )
 
-        if self.ctx.on_chat_replied is not None:
-            try:
-                self.ctx.on_chat_replied(args.chat_id)
-            except Exception:  # pragma: no cover
-                pass
-
         transcript_text = f"[poll] {args.question}"
-        log_outbound(
-            chat_id=args.chat_id,
-            chat_titles=self.ctx.chat_titles,
-            message_id=message_id,
-            reply_to_id=args.reply_to_message_id,
-            text=transcript_text,
-        )
-
         stored_text = transcript_text + "\n" + "\n".join(
             f"- {opt}" for opt in args.options
         )
-        await record_outbound(
-            self.ctx,
+        await deliver_bookkeeping(self.ctx, OutboundDelivery(
             chat_id=args.chat_id,
             message_id=message_id,
-            text=stored_text,
             reply_to_id=args.reply_to_message_id,
-        )
+            transcript_text=transcript_text,
+            db_text=stored_text,
+        ))
 
         return ToolResult(
             content=f"poll sent message_id={message_id} poll_id={poll_id}",

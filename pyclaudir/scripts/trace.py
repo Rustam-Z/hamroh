@@ -322,7 +322,8 @@ def follow(path: Path, max_chars: int) -> None:
             print("# stopped following")
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """CLI options for the trace script."""
     parser = argparse.ArgumentParser(
         description=(
             "Replay or tail the bot's CC session. By default picks the bot's "
@@ -353,50 +354,64 @@ def main() -> int:
             "Useful when you DO want to follow this CC session itself."
         ),
     )
-    args = parser.parse_args()
+    return parser
 
-    if args.list:
-        if not PROJECT_DIR.exists():
-            print(f"no session dir at {PROJECT_DIR}")
-            return 1
-        # Determine which file is the bot's so we can mark it
-        bot_path = find_bot_session()
-        bot_stem = bot_path.stem if bot_path else None
-        files = sorted(
-            PROJECT_DIR.glob("*.jsonl"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        for p in files:
-            mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime))
-            size_kb = p.stat().st_size // 1024
-            marker = "  ← bot" if p.stem == bot_stem else ""
-            print(f"{mtime}  {size_kb:>6} KB  {p.stem}{marker}")
-        return 0
 
+def _list_sessions() -> int:
+    """Print every session file, newest first, marking the bot's own."""
+    if not PROJECT_DIR.exists():
+        print(f"no session dir at {PROJECT_DIR}")
+        return 1
+    bot_path = find_bot_session()
+    bot_stem = bot_path.stem if bot_path else None
+    files = sorted(
+        PROJECT_DIR.glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for p in files:
+        mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime))
+        size_kb = p.stat().st_size // 1024
+        marker = "  ← bot" if p.stem == bot_stem else ""
+        print(f"{mtime}  {size_kb:>6} KB  {p.stem}{marker}")
+    return 0
+
+
+def _pick_session(args: argparse.Namespace) -> Path | None:
+    """Resolve which session file to read; print the reason on failure."""
     if args.session:
         path = find_session_by_id(args.session)
         if path is None:
-            print(f"no session file for id {args.session} under {PROJECT_DIR}", file=sys.stderr)
-            return 1
-    elif args.latest:
+            print(
+                f"no session file for id {args.session} under {PROJECT_DIR}",
+                file=sys.stderr,
+            )
+        return path
+    if args.latest:
         path = find_latest_session()
         if path is None:
             print(f"no session files under {PROJECT_DIR}", file=sys.stderr)
-            return 1
-    else:
-        path = find_bot_session()
-        if path is None:
-            print(
-                "could not identify the bot's session. Try one of:\n"
-                "  --session <id>          to specify it explicitly\n"
-                "  --list                  to see all available sessions\n"
-                "  --latest                to use the most recent file regardless\n"
-                f"  data/session_id under {_data_dir()} is empty/missing.",
-                file=sys.stderr,
-            )
-            return 1
+        return path
+    path = find_bot_session()
+    if path is None:
+        print(
+            "could not identify the bot's session. Try one of:\n"
+            "  --session <id>          to specify it explicitly\n"
+            "  --list                  to see all available sessions\n"
+            "  --latest                to use the most recent file regardless\n"
+            f"  data/session_id under {_data_dir()} is empty/missing.",
+            file=sys.stderr,
+        )
+    return path
 
+
+def main() -> int:
+    args = _build_parser().parse_args()
+    if args.list:
+        return _list_sessions()
+    path = _pick_session(args)
+    if path is None:
+        return 1
     if args.follow:
         follow(path, args.max)
     else:

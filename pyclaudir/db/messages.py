@@ -78,18 +78,12 @@ async def mark_deleted(db: Database, chat_id: int, message_id: int) -> None:
     )
 
 
-async def upsert_user(
-    db: Database,
-    chat_id: int,
-    user_id: int,
-    username: str | None,
-    first_name: str | None,
-    timestamp: datetime,
-) -> None:
-    iso = _iso(timestamp)
+async def upsert_user(db: Database, msg: ChatMessage) -> None:
+    """Create or refresh the sender's ``users`` row from one inbound message."""
+    iso = _iso(msg.timestamp)
     existing = await db.fetch_one(
         "SELECT message_count FROM users WHERE chat_id=? AND user_id=?",
-        (chat_id, user_id),
+        (msg.chat_id, msg.user_id),
     )
     if existing is None:
         await db.execute(
@@ -98,7 +92,7 @@ async def upsert_user(
                               join_date, last_message_date, message_count)
             VALUES (?, ?, ?, ?, ?, ?, 1)
             """,
-            (chat_id, user_id, username, first_name, iso, iso),
+            (msg.chat_id, msg.user_id, msg.username, msg.first_name, iso, iso),
         )
     else:
         await db.execute(
@@ -107,7 +101,7 @@ async def upsert_user(
             SET username=?, first_name=?, last_message_date=?, message_count=message_count+1
             WHERE chat_id=? AND user_id=?
             """,
-            (username, first_name, iso, chat_id, user_id),
+            (msg.username, msg.first_name, iso, msg.chat_id, msg.user_id),
         )
 
 

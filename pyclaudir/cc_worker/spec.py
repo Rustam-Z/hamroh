@@ -120,18 +120,9 @@ class CcSpawnSpec:
     mcp_allowed_tools: tuple[str, ...] = ()
 
 
-def build_argv(spec: CcSpawnSpec) -> list[str]:
-    """Construct the exact argv we hand to ``asyncio.create_subprocess_exec``.
-
-    Pinned by ``tests/test_security_invariants.py``.
-    """
-    if not spec.system_prompt_path.exists():
-        raise FileNotFoundError(spec.system_prompt_path)
-    if not spec.mcp_config_path.exists():
-        raise FileNotFoundError(spec.mcp_config_path)
-    if not spec.json_schema_path.exists():
-        raise FileNotFoundError(spec.json_schema_path)
-
+def _compose_system_prompt(spec: CcSpawnSpec) -> str:
+    """Assemble the system prompt: shipped base + project overlay +
+    runtime block + (optionally) the subagent docs."""
     runtime_block = (
         "# Runtime\n\n"
         "You are running with:\n"
@@ -153,13 +144,14 @@ def build_argv(spec: CcSpawnSpec) -> list[str]:
                 f"{spec.subagents_prompt_path!r}"
             )
         system_prompt += "\n\n" + spec.subagents_prompt_path.read_text(encoding="utf-8")
-    json_schema = spec.json_schema_path.read_text(encoding="utf-8")
-    json.loads(json_schema)  # sanity check
+    return system_prompt
 
-    # Assemble allow/deny lists from the base sets plus whatever the
-    # ``enable_*`` flags unlock. Tools listed in *neither* allow nor deny
-    # are implicitly reachable via ToolSearch — so every gated tool must
-    # land in one or the other.
+
+def _tool_lists(spec: CcSpawnSpec) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Assemble ``(allowed, disallowed)`` from the base sets plus whatever
+    the ``enable_*`` flags unlock. Tools listed in *neither* list are
+    implicitly reachable via ToolSearch — so every gated tool must land
+    in one or the other."""
     allowed_extras: list[str] = []
     disallowed_extras: list[str] = list(DEFAULT_DISALLOWED_TOOLS)
 
@@ -179,8 +171,25 @@ def build_argv(spec: CcSpawnSpec) -> list[str]:
         disallowed_extras.append("Agent")
     allowed_extras.extend(spec.mcp_allowed_tools)
 
-    allowed_tools = BASE_ALLOWED_TOOLS + tuple(allowed_extras)
-    disallowed_tools = tuple(disallowed_extras)
+    return BASE_ALLOWED_TOOLS + tuple(allowed_extras), tuple(disallowed_extras)
+
+
+def build_argv(spec: CcSpawnSpec) -> list[str]:
+    """Construct the exact argv we hand to ``asyncio.create_subprocess_exec``.
+
+    Pinned by ``tests/test_security_invariants.py``.
+    """
+    if not spec.system_prompt_path.exists():
+        raise FileNotFoundError(spec.system_prompt_path)
+    if not spec.mcp_config_path.exists():
+        raise FileNotFoundError(spec.mcp_config_path)
+    if not spec.json_schema_path.exists():
+        raise FileNotFoundError(spec.json_schema_path)
+
+    system_prompt = _compose_system_prompt(spec)
+    json_schema = spec.json_schema_path.read_text(encoding="utf-8")
+    json.loads(json_schema)  # sanity check
+    allowed_tools, disallowed_tools = _tool_lists(spec)
 
     argv: list[str] = [
         spec.binary,

@@ -12,8 +12,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from ..transcript import log_outbound
-from .base import BaseTool, ToolResult, record_outbound
+from .base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
 
 log = logging.getLogger(__name__)
 
@@ -78,30 +77,15 @@ class SendMemoryDocumentTool(BaseTool):
             args.chat_id, message_id, args.path,
         )
 
-        if self.ctx.on_chat_replied is not None:
-            try:
-                self.ctx.on_chat_replied(args.chat_id)
-            except Exception:  # pragma: no cover
-                pass
-
         transcript_text = f"[document] {args.path}"
         if args.caption:
             transcript_text += f" — {args.caption}"
-        log_outbound(
-            chat_id=args.chat_id,
-            chat_titles=self.ctx.chat_titles,
-            message_id=message_id,
-            reply_to_id=args.reply_to_message_id,
-            text=transcript_text,
-        )
-
-        await record_outbound(
-            self.ctx,
+        await deliver_bookkeeping(self.ctx, OutboundDelivery(
             chat_id=args.chat_id,
             message_id=message_id,
-            text=transcript_text,
             reply_to_id=args.reply_to_message_id,
-        )
+            transcript_text=transcript_text,
+        ))
 
         return ToolResult(
             content=f"sent document message_id={message_id} ({resolved.name})",

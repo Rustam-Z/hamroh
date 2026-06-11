@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from ..db.messages import insert_message
 from ..models import ChatMessage
+from ..transcript import log_outbound
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..storage.attachments import AttachmentStore
@@ -116,6 +117,49 @@ class BaseTool(ABC):
     @abstractmethod
     async def run(self, args: BaseModel) -> ToolResult:  # pragma: no cover - abstract
         ...
+
+
+def notify_chat_replied(ctx: ToolContext, chat_id: int) -> None:
+    """Fire the typing-indicator stop hook; never let it break delivery."""
+    if ctx.on_chat_replied is None:
+        return
+    try:
+        ctx.on_chat_replied(chat_id)
+    except Exception:  # pragma: no cover
+        pass
+
+
+@dataclass
+class OutboundDelivery:
+    """One delivered Telegram message, ready for post-send bookkeeping."""
+
+    chat_id: int
+    message_id: int
+    reply_to_id: int | None
+    transcript_text: str
+    #: Text persisted to the DB when it differs from the transcript line
+    #: (``create_poll`` stores the options too). Defaults to transcript.
+    db_text: str | None = None
+
+
+async def deliver_bookkeeping(ctx: ToolContext, sent: OutboundDelivery) -> None:
+    """Post-send tail shared by the outbound tools: stop the typing
+    indicator, write the transcript line, persist the message row."""
+    notify_chat_replied(ctx, sent.chat_id)
+    log_outbound(
+        chat_id=sent.chat_id,
+        chat_titles=ctx.chat_titles,
+        message_id=sent.message_id,
+        reply_to_id=sent.reply_to_id,
+        text=sent.transcript_text,
+    )
+    await record_outbound(
+        ctx,
+        chat_id=sent.chat_id,
+        message_id=sent.message_id,
+        text=sent.db_text if sent.db_text is not None else sent.transcript_text,
+        reply_to_id=sent.reply_to_id,
+    )
 
 
 async def bot_identity(bot: Any) -> tuple[int, str | None, str]:

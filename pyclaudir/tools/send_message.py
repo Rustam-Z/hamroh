@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from ..formatting import markdown_to_telegram_html
 from ..transcript import log_outbound
-from .base import BaseTool, ToolResult, record_outbound
+from .base import BaseTool, ToolResult, notify_chat_replied, record_outbound
 
 log = logging.getLogger(__name__)
 
@@ -110,11 +110,8 @@ class SendMessageTool(BaseTool):
 
             # Stop typing after the FIRST chunk lands — user has visible
             # content. Subsequent chunks stream in without the indicator.
-            if i == 0 and self.ctx.on_chat_replied is not None:
-                try:
-                    self.ctx.on_chat_replied(args.chat_id)
-                except Exception:  # pragma: no cover
-                    pass
+            if i == 0:
+                notify_chat_replied(self.ctx, args.chat_id)
 
         first_id = message_ids[0]
         log_outbound(

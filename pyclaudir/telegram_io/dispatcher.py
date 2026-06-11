@@ -93,17 +93,27 @@ def _clean_inbound(raw: str | None) -> tuple[str | None, frozenset[str]]:
     return normalize_inbound(scrub(raw))
 
 
+def _reply_context(msg) -> tuple[int | None, str | None, frozenset[str]]:
+    """Extract ``(reply_to_id, scrubbed reply text, flags)`` from a message."""
+    reply = msg.reply_to_message
+    if reply is None:
+        return None, None, frozenset()
+    reply_to_text, flags = _clean_inbound(reply.text or reply.caption or None)
+    return reply.message_id, reply_to_text, flags
+
+
+def _scrubbed_raw_update(update: Update) -> str:
+    """JSON-serialize the raw update, redacting any credential-shaped text."""
+    raw = json.dumps(update.to_dict(), default=str)
+    return scrub(raw) if contains_secret(raw) else raw
+
+
 def _to_chat_message(update: Update, direction: str = "in") -> ChatMessage | None:
     msg = update.effective_message
     if msg is None or msg.from_user is None:
         return None
     text, text_flags = _clean_inbound(msg.text or msg.caption or "")
-    reply = msg.reply_to_message
-    reply_raw = (reply.text or reply.caption or None) if reply else None
-    reply_to_text, reply_flags = _clean_inbound(reply_raw)
-    raw_update_json = json.dumps(update.to_dict(), default=str)
-    if contains_secret(raw_update_json):
-        raw_update_json = scrub(raw_update_json)
+    reply_to_id, reply_to_text, reply_flags = _reply_context(msg)
     return ChatMessage(
         chat_id=msg.chat_id,
         message_id=msg.message_id,
@@ -113,9 +123,9 @@ def _to_chat_message(update: Update, direction: str = "in") -> ChatMessage | Non
         direction=direction,
         timestamp=msg.date or datetime.now(timezone.utc),
         text=text or "",
-        reply_to_id=reply.message_id if reply else None,
+        reply_to_id=reply_to_id,
         reply_to_text=reply_to_text,
-        raw_update_json=raw_update_json,
+        raw_update_json=_scrubbed_raw_update(update),
         input_flags=text_flags | reply_flags,
     )
 
@@ -504,14 +514,7 @@ class TelegramDispatcher:
         ``_check_access`` first — disallowed chats are dropped upstream
         and never reach this method."""
         await insert_message(self.db, cm)
-        await upsert_user(
-            self.db,
-            chat_id=cm.chat_id,
-            user_id=cm.user_id,
-            username=cm.username,
-            first_name=cm.first_name,
-            timestamp=cm.timestamp,
-        )
+        await upsert_user(self.db, cm)
 
     def _is_allowed(self, chat_id: int, user_id: int, chat_type: str | None) -> bool:
         """Hot-reload ``access.json`` and return the gate decision.

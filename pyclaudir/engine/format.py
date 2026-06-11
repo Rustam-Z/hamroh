@@ -88,38 +88,45 @@ async def format_messages_with_context(
     if db is None:
         return format_messages_as_xml(messages)
 
-    rendered: list[str] = []
-    for m in messages:
-        parents_xml = ""
-        if m.reply_to_id is not None:
-            try:
-                chain = await fetch_reply_chain(
-                    db, m.chat_id, m.reply_to_id, max_depth=max_depth
-                )
-            except Exception:  # pragma: no cover
-                log.exception("reply chain lookup failed for %s", m.message_id)
-                chain = []
-
-            if chain:
-                parts: list[str] = ["<reply_chain>"]
-                for p in chain:
-                    pname = p["first_name"] or p["username"] or str(p["user_id"])
-                    parts.append(
-                        f'  <parent id="{p["message_id"]}" user="{p["user_id"]}" '
-                        f'name="{_attr(pname)}" direction="{p["direction"]}" '
-                        f'time="{p["timestamp"]}">'
-                        f"{sx.escape(p['text'] or '')}"
-                        f"</parent>"
-                    )
-                parts.append("</reply_chain>\n")
-                parents_xml = "\n".join(parts)
-            elif m.reply_to_text:
-                # DB miss — fall back to whatever Telegram inlined.
-                parents_xml = (
-                    "<reply_chain>\n"
-                    f'  <parent id="{m.reply_to_id}" source="telegram_inline">'
-                    f"{sx.escape(m.reply_to_text)}</parent>\n"
-                    "</reply_chain>\n"
-                )
-        rendered.append(_format_one(m, parents_xml))
+    rendered = [
+        _format_one(m, await _reply_chain_xml(m, db, max_depth)) for m in messages
+    ]
     return "\n".join(rendered)
+
+
+async def _reply_chain_xml(m: ChatMessage, db: "Database", max_depth: int) -> str:
+    """Render the ``<reply_chain>`` block for one message, ``""`` when the
+    message isn't a reply. Falls back to the Telegram-inlined parent text
+    when our DB has no row for it."""
+    if m.reply_to_id is None:
+        return ""
+    try:
+        chain = await fetch_reply_chain(
+            db, m.chat_id, m.reply_to_id, max_depth=max_depth
+        )
+    except Exception:  # pragma: no cover
+        log.exception("reply chain lookup failed for %s", m.message_id)
+        chain = []
+
+    if chain:
+        parts: list[str] = ["<reply_chain>"]
+        for p in chain:
+            pname = p["first_name"] or p["username"] or str(p["user_id"])
+            parts.append(
+                f'  <parent id="{p["message_id"]}" user="{p["user_id"]}" '
+                f'name="{_attr(pname)}" direction="{p["direction"]}" '
+                f'time="{p["timestamp"]}">'
+                f"{sx.escape(p['text'] or '')}"
+                f"</parent>"
+            )
+        parts.append("</reply_chain>\n")
+        return "\n".join(parts)
+    if m.reply_to_text:
+        # DB miss — fall back to whatever Telegram inlined.
+        return (
+            "<reply_chain>\n"
+            f'  <parent id="{m.reply_to_id}" source="telegram_inline">'
+            f"{sx.escape(m.reply_to_text)}</parent>\n"
+            "</reply_chain>\n"
+        )
+    return ""

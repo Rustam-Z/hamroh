@@ -23,8 +23,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .path_safety import resolve_under_root
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from pypdf import PdfReader
 
 #: Maximum bytes returned for a text-like attachment in one read. Larger
 #: files are truncated and the truncation is marked in the returned string
@@ -62,6 +66,42 @@ class ImageAttachment:
     path: Path
     mime: str
     size_bytes: int
+
+
+def _ensure_decrypted(reader: "PdfReader", relative: str) -> None:
+    """Raise for password-protected PDFs.
+
+    pypdf returns 0 on failed decrypt and >0 on success. We try the
+    empty password (some PDFs are "encrypted" but readable that way)
+    before giving up.
+    """
+    if not reader.is_encrypted:
+        return
+    try:
+        if reader.decrypt("") == 0:
+            raise AttachmentPathError(
+                f"PDF {relative} is password-protected; cannot read"
+            )
+    except Exception as exc:
+        raise AttachmentPathError(
+            f"PDF {relative} is password-protected; cannot read"
+        ) from exc
+
+
+def _extract_pages(reader: "PdfReader") -> str:
+    """Join per-page extracted text with ``--- page N ---`` markers.
+
+    Pages that fail to extract (or have no text layer) contribute an
+    empty body under their marker so the model can tell what happened.
+    """
+    chunks: list[str] = []
+    for i, page in enumerate(reader.pages, start=1):
+        try:
+            page_text = page.extract_text() or ""
+        except Exception:  # pragma: no cover - pypdf can raise on weird PDFs
+            page_text = ""
+        chunks.append(f"--- page {i} ---\n{page_text.strip()}")
+    return "\n\n".join(chunks)
 
 
 class AttachmentStore:
@@ -154,27 +194,8 @@ class AttachmentStore:
             reader = PdfReader(str(path))
         except PdfReadError as exc:
             raise AttachmentPathError(f"could not parse PDF {relative}: {exc}") from exc
-        if reader.is_encrypted:
-            # pypdf returns 0 on failed decrypt and >0 on success. We try the
-            # empty password (some PDFs are "encrypted" but readable that way)
-            # before giving up.
-            try:
-                if reader.decrypt("") == 0:
-                    raise AttachmentPathError(
-                        f"PDF {relative} is password-protected; cannot read"
-                    )
-            except Exception as exc:
-                raise AttachmentPathError(
-                    f"PDF {relative} is password-protected; cannot read"
-                ) from exc
-        chunks: list[str] = []
-        for i, page in enumerate(reader.pages, start=1):
-            try:
-                page_text = page.extract_text() or ""
-            except Exception:  # pragma: no cover - pypdf can raise on weird PDFs
-                page_text = ""
-            chunks.append(f"--- page {i} ---\n{page_text.strip()}")
-        joined = "\n\n".join(chunks)
+        _ensure_decrypted(reader, relative)
+        joined = _extract_pages(reader)
         encoded = joined.encode("utf-8")
         truncated = False
         if len(encoded) > max_bytes:
