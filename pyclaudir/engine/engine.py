@@ -45,6 +45,14 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger("pyclaudir.engine")
 
 
+def _trim_snippet(text: str, limit: int = 400) -> str:
+    """Trim diagnostic text to fit comfortably in a Telegram message."""
+    snippet = text.strip()
+    if len(snippet) > limit:
+        snippet = snippet[:limit].rstrip() + "…"
+    return snippet
+
+
 @dataclass
 class TurnState:
     """Per-turn user-facing state. Cleared on each new turn in ``_kick``,
@@ -394,10 +402,7 @@ class Engine(TypingIndicatorMixin):
                 "⚠️ I hit a technical issue and couldn't finish that turn. "
                 "Please try again in a moment."
             )
-            snippet = (result.text_blocks[0] if result.text_blocks else "").strip()
-            if len(snippet) > 400:
-                snippet = snippet[:400].rstrip() + "…"
-            detail = snippet
+            detail = _trim_snippet(result.text_blocks[0] if result.text_blocks else "")
 
         if detail:
             user_msg = f"{user_msg}\n\nDetails:\n{detail}"
@@ -501,20 +506,58 @@ class Engine(TypingIndicatorMixin):
         log.error("turn aborted: %s", result.aborted_reason)
         await self._fire_turn_callbacks()
 
+    async def _handle_api_error_turn(self, result: "TurnResult") -> None:
+        """Handle a turn the API itself rejected (``api_error`` set).
+
+        Skips the dropped-text retry loop — re-sending into the same
+        session just re-triggers the same refusal. A classified failure
+        (rate-limit, auth, quota…) keeps the session: a reset wouldn't
+        fix it and would lose context. Anything else (usage-policy
+        refusal, context overflow) has poisoned the session history —
+        every resumed turn replays the rejected content — so we notify
+        the user and respawn CC fresh. Callbacks fire either way: CC saw
+        the messages and retrying identical content fails
+        deterministically (tool-error-limit precedent). ``_pending`` is
+        not kicked — the subprocess is mid-respawn.
+        """
+        log.error("turn failed with API error: %s", result.api_error)
+        self._turn.dropped_text_retries = 0
+        classification = classify_cc_failure(
+            [result.api_error or "", *result.text_blocks]
+        )
+        if classification is not None:
+            await self._notify_error_to_chats(classification.user_message)
+            self._turn.active_chats.clear()
+            await self._fire_turn_callbacks()
+            return
+
+        detail = _trim_snippet(result.api_error or "")
+        await self._notify_error_to_chats(
+            "⚠️ Claude rejected that request and the turn failed. "
+            "I've started a fresh session — previous conversation context "
+            f"was cleared. Please rephrase and resend.\n\nDetails:\n{detail}"
+        )
+        self._turn.active_chats.clear()
+        await self._fire_turn_callbacks()
+        await self.reset_session()
+
     async def _handle_turn_result(self, result: "TurnResult") -> None:
         """Process a successfully-returned :class:`TurnResult`.
 
-        Four outcome paths: short-circuited turn (``aborted_reason``
-        set — see :meth:`_handle_aborted_turn`), stderr-classified
-        failure (rate-limit/auth/quota), dropped-text (no
-        ``send_message``), or a clean turn — possibly with a follow-up
-        ``sleep`` action and pending messages to kick next.
+        Five outcome paths: short-circuited turn (``aborted_reason``),
+        API-rejected turn (``api_error``), stderr-classified failure
+        (rate-limit/auth/quota), dropped-text (no ``send_message``),
+        or a clean turn (see :meth:`_finish_clean_turn`).
         """
         self._is_processing.clear()
         await self._stop_typing()
 
         if result.aborted_reason is not None:
             await self._handle_aborted_turn(result)
+            return
+
+        if result.api_error:
+            await self._handle_api_error_turn(result)
             return
 
         action = result.control.action if result.control else None
@@ -537,7 +580,12 @@ class Engine(TypingIndicatorMixin):
             await self._handle_dropped_text(result)
             return
 
-        # Successful turn — reset the dropped-text retry counter.
+        await self._finish_clean_turn(result, action)
+
+    async def _finish_clean_turn(self, result: "TurnResult", action: str | None) -> None:
+        """Wrap up a successful turn: reset retry state, fire callbacks,
+        honour a ``sleep`` action, and kick any messages that queued up
+        while the turn was running."""
         self._turn.dropped_text_retries = 0
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
@@ -545,7 +593,6 @@ class Engine(TypingIndicatorMixin):
         if action == "sleep" and result.control and result.control.sleep_ms:
             await asyncio.sleep(result.control.sleep_ms / 1000)
 
-        # If new messages arrived while we were processing, kick them now.
         async with self._lock:
             has_pending = bool(self._pending)
         if has_pending:

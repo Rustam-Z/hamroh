@@ -114,6 +114,7 @@ class CcWorker(CcEventHandlerMixin):
         self._crash_backoff_cap: float = config.crash_backoff_cap
         self._crash_limit: int = config.crash_limit
         self._crash_window_seconds: float = config.crash_window_seconds
+        self._session_id_path = config.session_id_path
         self._proc: asyncio.subprocess.Process | None = None
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
@@ -437,6 +438,9 @@ class CcWorker(CcEventHandlerMixin):
         )
         self.spec = dataclasses.replace(self.spec, session_id=None)
         self._session_id = None
+        # Drop the persisted id too — an unclean exit before the next
+        # clean shutdown would otherwise resume the dropped session.
+        self._session_id_path.unlink(missing_ok=True)
         self._supervisor_abort_reason = "session-reset"
         if self._current_turn is not None:
             sentinel = TurnResult(aborted_reason="session-reset")

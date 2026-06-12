@@ -32,6 +32,9 @@ class TurnResult:
     #: ``"tool-error-limit"``). Engine branches on this before treating
     #: the result as a normal turn completion.
     aborted_reason: str | None = None
+    #: Error text when the result event reported ``is_error`` — the turn
+    #: failed at the API level (e.g. usage-policy refusal).
+    api_error: str | None = None
 
 
 class CrashLoop(RuntimeError):

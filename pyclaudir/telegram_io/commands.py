@@ -72,7 +72,6 @@ class OwnerCommandsMixin:
         if not self._is_owner(update):
             return
         log.warning("/reset_session received from owner; respawning cc with a fresh session")
-        self.config.session_id_path.unlink(missing_ok=True)
         await self.engine.reset_session()
         try:
             await update.effective_message.reply_text(

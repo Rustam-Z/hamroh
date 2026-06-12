@@ -51,12 +51,11 @@ def _dispatcher(cfg: Config) -> tuple[TelegramDispatcher, MagicMock]:
 
 
 @pytest.mark.asyncio
-async def test_reset_session_clears_id_in_process(
+async def test_reset_session_resets_in_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Given a persisted session id and an owner-issued /reset_session
+    # Given an owner-issued /reset_session
     cfg = _cfg(tmp_path)
-    cfg.session_id_path.write_text("abc-123")
     dispatcher, engine = _dispatcher(cfg)
     kills: list[int] = []
     monkeypatch.setattr(
@@ -68,9 +67,9 @@ async def test_reset_session_clears_id_in_process(
     # When the command runs
     await dispatcher._cmd_reset_session(update, MagicMock())
 
-    # Then the id file is gone, the engine resets in-process, the owner
-    # got a reply, and the bot process was NOT killed
-    assert not cfg.session_id_path.exists(), "session id file must be deleted"
+    # Then the engine resets in-process (the worker deletes the persisted
+    # id — see the worker tests), the owner got a reply, and the bot
+    # process was NOT killed
     engine.reset_session.assert_awaited_once()
     update.effective_message.reply_text.assert_awaited()
     assert kills == [], "bot must stay up — reset is in-process, not a SIGTERM"
@@ -113,23 +112,27 @@ def _spec(tmp_path: Path) -> CcSpawnSpec:
     )
 
 
-def _worker_with_stubbed_terminate(tmp_path: Path) -> tuple[CcWorker, list[bool]]:
-    worker = CcWorker(_spec(tmp_path), Config.for_test(tmp_path))
+def _worker_with_stubbed_terminate(
+    tmp_path: Path,
+) -> tuple[CcWorker, Config, list[bool]]:
+    cfg = Config.for_test(tmp_path)
+    worker = CcWorker(_spec(tmp_path), cfg)
     terminated: list[bool] = []
 
     async def fake_terminate() -> None:
         terminated.append(True)
 
     worker._terminate_proc = fake_terminate  # type: ignore[method-assign]
-    return worker, terminated
+    return worker, cfg, terminated
 
 
 @pytest.mark.asyncio
 async def test_worker_reset_mid_turn_drops_id_and_unblocks_engine(
     tmp_path: Path,
 ) -> None:
-    # Given a worker resumed on a session, mid-turn
-    worker, terminated = _worker_with_stubbed_terminate(tmp_path)
+    # Given a worker resumed on a persisted session, mid-turn
+    worker, cfg, terminated = _worker_with_stubbed_terminate(tmp_path)
+    cfg.session_id_path.write_text("abc-123")
     worker._current_turn = TurnResult()
 
     # When the session reset runs
@@ -139,6 +142,9 @@ async def test_worker_reset_mid_turn_drops_id_and_unblocks_engine(
     # intentional abort, and a sentinel unblocks the waiting engine
     assert worker.spec.session_id is None, "respawn must omit --resume"
     assert worker.session_id is None, "shutdown must not re-persist the old id"
+    assert not cfg.session_id_path.exists(), (
+        "persisted id must be deleted — an unclean exit must not resume it"
+    )
     assert worker._supervisor_abort_reason == "session-reset", (
         "supervisor must respawn without consuming the crash budget"
     )
@@ -153,7 +159,7 @@ async def test_worker_reset_mid_turn_drops_id_and_unblocks_engine(
 @pytest.mark.asyncio
 async def test_worker_reset_when_idle_queues_no_sentinel(tmp_path: Path) -> None:
     # Given an idle worker (no turn in flight)
-    worker, terminated = _worker_with_stubbed_terminate(tmp_path)
+    worker, _cfg, terminated = _worker_with_stubbed_terminate(tmp_path)
 
     # When the session reset runs
     await worker.reset_session()

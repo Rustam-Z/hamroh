@@ -197,6 +197,14 @@ class CcEventHandlerMixin:
         """Turn complete. Parse the structured-output payload, finalise the
         :class:`TurnResult`, and hand it to the engine via the result queue."""
         assert self._current_turn is not None
+        # The result event is the definitive turn outcome — mid-turn
+        # assistant-event errors can still be retried by CC and recover,
+        # so only an error here marks the turn as failed.
+        if event.get("is_error"):
+            raw = event.get("result")
+            self._current_turn.api_error = (
+                raw if isinstance(raw, str) and raw else "unknown API error"
+            )
         payload = self._extract_result_payload(event)
         if isinstance(payload, dict):
             try:
