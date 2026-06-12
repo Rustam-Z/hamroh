@@ -43,6 +43,27 @@ async def mark_messages_consumed(
     )
 
 
+async def mark_messages_processed(
+    db: Database, keys: list[tuple[int, int]]
+) -> None:
+    """Flag this turn's inbound rows as successfully processed by CC.
+
+    The only thing that makes a message digest-eligible (see
+    ``engine/restore.py``): rows from failed, aborted, or crashed turns
+    never get this UPDATE and stay barred from restored context forever.
+    Called by the engine once per CLEAN turn — never on the hot path.
+    """
+    if not keys:
+        return
+    placeholders = ",".join("(?,?)" for _ in keys)
+    params = [v for pair in keys for v in pair]
+    await db.execute(
+        "UPDATE messages SET processed=1 "
+        f"WHERE (chat_id, message_id) IN (VALUES {placeholders})",
+        params,
+    )
+
+
 async def fetch_unconsumed_inbound(db: Database) -> list[ChatMessage]:
     """Inbound messages buffered but never handed to CC — replayed on boot.
 
@@ -77,6 +98,29 @@ async def fetch_unconsumed_inbound(db: Database) -> list[ChatMessage]:
         )
         for r in rows
     ]
+
+
+async def fetch_recent_messages(db: Database, *, limit: int) -> list[dict]:
+    """Most recent trusted messages, both directions, oldest-first.
+
+    Feeds the restored-context digest (``engine/restore.py``). Skips
+    deleted rows, synthetic rows (``message_id <= 0``), and inbound rows
+    without ``processed=1`` — only a cleanly completed turn commits its
+    messages, so anything from a failed/aborted/crashed turn (or still
+    pending replay as a live ``<msg>``) never re-enters a fresh session.
+    Outbound rows are always eligible: Telegram confirmed their delivery.
+    """
+    rows = await db.fetch_all(
+        "SELECT chat_id, message_id, user_id, username, first_name, "
+        "direction, timestamp, text FROM messages "
+        "WHERE message_id > 0 AND deleted = 0 "
+        "AND NOT (direction = 'in' AND processed = 0) "
+        "ORDER BY rowid DESC LIMIT ?",
+        (limit,),
+    )
+    kept = [dict(r) for r in rows]
+    kept.reverse()  # oldest-first
+    return kept
 
 
 async def insert_message(db: Database, msg: ChatMessage) -> None:
@@ -124,8 +168,16 @@ async def insert_message(db: Database, msg: ChatMessage) -> None:
 async def mark_edited(
     db: Database, chat_id: int, message_id: int, new_text: str
 ) -> None:
+    """Update an edited message's text and reset its trust flag.
+
+    Edited content must re-earn ``processed=1`` — and since edits are
+    not re-submitted to the engine, an edited row effectively leaves
+    the restored-context digest for good (a committed benign message
+    can't be edited into poison after the fact).
+    """
     await db.execute(
-        "UPDATE messages SET text=?, edited=1 WHERE chat_id=? AND message_id=?",
+        "UPDATE messages SET text=?, edited=1, processed=0 "
+        "WHERE chat_id=? AND message_id=?",
         (new_text, chat_id, message_id),
     )
 

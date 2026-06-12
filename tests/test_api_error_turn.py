@@ -11,6 +11,7 @@ Classified transient failures (rate-limit & co.) keep the session.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,7 +19,14 @@ import pytest
 
 from pyclaudir.cc_worker import CcSpawnSpec, CcWorker, TurnResult
 from pyclaudir.config import Config
+from pyclaudir.db.database import Database
+from pyclaudir.db.messages import (
+    insert_message,
+    mark_messages_consumed,
+    mark_messages_processed,
+)
 from pyclaudir.engine import Engine
+from pyclaudir.models import ChatMessage
 
 POLICY_ERROR = (
     "API Error: Claude Code is unable to respond to this request, "
@@ -86,14 +94,16 @@ def test_clean_result_event_leaves_api_error_none(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 
 
-def _engine(tmp_path: Path) -> tuple[Engine, MagicMock, list[tuple[int, str]]]:
+def _engine(
+    tmp_path: Path, db: Database | None = None
+) -> tuple[Engine, MagicMock, list[tuple[int, str]]]:
     worker = MagicMock(reset_session=AsyncMock(), send=AsyncMock())
     sent: list[tuple[int, str]] = []
 
     async def notify(chat_id: int, text: str) -> None:
         sent.append((chat_id, text))
 
-    engine = Engine(worker, Config.for_test(tmp_path), error_notify=notify)
+    engine = Engine(worker, Config.for_test(tmp_path), db=db, error_notify=notify)
     engine._is_processing.set()
     engine._turn.active_chats = {-100}
     return engine, worker, sent
@@ -149,3 +159,83 @@ async def test_transient_error_notifies_without_reset(tmp_path: Path) -> None:
     assert "rate-limited" in sent[0][1], "targeted rate-limit message expected"
     worker.reset_session.assert_not_awaited()
     assert not engine._is_processing.is_set(), "engine must be idle again"
+
+
+# ----------------------------------------------------------------------
+# Engine: restored-context digest on the api-error reset
+# ----------------------------------------------------------------------
+
+
+def _row(mid: int, text: str) -> ChatMessage:
+    return ChatMessage(
+        chat_id=-100,
+        message_id=mid,
+        user_id=42,
+        username="alice",
+        first_name="Alice",
+        direction="in",
+        timestamp=datetime(2026, 6, 12, 10, mid % 60, tzinfo=timezone.utc),
+        text=text,
+    )
+
+
+@pytest.mark.asyncio
+async def test_api_error_reset_stashes_digest_excluding_failed_batch(
+    tmp_path: Path,
+) -> None:
+    # Given committed history plus the (never-committed) batch of the
+    # turn the API just rejected
+    cfg = Config.for_test(tmp_path)
+    cfg.ensure_dirs()
+    db = await Database.open(cfg.db_path)
+    try:
+        await insert_message(db, _row(1, "earlier question"))
+        await mark_messages_consumed(db, [(-100, 1)])
+        await mark_messages_processed(db, [(-100, 1)])
+        await insert_message(db, _row(2, "the poisoned request"))
+        await mark_messages_consumed(db, [(-100, 2)])
+
+        engine, worker, sent = _engine(tmp_path, db)
+
+        # When the unclassified API error arrives
+        await engine._handle_turn_result(TurnResult(api_error=POLICY_ERROR))
+
+        # Then the next fresh turn carries a digest WITHOUT the failed
+        # batch — its rows were never committed, so the trust filter
+        # drops them with no in-memory bookkeeping
+        assert engine._restore_context is not None, "digest must be stashed"
+        assert "earlier question" in engine._restore_context
+        assert "the poisoned request" not in engine._restore_context, (
+            "the failed batch is the likeliest poison — it must be excluded"
+        )
+        assert "recap" in sent[0][1], "user must learn context is carried over"
+        worker.reset_session.assert_awaited_once()
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_poisoned_digest_guard_forces_plain_session(tmp_path: Path) -> None:
+    # Given a turn that itself opened with a restored digest and failed
+    cfg = Config.for_test(tmp_path)
+    cfg.ensure_dirs()
+    db = await Database.open(cfg.db_path)
+    try:
+        await insert_message(db, _row(1, "some history"))
+        await mark_messages_consumed(db, [(-100, 1)])
+        await mark_messages_processed(db, [(-100, 1)])
+        engine, worker, sent = _engine(tmp_path, db)
+        engine._turn.had_restored_context = True
+
+        # When the API error arrives
+        await engine._handle_turn_result(TurnResult(api_error=POLICY_ERROR))
+
+        # Then no new digest is built — the digest is the prime suspect —
+        # and the user is told the recap could not be carried over
+        assert engine._restore_context is None, (
+            "one-shot guard: a poisoned digest must never loop"
+        )
+        assert "could not be carried over" in sent[0][1]
+        worker.reset_session.assert_awaited_once()
+    finally:
+        await db.close()

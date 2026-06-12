@@ -41,7 +41,7 @@ def _update(user_id: int) -> MagicMock:
 
 
 def _dispatcher(cfg: Config) -> tuple[TelegramDispatcher, MagicMock]:
-    engine = MagicMock(reset_session=AsyncMock())
+    engine = MagicMock(reset_session=AsyncMock(), stash_restore_context=AsyncMock())
     return TelegramDispatcher(cfg, MagicMock(), engine=engine, chat_titles={}), engine
 
 
@@ -71,6 +71,7 @@ async def test_reset_session_resets_in_process(
     # id — see the worker tests), the owner got a reply, and the bot
     # process was NOT killed
     engine.reset_session.assert_awaited_once()
+    engine.stash_restore_context.assert_awaited_once_with("owner-reset")
     update.effective_message.reply_text.assert_awaited()
     assert kills == [], "bot must stay up — reset is in-process, not a SIGTERM"
 
@@ -88,6 +89,7 @@ async def test_reset_session_ignores_non_owner(tmp_path: Path) -> None:
     # Then nothing happens
     assert cfg.session_id_path.exists(), "stranger must not clear the session"
     engine.reset_session.assert_not_awaited()
+    engine.stash_restore_context.assert_not_awaited()
 
 
 # ----------------------------------------------------------------------

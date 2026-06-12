@@ -72,11 +72,13 @@ class OwnerCommandsMixin:
         if not self._is_owner(update):
             return
         log.warning("/reset_session received from owner; respawning cc with a fresh session")
+        await self.engine.stash_restore_context("owner-reset")
         await self.engine.reset_session()
         try:
             await update.effective_message.reply_text(
                 "Session cleared — Claude restarted with a fresh context. "
-                "Chat history and memories are preserved."
+                "Chat history and memories are preserved; a short recap of "
+                "recent messages will be carried into the next turn."
             )
         except Exception:
             pass

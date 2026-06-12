@@ -432,13 +432,16 @@ def _make_on_cc_stale_session(app: _App):
             app.config.session_id_path.unlink(missing_ok=True)
         except OSError:
             log.exception("failed to delete stale session_id file")
+        if app.engine is not None:
+            await app.engine.stash_restore_context("stale-session")
         try:
             await app.dispatcher.bot.send_message(
                 chat_id=app.config.owner_id,
                 text=(
                     "ℹ️ Previous Claude Code session expired — "
                     "starting a fresh one. Your last message may need "
-                    "to be resent."
+                    "to be resent. I'll carry a short recap of recent "
+                    "messages into the next turn."
                 ),
             )
         except Exception:

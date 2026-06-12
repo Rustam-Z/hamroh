@@ -24,9 +24,10 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 
 from ..cc_failure_classifier import CcFailureClassification, classify_cc_failure
 from ..config import Config
-from ..db.messages import mark_messages_consumed
+from ..db.messages import mark_messages_consumed, mark_messages_processed
 from ..models import ChatMessage
 from .format import format_messages_with_context
+from .restore import build_restored_context
 from .typing_indicator import TypingAction, TypingIndicatorMixin, TypingState
 
 # Failure-handling threshold for the dropped-text retry cap lives on
@@ -68,6 +69,15 @@ class TurnState:
     #: ``time.monotonic()`` when the current turn started in ``_kick``.
     #: Read by :attr:`Engine.turn_elapsed_s` for the /health readout.
     started_monotonic: float = 0.0
+    #: ``(chat_id, message_id)`` keys consumed by this turn (kick plus
+    #: mid-turn injects). Committed via ``mark_messages_processed`` only
+    #: when the turn finishes cleanly — failed/aborted turns leave the
+    #: rows untrusted, which bars them from restored-context digests.
+    consumed_keys: list[tuple[int, int]] = field(default_factory=list)
+    #: True when this turn's opening send carried a ``<restored_context>``
+    #: digest. One-shot poison guard: if such a turn fails with an
+    #: ``api_error``, the next reset must NOT rebuild the digest.
+    had_restored_context: bool = False
 
 
 class Engine(TypingIndicatorMixin):
@@ -95,6 +105,10 @@ class Engine(TypingIndicatorMixin):
         self._error_notify = error_notify
         #: Per-turn user state — see :class:`TurnState`.
         self._turn = TurnState()
+        #: ``<restored_context>`` digest set via :meth:`stash_restore_context`
+        #: on the three session-reset paths; consumed once by the next
+        #: ``_kick`` so the fresh session's first turn carries it.
+        self._restore_context: str | None = None
         #: Typing-indicator state — see :class:`TypingState`.
         self._typing = TypingState()
         self._pending: list[ChatMessage] = []
@@ -150,6 +164,12 @@ class Engine(TypingIndicatorMixin):
         engine-side turn state when it arrives.
         """
         await self._worker.reset_session()
+
+    async def stash_restore_context(self, reason: str) -> None:
+        """Build a ``<restored_context>`` digest now; the next ``_kick``
+        prepends it to the fresh session's first turn. Stays ``None``
+        (plain turn) when there is no DB or no trusted history."""
+        self._restore_context = await build_restored_context(self._db, reason=reason)
 
     # ------------------------------------------------------------------
     # Introspection (read-only, used by /health)
@@ -228,7 +248,13 @@ class Engine(TypingIndicatorMixin):
         self._turn.active_chats = {m.chat_id for m in batch if m.message_id > 0}
         self._turn.dropped_text_retries = 0
         self._turn.started_monotonic = time.monotonic()
+        self._turn.consumed_keys = []
+        restore = self._restore_context
+        self._restore_context = None
+        self._turn.had_restored_context = restore is not None
         xml = await format_messages_with_context(batch, self._db)
+        if restore is not None:
+            xml = f"{restore}\n{xml}"
         log.info("starting turn with %d msgs", len(batch))
         # Show "typing..." in every chat involved in this batch.
         await self._start_typing(set(self._turn.active_chats))
@@ -255,10 +281,9 @@ class Engine(TypingIndicatorMixin):
         of #22). Synthetic reminders (``message_id == 0``) are skipped —
         they re-fire via their own ``pending`` status.
         """
-        if self._db is None:
-            return
         keys = [(m.chat_id, m.message_id) for m in batch if m.message_id > 0]
-        if not keys:
+        self._turn.consumed_keys.extend(keys)
+        if self._db is None or not keys:
             return
         await mark_messages_consumed(self._db, keys)
 
@@ -531,15 +556,39 @@ class Engine(TypingIndicatorMixin):
             await self._fire_turn_callbacks()
             return
 
+        notice = await self._prepare_api_error_reset()
         detail = _trim_snippet(result.api_error or "")
-        await self._notify_error_to_chats(
-            "⚠️ Claude rejected that request and the turn failed. "
-            "I've started a fresh session — previous conversation context "
-            f"was cleared. Please rephrase and resend.\n\nDetails:\n{detail}"
-        )
+        await self._notify_error_to_chats(f"{notice}\n\nDetails:\n{detail}")
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
         await self.reset_session()
+
+    async def _prepare_api_error_reset(self) -> str:
+        """One-shot poison guard + digest stash for the api-error reset.
+
+        If the failed turn itself opened with a restored digest, the
+        digest is the prime poison suspect: skip the rebuild so the next
+        session starts plain (no refusal loop). Otherwise stash a digest
+        — the failed turn's own batch was never committed
+        (``processed=0``), so the digest can't contain it. Returns the
+        matching user-facing notice.
+        """
+        if self._turn.had_restored_context:
+            log.warning(
+                "restored digest preceded this api_error; next session starts plain"
+            )
+            return (
+                "⚠️ Claude rejected that request and the turn failed. "
+                "I've started a completely fresh session — the recent recap "
+                "could not be carried over (it may itself have caused the "
+                "failure). Please rephrase and resend."
+            )
+        await self.stash_restore_context("api-error")
+        return (
+            "⚠️ Claude rejected that request and the turn failed. "
+            "I've started a fresh session and will carry a short recap of "
+            "the recent conversation into it. Please rephrase and resend."
+        )
 
     async def _handle_turn_result(self, result: "TurnResult") -> None:
         """Process a successfully-returned :class:`TurnResult`.
@@ -583,9 +632,16 @@ class Engine(TypingIndicatorMixin):
         await self._finish_clean_turn(result, action)
 
     async def _finish_clean_turn(self, result: "TurnResult", action: str | None) -> None:
-        """Wrap up a successful turn: reset retry state, fire callbacks,
-        honour a ``sleep`` action, and kick any messages that queued up
-        while the turn was running."""
+        """Wrap up a successful turn: commit its messages as trusted,
+        reset retry state, fire callbacks, honour a ``sleep`` action, and
+        kick any messages that queued up while the turn was running.
+
+        The commit is the ONLY place rows gain ``processed=1`` — failed,
+        aborted, and crashed turns never reach it, so their messages stay
+        barred from restored-context digests.
+        """
+        if self._db is not None and self._turn.consumed_keys:
+            await mark_messages_processed(self._db, self._turn.consumed_keys)
         self._turn.dropped_text_retries = 0
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
