@@ -23,10 +23,12 @@ class TurnResult:
     control: ControlAction | None = None
     #: Stderr lines captured during the turn (most recent last).
     stderr_tail: list[str] = field(default_factory=list)
-    #: True when any chat-delivery tool (``send_message`` & co.) was
-    #: called this turn — i.e. the user actually received something.
-    sent_to_chat: bool = False
-    #: True iff CC produced text without ever calling ``send_message``.
+    #: True when any user-visible tool was called this turn — a delivered
+    #: message (``send_message`` & co.) OR a reaction/edit/delete/poll-close.
+    #: I.e. the user perceived a response from the bot.
+    user_visible_action: bool = False
+    #: True iff CC produced text but took no user-visible action — the
+    #: text never reached the user.
     dropped_text: bool = False
     #: Non-None when pyclaudir short-circuited this turn (e.g.
     #: ``"tool-error-limit"``). Engine branches on this before treating

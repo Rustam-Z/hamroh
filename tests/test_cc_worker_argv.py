@@ -399,8 +399,39 @@ def test_text_with_delivery_tool_is_not_dropped(spec: CcSpawnSpec, cfg: Config) 
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
-    assert queued.sent_to_chat is True, "send_message call must be tracked"
+    assert queued.user_visible_action is True, "send_message call must be tracked"
     assert queued.dropped_text is False, "delivered text must not trigger the nag"
+
+
+def test_text_with_reaction_is_not_dropped(spec: CcSpawnSpec, cfg: Config) -> None:
+    """Regression: the model reacted with an emoji, narrated why in a text
+    block, then called StructuredOutput(stop). A reaction is a real
+    response, so the narration must NOT be treated as dropped text — else
+    the engine nags the model into a loop on every greeting/ack."""
+    worker = CcWorker(spec, cfg)
+    worker._current_turn = TurnResult()
+    worker._handle_event({
+        "type": "assistant",
+        "message": {"content": [{"type": "text", "text": "Reacted instead of replying."}]},
+    })
+    worker._handle_event({
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "mcp__pyclaudir__add_reaction",
+                    "id": "toolu_react",
+                    "input": {"chat_id": 587272213, "message_id": 444, "emoji": "👀"},
+                }
+            ]
+        },
+    })
+    worker._handle_event(_structured_output_event())
+    worker._handle_event({"type": "result"})
+    queued = worker._result_queue.get_nowait()
+    assert queued.user_visible_action is True, "add_reaction must count as a visible action"
+    assert queued.dropped_text is False, "a reaction is a response — no nag"
 
 
 def test_stale_session_pattern_detection(spec: CcSpawnSpec, cfg: Config) -> None:

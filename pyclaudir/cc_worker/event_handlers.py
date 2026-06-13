@@ -29,18 +29,24 @@ from .events import TurnResult
 # ``"pyclaudir.cc_worker"`` keep matching after the module split.
 log = logging.getLogger("pyclaudir.cc_worker")
 
-#: MCP tools that put content in front of the user, namespaced the way
-#: Claude Code reports them in tool_use events. A turn that produced text
-#: without calling any of these "dropped" its text — the user never saw
-#: it — regardless of whether StructuredOutput ended the turn cleanly.
-#: Add a tool here when it delivers content to a chat (test_tool_discovery
+#: MCP tools that produce a user-visible effect — a delivered message or
+#: a reaction/edit/delete/poll-close — namespaced the way Claude Code
+#: reports them in tool_use events. A turn that produced text but called
+#: none of these "dropped" its text: the user perceived nothing, so a
+#: trailing narration block went nowhere. A reaction (or edit/delete) is
+#: a real response, so its narration must NOT be treated as dropped text.
+#: Add a tool here when the user can perceive its effect (test_tool_discovery
 #: pins every entry to a real tool so a rename can't silently break this).
-CHAT_DELIVERY_TOOLS: frozenset[str] = frozenset({
+USER_VISIBLE_TOOLS: frozenset[str] = frozenset({
     "mcp__pyclaudir__send_message",
     "mcp__pyclaudir__reply_to_message",
     "mcp__pyclaudir__send_photo",
     "mcp__pyclaudir__send_memory_document",
     "mcp__pyclaudir__create_poll",
+    "mcp__pyclaudir__add_reaction",
+    "mcp__pyclaudir__edit_message",
+    "mcp__pyclaudir__delete_message",
+    "mcp__pyclaudir__stop_poll",
 })
 
 
@@ -152,8 +158,8 @@ class CcEventHandlerMixin:
             tool_use_id=str(block.get("id", "")),
             args=tool_input,
         )
-        if tool_name in CHAT_DELIVERY_TOOLS:
-            self._current_turn.sent_to_chat = True
+        if tool_name in USER_VISIBLE_TOOLS:
+            self._current_turn.user_visible_action = True
         # StructuredOutput is the definitive turn-end signal. Claudir
         # confirmed: the action lives in the tool_use event's input
         # field, NOT in the result event payload.
@@ -214,7 +220,7 @@ class CcEventHandlerMixin:
         self._current_turn.stderr_tail = list(self._stderr_tail)
         self._current_turn.dropped_text = (
             bool(self._current_turn.text_blocks)
-            and not self._current_turn.sent_to_chat
+            and not self._current_turn.user_visible_action
         )
         ctrl = self._current_turn.control
         log_cc_result(
