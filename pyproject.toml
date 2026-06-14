@@ -30,6 +30,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "lizard>=1.17",
+    "telethon>=1.36,<2",
 ]
 
 [project.scripts]
@@ -45,3 +46,12 @@ packages = ["pyclaudir"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+log_cli = true
+log_cli_level = "INFO"
+# Bare message: the bot subprocess lines forwarded by the e2e harness already
+# carry their own timestamp/level/component, so a second prefix is just noise.
+log_cli_format = "%(message)s"
+markers = [
+    "e2e: real end-to-end tests against live Telegram + claude (opt-in; skip without creds)",
+    "slow: tests that sleep/wait for a real reminder to fire (~90s)",
+]

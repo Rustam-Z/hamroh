@@ -15,6 +15,7 @@ data/
 # Env
 .env
 .env.local
+.env.e2e
 
 # Project-specific prompt (not shipped with open-source pyclaudir)
 prompts/project.md

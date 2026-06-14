@@ -8,18 +8,22 @@ debugging, or auditing.
 
 The parts of pyclaudir:
 
-- Custom MCP tools to interact with Telegram API, memory, context
+- Custom MCP tools to interact with Telegram API, memory, context, web
+- Self-reasoning loop: after every response (reason: stop)
+- Memory: per person, group, instructions, learnings 
+- Reminders
+- Agent skills
+- plugins.json to extend with external MCPs
+- access.json for group and DM access with different access policy.
 - Self-reflection and self-evolving loop  
   - A daily self-reflection pass reviews the bot's own mistakes and proposes durable rules for owner approval.
   - The owner can edit the bot's persona from a DM; every edit takes a timestamped backup first.
-- plugins.json to extend with external MCPs
-- access.json for group and DM access with different access policy.
-- Error handling when tool, mcp, CC session raises an error - model retries 3 times max instead of constantly replying 
+- Error handling 
+  - when tool, mcp, CC session raises an error - model retries 3 times max instead of constantly replying 
   - The `claude` subprocess is supervised: crashes respawn with exponential backoff and the conversation resumes where it left off.
   - If the model writes a reply without sending it, the harness nudges it until the reply is actually delivered.
   - If the API rejects a turn outright, the bot says so and respawns a fresh session automatically.
   - A circuit breaker aborts a turn after repeated tool errors instead of letting it spin for minutes.
-- Messages are batched into a single Claude turn instead of one turn each
 
 
 ## Table of contents
@@ -1032,29 +1036,4 @@ pyclaudir/
 │       ├── query_db.py
 │       └── reminder.py         # set/list/cancel reminders
 └── tests/
-    ├── test_db_schema.py
-    ├── test_mcp_server.py
-    ├── test_tool_discovery.py
-    ├── test_memory_path_safety.py
-    ├── test_security_invariants.py     # 8 invariants (#3 has 3 sub-tests)
-    ├── test_access.py                   # gate(), hot-reload, atomic writes
-    ├── test_memory_writes.py            # write_memory + append_memory + read-before-write
-    ├── test_telegram_persistence.py
-    ├── test_cc_worker_argv.py
-    ├── test_cc_raw_capture.py          # raw stdout/stderr capture
-    ├── test_engine_debouncer.py
-    ├── test_inject_and_dropped_text.py
-    ├── test_recovery_and_limits.py
-    ├── test_reactions_update.py       # inbound + bot reactions fold into messages
-    ├── test_rate_limits_dm_only.py    # DM-only, owner-exempt dispatcher-level limiter
-    ├── test_instructions_store.py     # allowlist, size cap, read-before-write, backup
-    ├── test_instructions_tools.py     # store rails + write-allowlist refusals at the tool layer
-    ├── test_skills_store.py           # Agent Skills spec conformance + path hardening
-    ├── test_skills_tools.py           # list_skills / read_skill surface
-    ├── test_auto_seed_reminder.py     # mandatory self-reflection reminder + cancel gate
-    ├── test_secrets_scrubber.py       # credential redaction at persistence boundary
-    ├── test_liveness.py                # wedged-mid-turn subprocess detection
-    ├── test_reply_chain.py             # multi-hop reply expansion
-    ├── test_transcript.py              # tagged log formatting
-    └── test_query_db.py
 ```

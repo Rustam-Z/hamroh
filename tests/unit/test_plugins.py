@@ -518,7 +518,7 @@ def test_repo_example_plugins_json_loads(tmp_path: Path) -> None:
     valid JSON and conform to the schema. With no integration env vars
     set, every MCP should be skipped (matching today's "no creds = no
     MCP" boot)."""
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
     example = repo_root / "plugins.json.example"
     assert example.exists(), "default plugins.json.example must be checked in"
 

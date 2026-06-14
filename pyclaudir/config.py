@@ -191,7 +191,7 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        return cls(
+        cfg = cls(
             telegram_bot_token=_required("TELEGRAM_BOT_TOKEN"),
             owner_id=int(_required("PYCLAUDIR_OWNER_ID")),
             model=_required("PYCLAUDIR_MODEL"),
@@ -213,6 +213,13 @@ class Config:
             crash_limit=_int("PYCLAUDIR_CRASH_LIMIT", 10),
             crash_window_seconds=_float("PYCLAUDIR_CRASH_WINDOW_SECONDS", 600.0),
         )
+        # access.json normally lives at the repo root (see __post_init__).
+        # The e2e harness points this at a temp file via PYCLAUDIR_ACCESS_PATH
+        # so it can authorize a test group without touching the repo copy.
+        access_override = _env("PYCLAUDIR_ACCESS_PATH")
+        if access_override:
+            object.__setattr__(cfg, "access_path", Path(access_override).resolve())
+        return cfg
 
     @classmethod
     def for_test(cls, data_dir: Path) -> "Config":
