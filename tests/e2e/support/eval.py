@@ -1,6 +1,6 @@
 """Latency + correctness eval core, driven by ``test_eval_e2e.py``.
 
-Runs each scenario in ``scenarios.py`` ``runs`` times in one chat (a DM or the
+Runs each scenario in ``models.py`` ``runs`` times in one chat (a DM or the
 group — the DM and group cases are separate tests), then builds a per-feature
 table: pass rate, p50/p95 of the send->first-reply and send->complete latencies,
 and the mean tool time per turn (sum of ``tool_calls.duration_ms``).
@@ -22,14 +22,10 @@ from pathlib import Path
 
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
-from tests.e2e.support.harness import tool_calls_since
-from tests.e2e.support.helpers import (
-    Conversation,
-    Reply,
-    new_sentinel,
-    send_and_wait,
-)
-from tests.e2e.support.scenarios import SCENARIOS, Scenario
+from tests.e2e.support.client import send_and_wait
+from tests.e2e.support.data import new_sentinel
+from tests.e2e.support.models import SCENARIOS, Conversation, Reply, Scenario
+from tests.e2e.support.state import tool_calls_since
 
 _HEADER = (
     f"{'feature':<13}{'chat':<7}{'runs':>5}{'pass':>6}"

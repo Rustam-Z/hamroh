@@ -40,6 +40,15 @@ kills it. Every reply is a real `claude` turn, so runs cost tokens and time.
 - **Skills** — the bot reads a skill via its skills tools
 - **Render** — a diagram comes back as a photo + a PNG lands on disk
 
+### Owner commands (the tester account is the owner)
+
+- **/pause · /resume** — muting stops replies; resume answers again, session stays warm
+- **/health · /audit · /access** — read-only status readouts
+- **/allow · /deny · /policy** — mutate `access.json` (state restored after each test)
+- **/usage** — relays Claude Code's own usage report
+- **/reset_session** — respawns Claude; history + memories survive
+- **/kill** — the bot process exits (runs against a throwaway bot)
+
 ### Speed eval
 
 The eval runs inside the e2e suite (`test_eval_e2e.py`): each scenario across DM

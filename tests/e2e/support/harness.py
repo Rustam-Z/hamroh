@@ -1,91 +1,55 @@
-"""Framework-agnostic plumbing shared by the e2e suite and the eval script.
+"""Launch the bot subprocess, detect readiness, and authorize the tester.
 
-One definition of: which env vars configure a run, how the bot subprocess
-is launched and detected as ready, how to authorize the tester, and how to
-read the bot's SQLite state read-only while it runs.
+The system under test (``Sut``) is a real ``python -m pyclaudir`` process; this
+module owns its lifecycle and the ``access.json`` that gates its messages.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
-import sqlite3
+import signal
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from telethon import TelegramClient  # type: ignore[import-untyped]
+from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
 from pyclaudir.access import AccessConfig, save_access
+
+from tests.e2e.support.client import send_and_wait
+from tests.e2e.support.config import E2EConfig, child_env
+from tests.e2e.support.models import Conversation
 
 #: Repo root (…/pyclaudir). The SUT runs with this as its cwd so it picks
 #: up the operator's ``plugins.json`` and ``prompts/``.
 REPO_ROOT = Path(__file__).resolve().parents[3]
-#: Gitignored file holding the ``E2E_*`` vars (written by ``make_session.py``).
-#: Lives at the e2e root (one level up from this support package).
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env.e2e"
 #: ``__main__.py`` logs this exact line once the dispatcher starts polling.
+#: It means the bot's stack is up and accepting messages. The ``claude`` CLI
+#: already connects its MCP servers and loads its tools at spawn (its first
+#: ``system/init`` event lists them as connected), so this line does NOT need to
+#: wait for that. What it can't tell us is that the *model* is warm: the first
+#: turn still pays an inference cold-start. So readiness adds a warm-up
+#: round-trip (see ``_warm_up_round_trip``) on top of this line.
 READY_LINE = "pyclaudir is live"
 _READY_TIMEOUT_S = 90.0
+#: A first-ever turn is slow: the model spins up (first-token cold-start) before
+#: any reply is produced. The text itself is irrelevant — we just need one turn.
+_WARMUP_TEXT = "ping"
+_WARMUP_TIMEOUT_S = 120.0
 _LOG_RING = 400  # keep the last N output lines for failure dumps
 #: The bot runs as a subprocess; forward its output through this logger so
 #: pytest's live log (``log_cli``) streams the RX/TX/timing lines as they
 #: happen, not just on failure.
 _SUT_LOG = logging.getLogger("pyclaudir.sut")
-
-_REQUIRED_ENV = (
-    "E2E_TG_API_ID",
-    "E2E_TG_API_HASH",
-    "E2E_TG_SESSION",
-    "E2E_BOT_TOKEN",
-    "E2E_BOT_USERNAME",
-    "E2E_OWNER_ID",
-    "E2E_GROUP_ID",
-)
-
-
-def load_e2e_env() -> None:
-    """Load ``tests/e2e/.env.e2e`` so a run needs no manual ``export``.
-
-    Real environment variables win over the file (``override=False``); a
-    missing file is a no-op.
-    """
-    load_dotenv(ENV_FILE)
-
-
-def missing_env() -> list[str]:
-    """Names of required ``E2E_*`` vars that are unset (drives skip-gating)."""
-    return [name for name in _REQUIRED_ENV if not os.environ.get(name)]
-
-
-@dataclass(frozen=True)
-class E2EConfig:
-    """Everything a real run needs, read once from the environment."""
-
-    api_id: int
-    api_hash: str
-    session: str
-    bot_token: str
-    bot_username: str
-    owner_id: int
-    group_id: int
-    model: str
-
-    @classmethod
-    def from_env(cls) -> "E2EConfig":
-        return cls(
-            api_id=int(os.environ["E2E_TG_API_ID"]),
-            api_hash=os.environ["E2E_TG_API_HASH"],
-            session=os.environ["E2E_TG_SESSION"],
-            bot_token=os.environ["E2E_BOT_TOKEN"],
-            bot_username=os.environ["E2E_BOT_USERNAME"].lstrip("@"),
-            owner_id=int(os.environ["E2E_OWNER_ID"]),
-            group_id=int(os.environ["E2E_GROUP_ID"]),
-            model=os.environ.get("E2E_MODEL", "claude-sonnet-4-6"),
-        )
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -110,40 +74,12 @@ class Sut:
 
     @property
     def access_path(self) -> Path:
-        return self.data_dir / "access.json"
+        # The SUT reads the real root access.json (REPO_ROOT is its cwd), so
+        # access-management tests inspect and rewrite that same file.
+        return REPO_ROOT / "access.json"
 
     def log_tail(self) -> str:
         return "".join(self._log)
-
-
-def _child_env(cfg: E2EConfig, data_dir: Path, access_path: Path) -> dict[str, str]:
-    """Env for the SUT: a cheap/fast model, zero debounce (clean latency),
-    and a high rate limit so a burst of test messages is never throttled."""
-    env = dict(os.environ)
-    env.update(
-        TELEGRAM_BOT_TOKEN=cfg.bot_token,
-        PYCLAUDIR_OWNER_ID=str(cfg.owner_id),
-        PYCLAUDIR_MODEL=cfg.model,
-        PYCLAUDIR_EFFORT="low",
-        PYCLAUDIR_DATA_DIR=str(data_dir),
-        PYCLAUDIR_ACCESS_PATH=str(access_path),
-        PYCLAUDIR_DEBOUNCE_MS="0",
-        PYCLAUDIR_RATE_LIMIT_PER_MIN="120",
-    )
-    return env
-
-
-def _write_access(path: Path, cfg: E2EConfig) -> None:
-    """Authorize the tester (owner) and the test group so both DM and group
-    messages pass the gate — without touching the repo's access.json."""
-    save_access(
-        path,
-        AccessConfig(
-            policy="allowlist",
-            allowed_users=[cfg.owner_id],
-            allowed_chats=[cfg.group_id],
-        ),
-    )
 
 
 def _drain(
@@ -160,16 +96,95 @@ def _drain(
             ready.set()
 
 
+async def _warm_up_round_trip(cfg: E2EConfig, timeout: float) -> None:
+    """Drive one DM turn and wait for the bot's full reply.
+
+    This spends the model's first-turn cold-start here, in setup, so the first
+    real test measures warm latency instead of inference spin-up. It also
+    exercises the ``send_message`` round-trip once, end to end. ``send_and_wait``
+    drains until the reply is quiet, leaving the DM silent before tests run.
+    """
+    client = TelegramClient(StringSession(cfg.session), cfg.api_id, cfg.api_hash)
+    await client.connect()
+    try:
+        bot = await client.get_entity(cfg.bot_username)
+        convo = Conversation(chat=bot, reply_from=bot)
+        await send_and_wait(client, convo, _WARMUP_TEXT, timeout=timeout)
+    finally:
+        await client.disconnect()
+
+
+def _finish_readiness(cfg: E2EConfig, sut: Sut) -> None:
+    """Drive the warm-up round-trip after the ``READY_LINE`` is seen.
+
+    On failure the SUT is stopped and the error carries the bot's log tail.
+    """
+    try:
+        asyncio.run(_warm_up_round_trip(cfg, _WARMUP_TIMEOUT_S))
+    except Exception as exc:
+        stop_sut(sut)
+        raise RuntimeError(
+            f"pyclaudir warm-up round-trip failed: {exc}\n"
+            f"--- last output ---\n{sut.log_tail()}"
+        ) from exc
+
+
+def _stray_sut_pids() -> list[int]:
+    """PIDs of leftover ``python -m pyclaudir`` processes (this one excluded).
+
+    The bot's argv ends with ``pyclaudir`` so we anchor the pattern there; the
+    ``claude`` child only *contains* "pyclaudir" (inside its system prompt) and
+    is correctly skipped. A missing ``pgrep`` or no matches yields an empty list.
+    """
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "m pyclaudir$"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return []
+    own = os.getpid()
+    return [pid for line in result.stdout.split() if (pid := int(line)) != own]
+
+
+def kill_stray_suts(timeout: float = 10.0) -> None:
+    """SIGTERM any leftover ``python -m pyclaudir`` process before the SUT starts.
+
+    Only one process may poll a bot token, so an orphan from a crashed run (or a
+    dev bot) would make Telegram reject the SUT's getUpdates. Runs once per
+    session, ahead of the shared SUT launch. SIGTERM first, then SIGKILL the
+    stragglers — mirroring ``stop_sut``.
+    """
+    pids = _stray_sut_pids()
+    if not pids:
+        return
+    log.warning("killing stray pyclaudir processes before e2e suite: %s", pids)
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + timeout
+    while _stray_sut_pids() and time.monotonic() < deadline:
+        time.sleep(0.2)
+    for pid in _stray_sut_pids():
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+
+
 def launch_sut(cfg: E2EConfig, data_dir: Path) -> Sut:
-    """Start ``python -m pyclaudir`` and block until it logs READY_LINE."""
+    """Start ``python -m pyclaudir`` and block until it is 100% ready.
+
+    Readiness is two-stage: wait for the ``READY_LINE`` (stack up, MCP/tools
+    loaded), then drive a warm-up round-trip so the model's first-turn cold-start
+    happens before the first test runs.
+    """
     data_dir.mkdir(parents=True, exist_ok=True)
-    access_path = data_dir / "access.json"
-    _write_access(access_path, cfg)
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "pyclaudir"],
         cwd=REPO_ROOT,
-        env=_child_env(cfg, data_dir, access_path),
+        env=child_env(data_dir),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -186,6 +201,7 @@ def launch_sut(cfg: E2EConfig, data_dir: Path) -> Sut:
             f"pyclaudir did not become ready in {_READY_TIMEOUT_S:.0f}s\n"
             f"--- last output ---\n{sut.log_tail()}"
         )
+    _finish_readiness(cfg, sut)
     return sut
 
 
@@ -202,87 +218,6 @@ def stop_sut(sut: Sut, timeout: float = 15.0) -> None:
         proc.wait(5.0)
 
 
-def new_png_files(renders_dir: Path, after: float) -> list[Path]:
-    """PNG files in ``renders_dir`` modified at or after ``after`` (epoch secs)."""
-    if not renders_dir.exists():
-        return []
-    return [p for p in renders_dir.glob("*.png") if p.stat().st_mtime >= after]
-
-
-def memory_files_containing(memories_dir: Path, token: str) -> list[Path]:
-    """Memory files whose text contains ``token`` — proves disk persistence."""
-    return [
-        path
-        for path in memories_dir.rglob("*")
-        if path.is_file() and token in path.read_text(encoding="utf-8", errors="ignore")
-    ]
-
-
 def set_access(sut: Sut, access: AccessConfig) -> None:
     """Rewrite the SUT's access.json — the bot hot-reloads it per message."""
     save_access(sut.access_path, access)
-
-
-def read_only_query(db_path: Path, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
-    """Run a SELECT against the live DB without locking out the bot.
-
-    WAL mode (``db/database.py``) lets this second connection read a
-    consistent snapshot while the bot keeps writing; opened read-only so a
-    test can never mutate bot state.
-    """
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-    try:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(sql, params).fetchall()
-    finally:
-        conn.close()
-
-
-def unauthorized_rows(db_path: Path, token: str) -> list[sqlite3.Row]:
-    """`unauthorized_messages` rows whose text contains ``token``."""
-    return read_only_query(
-        db_path,
-        "SELECT * FROM unauthorized_messages WHERE text LIKE ?",
-        (f"%{token}%",),
-    )
-
-
-def reminder_rows(db_path: Path, token: str) -> list[sqlite3.Row]:
-    """`reminders` rows whose text contains ``token``."""
-    return read_only_query(
-        db_path, "SELECT * FROM reminders WHERE text LIKE ?", (f"%{token}%",)
-    )
-
-
-def message_rows(db_path: Path, token: str) -> list[sqlite3.Row]:
-    """`messages` rows whose text contains ``token`` (either direction).
-
-    Proves a dropped (paused) message was never persisted."""
-    return read_only_query(
-        db_path, "SELECT * FROM messages WHERE text LIKE ?", (f"%{token}%",)
-    )
-
-
-def tool_calls_since(db_path: Path, since: str) -> list[sqlite3.Row]:
-    """`tool_calls` rows recorded at or after ``since`` (a "%Y-%m-%d %H:%M:%S"
-    UTC string) — for correlating a test's action to the tools it triggered."""
-    return read_only_query(
-        db_path,
-        "SELECT tool_name, duration_ms, created_at FROM tool_calls "
-        "WHERE created_at >= ?",
-        (since,),
-    )
-
-
-def reply_info(db_path: Path, token: str) -> sqlite3.Row | None:
-    """The inbound message containing ``token`` (its ``reply_to_id`` and
-    ``reply_to_text``), matched by text — the bot's Bot-API message_ids
-    differ from the Telethon client's, so they can't be cross-queried by id.
-    """
-    rows = read_only_query(
-        db_path,
-        "SELECT reply_to_id, reply_to_text FROM messages "
-        "WHERE direction = 'in' AND text LIKE ?",
-        (f"%{token}%",),
-    )
-    return rows[0] if rows else None

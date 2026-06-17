@@ -9,6 +9,7 @@ contributors who have not set up a test bot.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import shutil
 from collections.abc import AsyncIterator, Generator, Iterator
@@ -19,19 +20,13 @@ import pytest_asyncio
 from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
-from tests.e2e.support.harness import (
-    E2EConfig,
-    Sut,
-    launch_sut,
-    load_e2e_env,
-    missing_env,
-    stop_sut,
-)
-from tests.e2e.support.helpers import Conversation
+from tests.e2e.support.config import E2EConfig, group_ids, load_env, missing_env
+from tests.e2e.support.harness import Sut, kill_stray_suts, launch_sut, stop_sut
+from tests.e2e.support.models import Conversation
 
 log = logging.getLogger(__name__)
 _HERE = Path(__file__).parent
-load_e2e_env()  # pick up tests/e2e/.env.e2e before the skip-gate runs
+load_env()  # pick up the root .env before the skip-gate runs
 
 
 def _skip_reason() -> str | None:
@@ -64,8 +59,20 @@ def e2e_config() -> E2EConfig:
 
 
 @pytest.fixture(scope="session")
+def _free_bot_token() -> None:
+    """Kill stray pyclaudir processes once, so the SUT can claim the token.
+
+    Only one process may poll a bot token; an orphan from a crashed run (or a
+    dev bot) would make Telegram reject the SUT's getUpdates.
+    """
+    kill_stray_suts()
+
+
+@pytest.fixture(scope="session")
 def pyclaudir_sut(
-    e2e_config: E2EConfig, tmp_path_factory: pytest.TempPathFactory
+    _free_bot_token: None,
+    e2e_config: E2EConfig,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Sut]:
     """Launch one bot subprocess for the whole session (boot is expensive;
     tests isolate via unique sentinels, not restarts)."""
@@ -74,6 +81,29 @@ def pyclaudir_sut(
         yield sut
     finally:
         stop_sut(sut)
+
+
+@pytest.fixture
+def killable_sut(
+    pyclaudir_sut: Sut, e2e_config: E2EConfig, tmp_path: Path
+) -> Iterator[Sut]:
+    """A throwaway bot the test is free to /kill, with the shared SUT revived after.
+
+    Only one process may poll a bot token, so we stop the shared session SUT to
+    free the token, launch a victim on the same token, and hand it over. On
+    teardown the victim is gone (the test killed it) and we relaunch the shared
+    SUT *in place* — swapping ``proc``/``_log`` on the same object keeps the
+    session fixture's reference valid, so later tests reuse the revived bot.
+    """
+    stop_sut(pyclaudir_sut)
+    victim = launch_sut(e2e_config, tmp_path / "victim")
+    try:
+        yield victim
+    finally:
+        stop_sut(victim)
+        revived = launch_sut(e2e_config, pyclaudir_sut.data_dir)
+        pyclaudir_sut.proc = revived.proc
+        pyclaudir_sut._log = revived._log
 
 
 @pytest_asyncio.fixture
@@ -102,21 +132,37 @@ async def dm(bot: object) -> Conversation:
     return Conversation(chat=bot, reply_from=bot)
 
 
+@pytest.fixture(scope="session")
+def _group_id_pool() -> itertools.cycle[int]:
+    """Round-robin over the groups in access.json (raises if there are none)."""
+    return itertools.cycle(group_ids())
+
+
+@pytest.fixture
+def group_id(_group_id_pool: itertools.cycle[int]) -> int:
+    """One test group per test, rotating through access.json's allowed_chats.
+
+    Resolved once per test, so a test's `group` conversation and any id it builds
+    access rules from refer to the same chat.
+    """
+    return next(_group_id_pool)
+
+
 async def _group_conversation(
-    client: TelegramClient, cfg: E2EConfig, bot: object
+    client: TelegramClient, cfg: E2EConfig, group_id: int, bot: object
 ) -> Conversation:
     """Send to the test group, @mentioning the bot (privacy-mode safe)."""
-    entity = await client.get_entity(cfg.group_id)
+    entity = await client.get_entity(group_id)
     return Conversation(chat=entity, reply_from=bot, mention=cfg.bot_username)
 
 
 @pytest_asyncio.fixture
 async def group(
-    tester_client: TelegramClient, e2e_config: E2EConfig, bot: object
+    tester_client: TelegramClient, e2e_config: E2EConfig, group_id: int, bot: object
 ) -> Conversation:
     """A group conversation. Tests use the `dm` and `group` fixtures directly
     in separate per-chat test functions (no parametrization)."""
-    return await _group_conversation(tester_client, e2e_config, bot)
+    return await _group_conversation(tester_client, e2e_config, group_id, bot)
 
 
 @pytest.hookimpl(wrapper=True)

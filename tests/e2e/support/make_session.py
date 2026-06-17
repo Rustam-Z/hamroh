@@ -5,10 +5,11 @@ Telegram sends you, and your 2FA password if set):
 
     .venv/bin/python tests/e2e/make_session.py
 
-It reads E2E_TG_API_ID / E2E_TG_API_HASH from ``tests/e2e/.env.e2e`` (or
+It reads E2E_TG_API_ID / E2E_TG_API_HASH from the project root ``.env`` (or
 prompts if they're missing), logs in, then writes E2E_TG_SESSION and
-E2E_OWNER_ID back into that file. Fill E2E_BOT_TOKEN / E2E_BOT_USERNAME /
-E2E_GROUP_ID in by hand.
+PYCLAUDIR_OWNER_ID back into that file — preserving every other line. Fill
+E2E_BOT_USERNAME in by hand. The test group comes from access.json
+allowed_chats, not the env.
 """
 
 from __future__ import annotations
@@ -24,16 +25,7 @@ from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
 log = logging.getLogger(__name__)
 
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env.e2e"
-_KEYS = (
-    "E2E_TG_API_ID",
-    "E2E_TG_API_HASH",
-    "E2E_TG_SESSION",
-    "E2E_OWNER_ID",
-    "E2E_BOT_TOKEN",
-    "E2E_BOT_USERNAME",
-    "E2E_GROUP_ID",
-)
+ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -47,9 +39,23 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return out
 
 
-def _write_env_file(path: Path, values: dict[str, str]) -> None:
-    """Write every known key (placeholders for ones not yet supplied)."""
-    path.write_text("\n".join(f"{k}={values.get(k, '')}" for k in _KEYS) + "\n")
+def _key_of(line: str) -> str | None:
+    """The env-var name on this line, or ``None`` for a comment/blank line."""
+    if "=" not in line or line.lstrip().startswith("#"):
+        return None
+    return line.split("=", 1)[0].strip()
+
+
+def _merge_env_file(path: Path, updates: dict[str, str]) -> None:
+    """Set ``updates`` in ``path``, updating keys in place and appending the
+    rest — every other line (comments, app vars) is preserved untouched."""
+    pending = dict(updates)
+    out: list[str] = []
+    for line in path.read_text().splitlines() if path.exists() else []:
+        key = _key_of(line)
+        out.append(f"{key}={pending.pop(key)}" if key in pending else line)
+    out.extend(f"{k}={v}" for k, v in pending.items())
+    path.write_text("\n".join(out) + "\n")
 
 
 async def _login(api_id: int, api_hash: str) -> tuple[int, str]:
@@ -76,15 +82,19 @@ def main() -> None:
     log.info("Logging in — enter your phone number (e.g. +998901234567) when asked.")
     user_id, session = asyncio.run(_login(api_id, api_hash))
 
-    saved.update(
-        E2E_TG_API_ID=str(api_id),
-        E2E_TG_API_HASH=api_hash,
-        E2E_TG_SESSION=session,
-        E2E_OWNER_ID=str(user_id),
-    )
-    _write_env_file(ENV_FILE, saved)
+    updates = {
+        "E2E_TG_API_ID": str(api_id),
+        "E2E_TG_API_HASH": api_hash,
+        "E2E_TG_SESSION": session,
+        "PYCLAUDIR_OWNER_ID": str(user_id),
+    }
+    # Placeholder the operator fills by hand; keep any value already set.
+    updates["E2E_BOT_USERNAME"] = saved.get("E2E_BOT_USERNAME", "")
+    _merge_env_file(ENV_FILE, updates)
     log.info(
-        "Wrote E2E_TG_SESSION + E2E_OWNER_ID (your id=%s) to %s", user_id, ENV_FILE
+        "Wrote E2E_TG_SESSION + PYCLAUDIR_OWNER_ID (your id=%s) to %s",
+        user_id,
+        ENV_FILE,
     )
     log.info("You can now run:  .venv/bin/python -m pytest tests/e2e -m e2e -v")
 

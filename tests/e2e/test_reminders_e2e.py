@@ -13,33 +13,26 @@ from datetime import datetime, timezone
 import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
-from tests.e2e.support.harness import Sut, reminder_rows
-from tests.e2e.support.helpers import (
-    MAX_REMINDER_FIRE_S,
-    MAX_REMINDER_REPLY_S,
-    Conversation,
-    assert_reply_within,
-    assert_within,
-    measured,
-    new_sentinel,
-    send_and_wait,
-    wait_for_message,
-    wait_until,
-)
+from tests.e2e.support.assertions import assert_reply_within, assert_within
+from tests.e2e.support.client import send_and_wait, wait_for_message
+from tests.e2e.support.data import new_sentinel
+from tests.e2e.support.harness import Sut
+from tests.e2e.support.models import Conversation
+from tests.e2e.support.state import reminder_rows
+from tests.e2e.support.config import MAX_REMINDER_FIRE_S, MAX_REMINDER_REPLY_S
+from tests.e2e.support.waits import measured, wait_until
 
 
 async def _assert_scheduled(
     sut: Sut, client: TelegramClient, convo: Conversation
 ) -> None:
     token = new_sentinel("REMIND")
-    # when we ask for a reminder 30 minutes out
     reply = await send_and_wait(
         client,
         convo,
         f"Set a reminder for 30 minutes from now with this exact text: {token}.",
     )
     assert_reply_within(reply, MAX_REMINDER_REPLY_S, "reminder")
-    # then a pending one-shot row lands with a ~30-minute trigger
     rows = await wait_until(lambda: reminder_rows(sut.db_path, token))
     assert rows, f"no reminders row for {token!r}"
     row = rows[0]
@@ -56,12 +49,26 @@ async def _assert_scheduled(
 async def test_reminder_is_scheduled_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
+    """The bot schedules a 30-minute reminder in a DM.
+
+    given  the owner
+    when   they ask for a reminder 30 minutes out in a DM
+    then   a pending row lands with a ~30-minute trigger, replied within
+           MAX_REMINDER_REPLY_S.
+    """
     await _assert_scheduled(pyclaudir_sut, tester_client, dm)
 
 
 async def test_reminder_is_scheduled_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:
+    """The bot schedules a 30-minute reminder in a group.
+
+    given  the owner
+    when   they ask for a reminder 30 minutes out in a group
+    then   a pending row lands with a ~30-minute trigger, replied within
+           MAX_REMINDER_REPLY_S.
+    """
     await _assert_scheduled(pyclaudir_sut, tester_client, group)
 
 
@@ -69,9 +76,14 @@ async def test_reminder_is_scheduled_group(
 async def test_reminder_fires_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
+    """A scheduled reminder fires and is marked sent in a DM.
+
+    given  the owner
+    when   they ask for a reminder ~70 seconds out in a DM
+    then   the bot delivers it within MAX_REMINDER_FIRE_S and the row flips to sent.
+    """
     token = new_sentinel("FIRE")
 
-    # when we ask for a reminder ~70 seconds out
     reply = await send_and_wait(
         tester_client,
         dm,
@@ -79,14 +91,13 @@ async def test_reminder_fires_dm(
     )
     assert_reply_within(reply, MAX_REMINDER_REPLY_S, "reminder")
 
-    # then the bot delivers it within the fire limit ...
     seen, elapsed = await measured(
         wait_for_message(tester_client, dm, token, timeout=MAX_REMINDER_FIRE_S)
     )
     assert token in seen, f"reminder {token!r} never fired; saw {seen!r}"
     assert_within(elapsed, MAX_REMINDER_FIRE_S, "reminder fire")
 
-    # ... and the row is marked sent
+    # the delivered reminder's row must flip from pending to sent
     sent = await wait_until(
         lambda: [
             r

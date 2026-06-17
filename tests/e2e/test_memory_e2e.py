@@ -11,15 +11,14 @@ from __future__ import annotations
 
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
-from tests.e2e.support.harness import Sut, memory_files_containing
-from tests.e2e.support.helpers import (
-    MAX_MEMORY_REPLY_S,
-    Conversation,
-    assert_reply_within,
-    new_sentinel,
-    send_and_wait,
-    wait_until,
-)
+from tests.e2e.support.assertions import assert_reply_within
+from tests.e2e.support.client import send_and_wait
+from tests.e2e.support.data import new_sentinel
+from tests.e2e.support.harness import Sut
+from tests.e2e.support.models import Conversation
+from tests.e2e.support.state import memory_files_containing
+from tests.e2e.support.config import MAX_MEMORY_REPLY_S
+from tests.e2e.support.waits import wait_until
 
 _REMEMBER = (
     "Remember this codeword and write it to a memory file: {cw}. "
@@ -34,17 +33,13 @@ _RECALL_ALL = "List every codeword you have saved in your memory."
 async def _assert_write_and_read(
     sut: Sut, client: TelegramClient, convo: Conversation
 ) -> None:
-    # given a unique codeword the bot must persist to memory
     codeword = new_sentinel("BANANA")
-    # when we ask it to remember and write the codeword to a memory file
     saved = await send_and_wait(client, convo, _REMEMBER.format(cw=codeword))
     assert_reply_within(saved, MAX_MEMORY_REPLY_S, "memory write")
-    # then the codeword is durably on disk ...
     on_disk = await wait_until(
         lambda: memory_files_containing(sut.memories_dir, codeword)
     )
     assert on_disk, f"{codeword!r} not in any memory file; reply was {saved.text!r}"
-    # ... and the bot recalls it
     recalled = await send_and_wait(client, convo, _RECALL)
     assert codeword in recalled.text, (
         f"bot did not recall {codeword!r}; reply was {recalled.text!r}"
@@ -55,19 +50,36 @@ async def _assert_write_and_read(
 async def test_memory_write_and_read_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
+    """The bot writes a codeword to memory and reads it back in a DM.
+
+    given  a unique codeword
+    when   the owner asks the bot to remember it in a DM
+    then   it lands in a memory file and the bot recalls it within MAX_MEMORY_REPLY_S.
+    """
     await _assert_write_and_read(pyclaudir_sut, tester_client, dm)
 
 
 async def test_memory_write_and_read_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:
+    """The bot writes a codeword to memory and reads it back in a group.
+
+    given  a unique codeword
+    when   the owner asks the bot to remember it in a group
+    then   it lands in a memory file and the bot recalls it within MAX_MEMORY_REPLY_S.
+    """
     await _assert_write_and_read(pyclaudir_sut, tester_client, group)
 
 
 async def test_memory_survives_session_reset_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
-    # given a codeword written to memory
+    """A codeword in memory survives /reset_session in a DM.
+
+    given  a codeword written to a memory file
+    when   the Claude session is reset in a DM
+    then   the bot still recalls it from disk within MAX_MEMORY_REPLY_S.
+    """
     codeword = new_sentinel("MANGO")
     await send_and_wait(tester_client, dm, _REMEMBER.format(cw=codeword))
     on_disk = await wait_until(
@@ -75,10 +87,9 @@ async def test_memory_survives_session_reset_dm(
     )
     assert on_disk, f"{codeword!r} was not persisted to a memory file"
 
-    # when the Claude session is reset (memories survive, context is fresh)
+    # reset drops the in-context session; memories on disk survive
     await send_and_wait(tester_client, dm, "/reset_session", timeout=60)
 
-    # then the bot still recalls it from disk (listed among saved codewords)
     recalled = await send_and_wait(tester_client, dm, _RECALL_ALL)
     assert codeword in recalled.text, (
         f"bot did not recall {codeword!r} after reset; reply was {recalled.text!r}"
