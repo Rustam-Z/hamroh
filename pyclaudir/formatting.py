@@ -159,3 +159,49 @@ def _row_to_bullet(line: str) -> str:
     cells = [c.strip() for c in line.strip()[1:-1].split("|")]
     cells = [c for c in cells if c]
     return "• " + " — ".join(cells)
+
+
+#: Telegram's hard limit on a single text message.
+TELEGRAM_TEXT_LIMIT = 4096
+
+
+def chunk_text(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> list[str]:
+    """Split ``text`` into chunks of at most ``limit`` characters.
+
+    Prefers ``\\n\\n`` (paragraph) over ``\\n`` (line) over space over hard-cut.
+    Separators at a chosen boundary are consumed, never duplicated onto the
+    next chunk. Empty input returns ``[""]`` so callers can treat the result
+    as a non-empty list.
+
+    Runs on raw (pre-markdown) text so each chunk can be converted to
+    Telegram HTML independently without splitting an inline tag in half.
+    Markdown constructs rarely span paragraph boundaries, so paragraph-
+    preferring splits keep the rendered output intact.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        window = remaining[:limit]
+        for sep in ("\n\n", "\n", " "):
+            idx = window.rfind(sep)
+            if idx > 0:
+                chunks.append(remaining[:idx])
+                next_start = idx + len(sep)
+                # A ``\n\n`` straddling the window edge is only partially
+                # visible to ``rfind("\n\n")`` — we split on the single
+                # ``\n`` we saw, then consume any directly-adjacent ``\n``
+                # so the next chunk doesn't lead with a separator.
+                while next_start < len(remaining) and remaining[next_start] == "\n":
+                    next_start += 1
+                remaining = remaining[next_start:]
+                break
+        else:
+            chunks.append(remaining[:limit])
+            remaining = remaining[limit:]
+
+    if remaining:
+        chunks.append(remaining)
+    return chunks

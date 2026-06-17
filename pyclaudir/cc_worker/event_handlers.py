@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..models import ControlAction
 from ..transcript import (
@@ -23,8 +23,9 @@ from ..transcript import (
     log_cc_tool_result,
     log_cc_tool_use,
 )
-from .events import TurnResult
 
+if TYPE_CHECKING:
+    from .events import TurnResult
 # Pinned to the parent package name so log captures keyed on
 # ``"pyclaudir.cc_worker"`` keep matching after the module split.
 log = logging.getLogger("pyclaudir.cc_worker")
@@ -53,6 +54,11 @@ USER_VISIBLE_TOOLS: frozenset[str] = frozenset({
 class CcEventHandlerMixin:
     """Event-dispatch methods mixed into ``CcWorker``."""
 
+    #: Defined in ``CcWorker.__init__``; annotated here (no assignment) so
+    #: the mixin's reads type-check now that ``_handle_event`` no longer
+    #: lazily creates the turn.
+    _current_turn: TurnResult | None
+
     def _handle_event(self, event: dict[str, Any]) -> None:
         """Parse one stream-json event from the CC subprocess.
 
@@ -75,7 +81,14 @@ class CcEventHandlerMixin:
             self._on_system_init(event)
             return
         if self._current_turn is None:
-            self._current_turn = TurnResult()
+            # No turn is in flight — this is a stray event from a terminated
+            # or already-completed session (e.g. a final result flushed by a
+            # dying subprocess while it's drained during reset/respawn).
+            # Dropping it keeps stale results from being enqueued and then
+            # consumed as the next session's turn result, which would orphan
+            # the real reply. A genuine turn always has its TurnResult created
+            # by send()/inject() before the subprocess can respond.
+            return
         if etype == "assistant":
             self._on_assistant_event(event)
         elif etype == "user":

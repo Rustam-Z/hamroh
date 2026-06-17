@@ -25,14 +25,11 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from ..cc_failure_classifier import CcFailureClassification, classify_cc_failure
 from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
+from ..formatting import chunk_text
 from ..models import ChatMessage
 from .format import format_messages_with_context
 from .restore import build_restored_context
 from .typing_indicator import TypingAction, TypingIndicatorMixin, TypingState
-
-# Failure-handling threshold for the dropped-text retry cap lives on
-# ``Config`` (see ``tool_error_max_count``). The dropped-text cap reuses
-# the tool-error breaker threshold so operators tune one knob, not two.
 
 #: Async callable shape: ``await error_notify(chat_id, text)`` sends a
 #: message directly via the bot, bypassing the MCP layer (which is
@@ -54,6 +51,16 @@ def _trim_snippet(text: str, limit: int = 400) -> str:
     return snippet
 
 
+def _classified_failure_message(classification: CcFailureClassification) -> str:
+    """User-facing message when dropped text is actually a known failure
+    (bad model name, quota, …), with the matched diagnostic snippet so the
+    user sees what went wrong rather than a generic apology."""
+    msg = classification.user_message
+    if classification.matched_source:
+        msg = f"{msg}\n\nDetails:\n{classification.matched_source}"
+    return msg
+
+
 @dataclass
 class TurnState:
     """Per-turn user-facing state. Cleared on each new turn in ``_kick``,
@@ -63,9 +70,6 @@ class TurnState:
     #: reminders (``message_id == 0``) are excluded so reminder-only
     #: turns produce no turn-start typing indicator.
     active_chats: set[int] = field(default_factory=set)
-    #: Count of consecutive ``dropped_text`` results across turns.
-    #: Bounded by ``Config.tool_error_max_count``.
-    dropped_text_retries: int = 0
     #: ``time.monotonic()`` when the current turn started in ``_kick``.
     #: Read by :attr:`Engine.turn_elapsed_s` for the /health readout.
     started_monotonic: float = 0.0
@@ -94,9 +98,6 @@ class Engine(TypingIndicatorMixin):
         self._worker = worker
         self._debounce = debounce_ms / 1000.0
         self._db = db
-        # Cache hot-path knobs so the control loop and dropped-text
-        # handler don't dereference Config on every event.
-        self._tool_error_max_count: int = config.tool_error_max_count
         #: Optional callback that shows the "typing..." indicator in a
         #: Telegram chat. Wired by ``__main__.py`` to ``bot.send_chat_action``.
         self._typing_action = typing_action
@@ -246,7 +247,6 @@ class Engine(TypingIndicatorMixin):
         # the turn-start typing indicator should be silent for
         # reminder-only turns.
         self._turn.active_chats = {m.chat_id for m in batch if m.message_id > 0}
-        self._turn.dropped_text_retries = 0
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []
         restore = self._restore_context
@@ -359,79 +359,52 @@ class Engine(TypingIndicatorMixin):
                 log.warning("failed to send error notification to %s: %s", chat_id, exc)
 
     async def _handle_dropped_text(self, result: "TurnResult") -> None:
-        """Handle a turn that ended with text but no ``send_message`` call.
+        """Deliver text the model produced but never sent via ``send_message``.
 
-        Two outcomes:
+        The model occasionally writes its reply as a plain text content
+        block and then stops, instead of calling ``send_message`` /
+        ``reply_to_message`` — those blocks are invisible to the user.
+        Rather than burn a whole retry turn nagging it to resend, deliver
+        the text it already produced.
 
-        1. **Below the shared failure cap** — inject an ``<error>`` into
-           the bot's next turn reminding it to use ``send_message``, so
-           a recoverable slip (e.g. it started typing a plain answer)
-           self-corrects in one additional turn.
-        2. **At or above the cap** — stop nagging the model, surface a
-           user-facing message, and drop the turn. The best-available
-           diagnostic (classifier match on text blocks, or the raw first
-           block) is included so the user understands why.
+        Exception: when that text is actually a technical error (bad model
+        name, quota, …) we surface the classified user-facing message
+        instead of echoing the raw diagnostic. ``classify_cc_failure``
+        draws the line; thinking blocks never reach ``text_blocks`` (they're
+        logged, not collected), so what remains is genuine reply prose.
         """
-        self._turn.dropped_text_retries += 1
-        max_retries = self._tool_error_max_count
-
-        if self._turn.dropped_text_retries < max_retries:
-            # Recoverable — inject the corrective reminder and let the
-            # model try again. Mark the turn as live BEFORE the await so
-            # a message arriving mid-send can't see an idle engine and
-            # kick a second turn into the same worker.
-            self._is_processing.set()
-            error_xml = (
-                "<error>You produced text but did not call send_message. "
-                "Use the tool — text content blocks are invisible to the user.</error>"
+        classification = classify_cc_failure(result.text_blocks)
+        if classification is not None:
+            await self._notify_error_to_chats(
+                _classified_failure_message(classification)
             )
-            await self._worker.send(error_xml)
-            if self._typing.chats:
-                await self._start_typing(set(self._typing.chats))
-            return
-
-        # Cap hit. Build the clearest user-facing message we can from
-        # what CC gave us.
-        user_msg = self._build_dropped_text_user_message(result)
-        log.warning(
-            "dropped_text retry limit hit (%d/%d); surfacing to user",
-            self._turn.dropped_text_retries, max_retries,
-        )
-        await self._notify_error_to_chats(user_msg)
+        else:
+            await self._deliver_text_to_chats("\n\n".join(result.text_blocks))
         self._turn.active_chats.clear()
-        # Reset counter so the *next* user turn starts clean even if the
-        # underlying CC issue persists — we don't want to nuke their
-        # first follow-up message silently.
-        self._turn.dropped_text_retries = 0
-        # Cap-hit ends the turn. CC saw the message — retrying won't
-        # help — so fire callbacks to mark reminders sent.
         await self._fire_turn_callbacks()
 
-    @staticmethod
-    def _build_dropped_text_user_message(result: "TurnResult") -> str:
-        """Compose a user-facing message for a capped dropped-text failure.
+    async def _deliver_text_to_chats(self, text: str) -> None:
+        """Deliver a model reply that landed as a text block to every chat
+        waiting on this turn.
 
-        Prefers a classifier-matched message (e.g. "model unavailable —
-        fix PYCLAUDIR_MODEL") over the generic fallback. Either way we
-        include a trimmed snippet of CC's own diagnostic so the user
-        can see the underlying error, not just a generic apology.
+        Reuses the error-notify bot channel (the engine never imports
+        telegram) and the shared ``chunk_text`` splitter so a long answer
+        breaks at paragraph boundaries instead of hitting Telegram's
+        length limit. Best-effort: a failed send is logged, not raised.
         """
-        classification: CcFailureClassification | None = classify_cc_failure(
-            result.text_blocks
-        )
-        if classification is not None:
-            user_msg = classification.user_message
-            detail = classification.matched_source
-        else:
-            user_msg = (
-                "⚠️ I hit a technical issue and couldn't finish that turn. "
-                "Please try again in a moment."
+        if self._error_notify is None or not text.strip():
+            return
+        chunks = chunk_text(text)
+        for chat_id in self._turn.active_chats:
+            for chunk in chunks:
+                try:
+                    await self._error_notify(chat_id, chunk)
+                except Exception as exc:
+                    log.warning("dropped-text delivery to %s failed: %s", chat_id, exc)
+            log.info(
+                "delivered dropped text to chat %s (%d chunk(s))",
+                chat_id, len(chunks),
             )
-            detail = _trim_snippet(result.text_blocks[0] if result.text_blocks else "")
-
-        if detail:
-            user_msg = f"{user_msg}\n\nDetails:\n{detail}"
-        return user_msg
 
     # ------------------------------------------------------------------
     # Control loop
@@ -546,7 +519,6 @@ class Engine(TypingIndicatorMixin):
         not kicked — the subprocess is mid-respawn.
         """
         log.error("turn failed with API error: %s", result.api_error)
-        self._turn.dropped_text_retries = 0
         classification = classify_cc_failure(
             [result.api_error or "", *result.text_blocks]
         )
@@ -632,9 +604,9 @@ class Engine(TypingIndicatorMixin):
         await self._finish_clean_turn(result, action)
 
     async def _finish_clean_turn(self, result: "TurnResult", action: str | None) -> None:
-        """Wrap up a successful turn: commit its messages as trusted,
-        reset retry state, fire callbacks, honour a ``sleep`` action, and
-        kick any messages that queued up while the turn was running.
+        """Wrap up a successful turn: commit its messages as trusted, fire
+        callbacks, honour a ``sleep`` action, and kick any messages that
+        queued up while the turn was running.
 
         The commit is the ONLY place rows gain ``processed=1`` — failed,
         aborted, and crashed turns never reach it, so their messages stay
@@ -642,7 +614,6 @@ class Engine(TypingIndicatorMixin):
         """
         if self._db is not None and self._turn.consumed_keys:
             await mark_messages_processed(self._db, self._turn.consumed_keys)
-        self._turn.dropped_text_retries = 0
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
 

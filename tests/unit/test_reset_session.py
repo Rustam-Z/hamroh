@@ -174,6 +174,26 @@ async def test_worker_reset_when_idle_queues_no_sentinel(tmp_path: Path) -> None
     assert terminated, "subprocess must be terminated to trigger the respawn"
 
 
+@pytest.mark.asyncio
+async def test_stray_result_after_reset_is_not_enqueued(tmp_path: Path) -> None:
+    """A ``result`` event flushed by a dying subprocess after the turn was
+    cleared (``_current_turn is None``) must be dropped — not turned into a
+    phantom empty TurnResult that the next session's turn would consume,
+    orphaning the real reply."""
+    # Given a worker whose turn has been cleared (reset, mid-drain)
+    worker, _cfg, _terminated = _worker_with_stubbed_terminate(tmp_path)
+    worker._current_turn = None
+
+    # When a leftover result event arrives from the dying stream
+    worker._handle_event({"type": "result", "subtype": "success", "result": None})
+
+    # Then nothing is enqueued and no phantom turn is synthesised
+    assert worker._result_queue.empty(), (
+        "a stray result must not be enqueued as the next turn's outcome"
+    )
+    assert worker._current_turn is None, "no phantom turn may be created"
+
+
 # ----------------------------------------------------------------------
 # Engine sentinel handling
 # ----------------------------------------------------------------------

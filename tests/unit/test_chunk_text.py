@@ -1,8 +1,8 @@
-"""Unit tests for the send_message chunker."""
+"""Unit tests for the shared Telegram-text chunker."""
 
 from __future__ import annotations
 
-from pyclaudir.tools.send_message import _chunk_text
+from pyclaudir.formatting import chunk_text as _chunk_text
 
 
 def test_short_text_returns_single_chunk():

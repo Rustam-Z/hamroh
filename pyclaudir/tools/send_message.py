@@ -7,59 +7,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..formatting import markdown_to_telegram_html
+from ..formatting import chunk_text, markdown_to_telegram_html
 from ..transcript import log_outbound
 from .base import BaseTool, ToolResult, notify_chat_replied, record_outbound
 
 log = logging.getLogger(__name__)
-
-#: Telegram's hard limit on a single text message.
-_TELEGRAM_TEXT_LIMIT = 4096
-
-
-def _chunk_text(text: str, limit: int = _TELEGRAM_TEXT_LIMIT) -> list[str]:
-    """Split ``text`` into chunks of at most ``limit`` characters.
-
-    Prefers ``\\n\\n`` (paragraph) over ``\\n`` (line) over space over hard-cut.
-    Separators at a chosen boundary are consumed, never duplicated onto the
-    next chunk. Empty input returns ``[""]`` so callers can treat the result
-    as a non-empty list.
-
-    Runs on raw (pre-markdown) text so each chunk can be converted to
-    Telegram HTML independently without splitting an inline tag in half.
-    Markdown constructs rarely span paragraph boundaries, so paragraph-
-    preferring splits keep the rendered output intact.
-    """
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-    while len(remaining) > limit:
-        window = remaining[:limit]
-        for sep in ("\n\n", "\n", " "):
-            idx = window.rfind(sep)
-            if idx > 0:
-                chunks.append(remaining[:idx])
-                next_start = idx + len(sep)
-                # A ``\n\n`` straddling the window edge is only partially
-                # visible to ``rfind("\n\n")`` — we split on the single
-                # ``\n`` we saw, then consume any directly-adjacent ``\n``
-                # so the next chunk doesn't lead with a separator.
-                while (
-                    next_start < len(remaining)
-                    and remaining[next_start] == "\n"
-                ):
-                    next_start += 1
-                remaining = remaining[next_start:]
-                break
-        else:
-            chunks.append(remaining[:limit])
-            remaining = remaining[limit:]
-
-    if remaining:
-        chunks.append(remaining)
-    return chunks
 
 
 class SendMessageArgs(BaseModel):
@@ -84,7 +36,7 @@ class SendMessageTool(BaseTool):
 
         # Chunk the RAW text before markdown conversion so each chunk's HTML
         # is self-contained (no mid-tag splits across chunk boundaries).
-        raw_chunks = _chunk_text(args.text)
+        raw_chunks = chunk_text(args.text)
         parse_mode = args.parse_mode
         if parse_mode is None:
             bodies = [markdown_to_telegram_html(c) for c in raw_chunks]

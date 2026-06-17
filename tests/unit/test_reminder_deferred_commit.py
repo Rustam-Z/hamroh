@@ -15,7 +15,6 @@ outcomes the fix depends on:
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -118,10 +117,10 @@ async def test_worker_failure_discards_callback() -> None:
 
 
 @pytest.mark.asyncio
-async def test_recoverable_dropped_text_holds_callback_until_retry() -> None:
-    """Recoverable dropped-text: turn continues with an injected
-    ``<error>``. Callback must wait for the retry's outcome, not fire
-    on the first (failed) result."""
+async def test_dropped_text_delivers_and_fires_callback() -> None:
+    """Dropped text ends the turn immediately: the engine delivers the
+    text it already produced and fires the on_success callback, so a
+    reminder that triggered the turn advances instead of re-firing."""
     worker = FakeWorker()
     eng = Engine(worker, _CFG, debounce_ms=20)
     fired: list[int] = []
@@ -137,53 +136,11 @@ async def test_recoverable_dropped_text_holds_callback_until_retry() -> None:
         worker.feed(
             TurnResult(
                 text_blocks=["I would say hi"],
-                control=None,
+                control=ControlAction(action="stop", reason="answered"),
                 dropped_text=True,
             )
         )
         await asyncio.sleep(0.05)
-        assert fired == [], "callback fired during recoverable dropped_text"
-
-        worker.feed(
-            TurnResult(
-                control=ControlAction(action="stop", reason="ok"),
-                dropped_text=False,
-            )
-        )
-        await asyncio.sleep(0.05)
-        assert fired == [1]
-    finally:
-        await eng.stop()
-
-
-@pytest.mark.asyncio
-async def test_dropped_text_cap_hit_fires_callback() -> None:
-    """Cap-hit ends the turn for good — CC saw the reminder and just
-    can't form a valid response. Fire the callback so the reminder
-    advances; otherwise the reminder loop would re-fire forever and
-    repeatedly hit the same cap."""
-    cfg = dataclasses.replace(Config.for_test(Path("/tmp")), tool_error_max_count=1)
-
-    worker = FakeWorker()
-    eng = Engine(worker, cfg, debounce_ms=20)
-    fired: list[int] = []
-
-    async def cb() -> None:
-        fired.append(1)
-
-    await eng.start()
-    try:
-        await eng.submit(_msg("hi", mid=1), on_success=cb)
-        await asyncio.sleep(0.08)
-
-        worker.feed(
-            TurnResult(
-                text_blocks=["nope"],
-                control=None,
-                dropped_text=True,
-            )
-        )
-        await asyncio.sleep(0.05)
-        assert fired == [1]
+        assert fired == [1], "dropped-text turn must fire the callback once"
     finally:
         await eng.stop()
