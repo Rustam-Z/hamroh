@@ -117,6 +117,7 @@ async def test_resumed_processes_dm(
     await _assert_resumed_processes(tester_client, dm, dm)
 
 
+@pytest.mark.smoke
 async def test_resumed_processes_group(
     tester_client: TelegramClient, dm: Conversation, group: Conversation
 ) -> None:
@@ -129,6 +130,7 @@ async def test_resumed_processes_group(
     await _assert_resumed_processes(tester_client, dm, group)
 
 
+@pytest.mark.smoke
 @pytest.mark.slow
 async def test_pause_resume_lifecycle_group(
     pyclaudir_sut: Sut,

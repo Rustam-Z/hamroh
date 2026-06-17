@@ -53,5 +53,6 @@ log_cli_level = "INFO"
 log_cli_format = "%(message)s"
 markers = [
     "e2e: real end-to-end tests against live Telegram + claude (opt-in; skip without creds)",
-    "slow: tests that sleep/wait for a real reminder to fire (~90s)",
+    "slow: tests that sleep/wait for a while, e.g. to wait for a session reset or subprocess restart",
+    "smoke: fast critical-path subset proving the bot is alive (basic reply, DM + group)",
 ]

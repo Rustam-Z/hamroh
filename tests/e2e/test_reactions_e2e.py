@@ -6,6 +6,7 @@ reaction actually showing up on the message via Telethon.
 
 from __future__ import annotations
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
@@ -26,6 +27,7 @@ async def _assert_reacts(client: TelegramClient, convo: Conversation) -> None:
     assert_within(elapsed, MAX_REACTION_S, "reaction")
 
 
+@pytest.mark.smoke
 async def test_bot_reacts_with_emoji_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:

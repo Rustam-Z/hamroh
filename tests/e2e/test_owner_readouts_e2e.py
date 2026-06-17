@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -32,7 +33,7 @@ async def _assert_readout(
 
 # --- /health -------------------------------------------------------------
 
-
+@pytest.mark.smoke
 async def test_health_command_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:

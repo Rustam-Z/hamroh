@@ -9,6 +9,7 @@ reset (DM only): the codeword survives ``/reset_session`` — proving
 
 from __future__ import annotations
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -59,6 +60,7 @@ async def test_memory_write_and_read_dm(
     await _assert_write_and_read(pyclaudir_sut, tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_memory_write_and_read_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:
@@ -71,6 +73,7 @@ async def test_memory_write_and_read_group(
     await _assert_write_and_read(pyclaudir_sut, tester_client, group)
 
 
+@pytest.mark.smoke
 async def test_memory_survives_session_reset_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:

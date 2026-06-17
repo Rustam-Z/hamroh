@@ -73,6 +73,7 @@ async def test_reminder_is_scheduled_group(
 
 
 @pytest.mark.slow
+@pytest.mark.smoke
 async def test_reminder_fires_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:

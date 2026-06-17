@@ -7,6 +7,7 @@ from the owner account, which is always authorized in a DM.)
 
 from __future__ import annotations
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from pyclaudir.access import AccessConfig, load_access
@@ -17,6 +18,7 @@ from tests.e2e.support.models import Conversation
 from tests.e2e.support.state import unauthorized_rows
 
 
+@pytest.mark.smoke
 async def test_unauthorized_is_silent_and_logged_group(
     pyclaudir_sut: Sut,
     tester_client: TelegramClient,

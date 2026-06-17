@@ -8,6 +8,7 @@ must be answered within MAX_BURST_S.
 
 from __future__ import annotations
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
@@ -38,6 +39,7 @@ async def _assert_burst_fully_handled(
     assert_within(elapsed, MAX_BURST_S, "burst")
 
 
+@pytest.mark.smoke
 async def test_handles_message_burst_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -50,6 +52,7 @@ async def test_handles_message_burst_dm(
     await _assert_burst_fully_handled(tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_handles_message_burst_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

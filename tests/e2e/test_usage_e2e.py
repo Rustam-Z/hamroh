@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -29,6 +30,7 @@ async def _assert_usage_report(client: TelegramClient, convo: Conversation) -> N
     assert_reply_within(reply, MAX_USAGE_REPLY_S, "/usage")
 
 
+@pytest.mark.smoke
 async def test_usage_command_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:

@@ -8,6 +8,7 @@ memory test.
 
 from __future__ import annotations
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within, assert_within
@@ -75,6 +76,7 @@ async def test_reply_linkage_is_captured_group(
     await _assert_reply_linkage(pyclaudir_sut, tester_client, group)
 
 
+@pytest.mark.smoke
 async def test_context_carries_across_turns_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -87,6 +89,7 @@ async def test_context_carries_across_turns_dm(
     await _assert_context(tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_context_carries_across_turns_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

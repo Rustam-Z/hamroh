@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -42,6 +43,7 @@ async def _assert_prompt_reply(client: TelegramClient, convo: Conversation) -> N
     assert_reply_within(reply, MAX_TEXT_REPLY_S, "reply")
 
 
+@pytest.mark.smoke
 async def test_bot_replies_dm(tester_client: TelegramClient, dm: Conversation) -> None:
     """The bot answers a natural question correctly and promptly in a DM.
 
@@ -52,6 +54,7 @@ async def test_bot_replies_dm(tester_client: TelegramClient, dm: Conversation) -
     await _assert_prompt_reply(tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_bot_replies_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

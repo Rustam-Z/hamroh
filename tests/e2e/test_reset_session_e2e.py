@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -51,6 +52,7 @@ async def test_reset_session_command_dm(
     await _assert_reset_and_recover(tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_reset_session_command_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:
