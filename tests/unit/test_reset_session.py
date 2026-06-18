@@ -16,6 +16,7 @@ from pyclaudir.access import AccessConfig, save_access
 from pyclaudir.cc_worker import CcSpawnSpec, CcWorker, TurnResult
 from pyclaudir.config import Config
 from pyclaudir.engine import Engine
+from pyclaudir.engine.engine import TurnCallbacks
 from pyclaudir.telegram_io import TelegramDispatcher
 
 OWNER = 42
@@ -200,24 +201,32 @@ async def test_stray_result_after_reset_is_not_enqueued(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_engine_discards_callbacks_on_reset_sentinel(tmp_path: Path) -> None:
-    # Given an engine mid-turn with a queued reminder callback
+async def test_engine_reverts_callbacks_on_reset_sentinel(tmp_path: Path) -> None:
+    # Given an engine mid-turn with a queued reminder callback pair
     engine = Engine(MagicMock(), Config.for_test(tmp_path))
     engine._is_processing.set()
     engine._turn.active_chats = {-100}
-    fired: list[bool] = []
+    succeeded: list[bool] = []
+    reverted: list[bool] = []
 
-    async def callback() -> None:
-        fired.append(True)
+    async def on_success() -> None:
+        succeeded.append(True)
 
-    engine._turn_callbacks = [callback]
+    async def on_failure() -> None:
+        reverted.append(True)
+
+    engine._turn_callbacks = [
+        TurnCallbacks(on_success=on_success, on_failure=on_failure)
+    ]
 
     # When the reset sentinel arrives
     await engine._handle_turn_result(TurnResult(aborted_reason="session-reset"))
 
-    # Then the turn ends quietly: callbacks are discarded (reminders stay
-    # pending and retry post-reset) and the engine is idle again
+    # Then the turn ends quietly: on_success never runs (CC never finished
+    # the turn), on_failure runs so the claimed reminder reverts to pending
+    # and retries post-reset, and the engine is idle again
     assert not engine._is_processing.is_set(), "engine must be idle after reset"
-    assert fired == [], "callbacks must NOT fire — CC never finished the turn"
-    assert engine._turn_callbacks == [], "callbacks must be discarded"
+    assert succeeded == [], "on_success must NOT fire — CC never finished the turn"
+    assert reverted == [True], "on_failure must fire so the reminder reverts to pending"
+    assert engine._turn_callbacks == [], "turn callbacks must be cleared"
     assert engine._turn.active_chats == set(), "no chat is owed a reply anymore"

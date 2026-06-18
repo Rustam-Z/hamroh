@@ -1,15 +1,14 @@
-"""Engine-level on_success callback contract that backs reminder
-delivery (issue #22).
+"""Engine-level on_success / on_failure contract behind reminder delivery
+(issue #22).
 
-The reminder loop hangs ``mark_sent`` / ``advance_recurring`` off
-:meth:`Engine.submit`'s ``on_success`` hook so the DB row is only
-updated after CC actually consumes the turn. These tests pin the four
+The reminder loop hangs advance/close on ``on_success`` and revert on
+``on_failure`` (see :meth:`Engine.submit`), so the claimed DB row is only
+committed after CC actually consumes the turn. These tests pin the three
 outcomes the fix depends on:
 
-1. clean turn end → callback fires
-2. CC subprocess crash → callback discarded (reminder retried by next loop tick)
-3. recoverable dropped-text → callback withheld until the retry turn ends
-4. dropped-text cap-hit → callback fires (CC saw the message; retrying is pointless)
+1. clean turn end → ``on_success`` fires, ``on_failure`` does not
+2. CC subprocess crash → ``on_failure`` fires (revert the claim; retry next tick)
+3. dropped-text → the engine delivers the text and fires ``on_success``
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ from pyclaudir.cc_worker import TurnResult
 from pyclaudir.config import Config
 from pyclaudir.engine import Engine
 from pyclaudir.models import ChatMessage, ControlAction
-
 
 _CFG = Config.for_test(Path("/tmp"))
 
@@ -62,22 +60,36 @@ class FakeWorker:
         self._results.put_nowait(item)
 
 
+class _Hooks:
+    """Records which of a submit's paired hooks fired."""
+
+    def __init__(self) -> None:
+        self.succeeded: list[int] = []
+        self.reverted: list[int] = []
+
+    async def on_success(self) -> None:
+        self.succeeded.append(1)
+
+    async def on_failure(self) -> None:
+        self.reverted.append(1)
+
+
 @pytest.mark.asyncio
 async def test_on_success_fires_after_clean_turn_end() -> None:
-    """Happy path: callback runs once the turn ends with action=stop."""
+    """Happy path: on_success runs once the turn ends with action=stop;
+    on_failure is left untouched."""
     worker = FakeWorker()
     eng = Engine(worker, _CFG, debounce_ms=20)
-    fired: list[int] = []
-
-    async def cb() -> None:
-        fired.append(1)
+    hooks = _Hooks()
 
     await eng.start()
     try:
-        await eng.submit(_msg("hi", mid=1), on_success=cb)
+        await eng.submit(
+            _msg("hi", mid=1), on_success=hooks.on_success, on_failure=hooks.on_failure
+        )
         await asyncio.sleep(0.08)
         assert worker.sent, "turn did not start"
-        assert fired == [], "callback fired before turn result"
+        assert hooks.succeeded == [], "on_success fired before the turn result"
 
         worker.feed(
             TurnResult(
@@ -86,51 +98,51 @@ async def test_on_success_fires_after_clean_turn_end() -> None:
             )
         )
         await asyncio.sleep(0.05)
-        assert fired == [1]
+        assert hooks.succeeded == [1], "on_success must fire on a clean turn"
+        assert hooks.reverted == [], "on_failure must not fire on a clean turn"
     finally:
         await eng.stop()
 
 
 @pytest.mark.asyncio
-async def test_worker_failure_discards_callback() -> None:
-    """The bug we're fixing: subprocess crash mid-turn must NOT mark the
-    reminder fired. Discarding leaves the DB row pending so the next
-    reminder loop tick re-fires it."""
+async def test_worker_failure_fires_on_failure() -> None:
+    """The bug we're fixing: a subprocess crash mid-turn must NOT mark the
+    reminder delivered. on_failure fires so the claim is reverted and the
+    next reminder loop tick re-fires it."""
     worker = FakeWorker()
     eng = Engine(worker, _CFG, debounce_ms=20)
-    fired: list[int] = []
-
-    async def cb() -> None:
-        fired.append(1)
+    hooks = _Hooks()
 
     await eng.start()
     try:
-        await eng.submit(_msg("hi", mid=1), on_success=cb)
+        await eng.submit(
+            _msg("hi", mid=1), on_success=hooks.on_success, on_failure=hooks.on_failure
+        )
         await asyncio.sleep(0.08)
         assert worker.sent
 
         worker.feed(RuntimeError("cc subprocess wedged"))
         await asyncio.sleep(0.05)
-        assert fired == [], "callback fired despite worker failure"
+        assert hooks.succeeded == [], "on_success must not fire on a worker crash"
+        assert hooks.reverted == [1], "on_failure must fire so the reminder reverts"
     finally:
         await eng.stop()
 
 
 @pytest.mark.asyncio
-async def test_dropped_text_delivers_and_fires_callback() -> None:
-    """Dropped text ends the turn immediately: the engine delivers the
-    text it already produced and fires the on_success callback, so a
-    reminder that triggered the turn advances instead of re-firing."""
+async def test_dropped_text_delivers_and_fires_on_success() -> None:
+    """Dropped text ends the turn immediately: the engine delivers the text
+    it already produced and fires on_success, so a reminder that triggered
+    the turn advances instead of re-firing. on_failure stays untouched."""
     worker = FakeWorker()
     eng = Engine(worker, _CFG, debounce_ms=20)
-    fired: list[int] = []
-
-    async def cb() -> None:
-        fired.append(1)
+    hooks = _Hooks()
 
     await eng.start()
     try:
-        await eng.submit(_msg("hi", mid=1), on_success=cb)
+        await eng.submit(
+            _msg("hi", mid=1), on_success=hooks.on_success, on_failure=hooks.on_failure
+        )
         await asyncio.sleep(0.08)
 
         worker.feed(
@@ -141,6 +153,7 @@ async def test_dropped_text_delivers_and_fires_callback() -> None:
             )
         )
         await asyncio.sleep(0.05)
-        assert fired == [1], "dropped-text turn must fire the callback once"
+        assert hooks.succeeded == [1], "dropped-text turn must fire on_success once"
+        assert hooks.reverted == [], "on_failure must not fire when text was delivered"
     finally:
         await eng.stop()

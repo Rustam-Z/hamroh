@@ -84,6 +84,22 @@ class TurnState:
     had_restored_context: bool = False
 
 
+@dataclass
+class TurnCallbacks:
+    """A submit's deferred hooks, kept as a pair so success and failure
+    can't desync.
+
+    ``on_success`` runs after the turn that consumed the message ends with
+    a result from CC; ``on_failure`` runs when that turn is discarded
+    mid-flight (subprocess crash, owner session reset). The reminder loop
+    hangs advance/close on success and revert on failure off these — see
+    #22 and the claim model in ``db/reminders.py``.
+    """
+
+    on_success: Callable[[], Awaitable[None]]
+    on_failure: Callable[[], Awaitable[None]] | None = None
+
+
 class Engine(TypingIndicatorMixin):
     def __init__(
         self,
@@ -113,18 +129,18 @@ class Engine(TypingIndicatorMixin):
         #: Typing-indicator state — see :class:`TypingState`.
         self._typing = TypingState()
         self._pending: list[ChatMessage] = []
-        #: Per-submit ``on_success`` hooks queued alongside ``_pending``.
+        #: Per-submit success+failure hooks queued alongside ``_pending``.
         #: Transferred to ``_turn_callbacks`` when the buffer drains into
         #: a turn (``_kick`` / ``_maybe_inject``). The reminder loop hangs
-        #: ``mark_sent`` / ``advance_recurring`` off these so a subprocess
-        #: crash mid-turn doesn't silently lose the reminder — see #22.
-        self._pending_callbacks: list[Callable[[], Awaitable[None]]] = []
-        #: Callbacks bound to the in-flight turn. Fired in
-        #: ``_handle_turn_result`` once the turn definitively ends;
-        #: discarded by ``_handle_worker_failure`` so the caller (reminder
-        #: loop) sees the reminder still ``pending`` and retries on the
-        #: next 60s tick.
-        self._turn_callbacks: list[Callable[[], Awaitable[None]]] = []
+        #: advance/close (success) and revert (failure) off these so a
+        #: subprocess crash mid-turn doesn't lose the reminder — see #22.
+        self._pending_callbacks: list[TurnCallbacks] = []
+        #: Hooks bound to the in-flight turn. ``on_success`` fires in
+        #: ``_fire_turn_callbacks`` once the turn ends cleanly; ``on_failure``
+        #: fires in ``_fail_turn_callbacks`` when the turn is discarded
+        #: mid-flight (worker crash, session reset) so the caller re-arms
+        #: the reminder for the next 60s tick.
+        self._turn_callbacks: list[TurnCallbacks] = []
         self._lock = asyncio.Lock()
         self._is_processing = asyncio.Event()
         self._debounce_task: asyncio.Task[None] | None = None
@@ -151,9 +167,10 @@ class Engine(TypingIndicatorMixin):
             except (asyncio.CancelledError, Exception):
                 pass
         await self._stop_typing()
-        # Drop any queued reminder callbacks — DB rows stay ``pending``
-        # and the next process startup re-fires them via the reminder
-        # loop, which is the right behaviour for a clean shutdown.
+        # Drop any queued reminder callbacks. A claimed reminder is left
+        # ``processing`` in the DB; the next startup's reset_stuck_reminders
+        # re-arms it to ``pending`` so the reminder loop re-fires it — the
+        # right behaviour for a clean shutdown.
         self._pending_callbacks = []
         self._turn_callbacks = []
 
@@ -197,6 +214,7 @@ class Engine(TypingIndicatorMixin):
         msg: ChatMessage,
         *,
         on_success: Callable[[], Awaitable[None]] | None = None,
+        on_failure: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Add an inbound message to the pending buffer.
 
@@ -207,17 +225,20 @@ class Engine(TypingIndicatorMixin):
           inject path is used for *immediate* mid-turn delivery only when
           we're sure CC is mid-stream — see :meth:`_maybe_inject`.
 
-        ``on_success``: optional async hook run after the turn that
-        consumes this message ends with a result from CC. The reminder
-        loop uses this to defer the ``mark_sent`` / ``advance_recurring``
-        DB write until CC has actually processed the reminder XML — a
-        subprocess crash mid-turn discards the hook, leaving the reminder
-        ``pending`` for the next 60s loop tick (see #22).
+        ``on_success`` / ``on_failure``: optional async hooks for the turn
+        that consumes this message. ``on_success`` runs once the turn ends
+        with a result from CC; ``on_failure`` runs when the turn is
+        discarded before CC consumed it (subprocess crash, owner session
+        reset). The reminder loop uses them to advance/close vs revert its
+        claimed DB row, so a crash mid-turn doesn't lose the reminder and a
+        long turn doesn't re-fire it (see #22).
         """
         async with self._lock:
             self._pending.append(msg)
             if on_success is not None:
-                self._pending_callbacks.append(on_success)
+                self._pending_callbacks.append(
+                    TurnCallbacks(on_success=on_success, on_failure=on_failure)
+                )
 
         if self._is_processing.is_set():
             await self._maybe_inject()
@@ -444,20 +465,20 @@ class Engine(TypingIndicatorMixin):
         """CC subprocess died mid-turn. The worker's supervisor handles
         respawning; our job is to tell the user.
 
-        Any queued ``on_success`` callbacks are dropped without firing so
-        the caller (reminder loop) sees the row still ``pending`` and
-        retries — without this, a reminder injected into a turn that
-        crashed before CC consumed it would be silently lost (#22).
+        Queued ``on_failure`` hooks fire so the caller (reminder loop)
+        reverts its claimed row to ``pending`` and retries — without this,
+        a reminder injected into a turn that crashed before CC consumed it
+        would be silently lost (#22).
         """
         log.error("turn failed: %s", exc)
         self._is_processing.clear()
         await self._stop_typing()
         if self._turn_callbacks:
             log.info(
-                "discarding %d turn callback(s) on worker failure — caller will retry",
+                "reverting %d turn callback(s) on worker failure — caller will retry",
                 len(self._turn_callbacks),
             )
-            self._turn_callbacks = []
+            await self._fail_turn_callbacks()
         await self._notify_error_to_chats(
             "⚠️ Sorry, I ran into a temporary issue. "
             "I'm restarting and will be back in a few seconds."
@@ -468,26 +489,46 @@ class Engine(TypingIndicatorMixin):
         """Run every ``on_success`` hook queued for the just-ended turn.
 
         Called from ``_handle_turn_result`` once the turn definitively
-        ends — clean stop, dropped-text cap-hit, or tool-error-limit
-        abort. The recoverable dropped-text branch leaves callbacks
-        queued because that turn continues. Each callback is independent;
-        one failing doesn't suppress the rest. See #22.
+        ends — clean stop, dropped-text delivery, tool-error-limit abort,
+        or api-error. CC saw the messages, so reminders advance/close.
+        Each hook is independent; one failing doesn't suppress the rest.
+        See #22.
         """
         callbacks = self._turn_callbacks
         self._turn_callbacks = []
         for cb in callbacks:
             try:
-                await cb()
+                await cb.on_success()
             except Exception:
                 log.exception("turn-success callback failed")
+
+    async def _fail_turn_callbacks(self) -> None:
+        """Run every ``on_failure`` hook for a turn discarded before CC
+        consumed it (subprocess crash, owner session reset).
+
+        Mirrors :meth:`_fire_turn_callbacks`. The reminder loop hangs a
+        ``revert_reminder`` here so a claimed reminder returns to
+        ``pending`` and re-fires on the next loop tick — the #22
+        at-least-once guarantee, preserved now that the row is claimed.
+        Each hook is independent; one failing doesn't suppress the rest.
+        """
+        callbacks = self._turn_callbacks
+        self._turn_callbacks = []
+        for cb in callbacks:
+            if cb.on_failure is None:
+                continue
+            try:
+                await cb.on_failure()
+            except Exception:
+                log.exception("turn-failure callback failed")
 
     async def _handle_aborted_turn(self, result: "TurnResult") -> None:
         """Handle a short-circuited turn (``aborted_reason`` set).
 
         - ``session-reset``: owner asked for a fresh session mid-turn.
-          CC never finished the turn, so callbacks are discarded —
-          reminders stay ``pending`` and re-fire into the fresh session
-          on the next loop tick (#22).
+          CC never finished the turn, so ``on_failure`` fires — reminders
+          revert to ``pending`` and re-fire into the fresh session on the
+          next loop tick (#22).
         - ``tool-error-limit``: don't notify here — ``_on_cc_crash``
           tells the user when the subprocess exits, so ``active_chats``
           stays intact for that callback. CC saw the messages before
@@ -498,7 +539,7 @@ class Engine(TypingIndicatorMixin):
         """
         if result.aborted_reason == "session-reset":
             log.info("turn aborted: session reset requested by owner")
-            self._turn_callbacks = []
+            await self._fail_turn_callbacks()
             self._turn.active_chats.clear()
             return
         log.error("turn aborted: %s", result.aborted_reason)

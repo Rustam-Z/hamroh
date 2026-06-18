@@ -27,7 +27,11 @@ from .cc_worker import CcSpawnSpec, CcWorker
 from .config import Config
 from .db.database import Database
 from .db.messages import fetch_unconsumed_inbound, insert_tool_call
-from .db.reminders import insert_auto_seeded_reminder, pending_with_auto_seed_key
+from .db.reminders import (
+    insert_auto_seeded_reminder,
+    pending_with_auto_seed_key,
+    reset_stuck_reminders,
+)
 from .engine import Engine
 from .instructions_store import InstructionsStore
 from .mcp_server import McpServer
@@ -326,6 +330,12 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
     )
 
     stores = _build_stores(config, db, plugins)
+    re_armed = await reset_stuck_reminders(db)
+    if re_armed:
+        log.info(
+            "re-armed %d reminder(s) left mid-delivery by the last shutdown",
+            re_armed,
+        )
     await _seed_default_reminders(db, config)
     return db, plugins, stores
 
