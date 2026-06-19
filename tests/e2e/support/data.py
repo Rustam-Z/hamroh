@@ -30,3 +30,21 @@ def recall_prompt() -> tuple[str, str]:
     """
     token = new_sentinel("REF")
     return f"My reference number is {token}. What is my reference number?", token
+
+
+def split_message_prompt() -> tuple[str, tuple[str, str, str]]:
+    """A prompt that explicitly asks for three *separate* Telegram messages,
+    each carrying its own unique token, plus those three tokens to look for.
+
+    Used to prove the bot can deliver more than one message per request.
+    Returns ``(question, tokens)``.
+    """
+    tokens = (new_sentinel("PART1"), new_sentinel("PART2"), new_sentinel("PART3"))
+    question = (
+        "Send me three separate Telegram messages, one after another — "
+        "do not combine them into a single message. "
+        f"The first message must say {tokens[0]}, "
+        f"the second must say {tokens[1]}, "
+        f"and the third must say {tokens[2]}."
+    )
+    return question, tokens

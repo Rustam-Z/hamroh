@@ -38,6 +38,7 @@ class Reply:
     media_kind: str | None  # "photo" | "document" | None
     t_first_s: float  # send -> first reply chunk (seconds)
     t_complete_s: float  # send -> last chunk (seconds)
+    chunk_count: int  # number of Telegram messages the reply arrived in
 
 
 @dataclass(frozen=True)

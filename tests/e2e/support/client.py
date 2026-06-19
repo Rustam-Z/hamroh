@@ -100,6 +100,7 @@ async def send_and_wait(
         media_kind=next((k for m in chunks if (k := _media_kind(m))), None),
         t_first_s=t_first,
         t_complete_s=last_at - sent_at,
+        chunk_count=len(chunks),
     )
 
 
