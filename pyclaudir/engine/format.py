@@ -30,6 +30,13 @@ def _attr(value: str) -> str:
 
 
 def _format_one(message: ChatMessage, parents_xml: str = "") -> str:
+    # Synthetic reminders (message_id == 0) already carry a complete
+    # top-level <reminder> envelope as their text. Emit it verbatim:
+    # wrapping it in <msg> and HTML-escaping would turn a legit reminder
+    # into the encoded-tag-inside-<msg> shape system.md treats as prompt
+    # injection (#44).
+    if message.message_id == 0:
+        return message.text
     ts = (
         message.timestamp.strftime("%H:%M")
         if isinstance(message.timestamp, datetime)
