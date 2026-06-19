@@ -26,7 +26,6 @@ from pyclaudir.db.messages import (
     mark_messages_processed,
 )
 from pyclaudir.engine import Engine
-from pyclaudir.engine.engine import TurnCallbacks
 from pyclaudir.models import ChatMessage
 
 POLICY_ERROR = (
@@ -120,7 +119,7 @@ async def test_policy_error_notifies_and_resets_session(tmp_path: Path) -> None:
     async def callback() -> None:
         fired.append(True)
 
-    engine._turn_callbacks = [TurnCallbacks(on_success=callback)]
+    engine._turn_callbacks = [callback]
     result = TurnResult(
         text_blocks=[POLICY_ERROR], dropped_text=True, api_error=POLICY_ERROR
     )

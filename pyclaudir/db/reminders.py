@@ -51,60 +51,11 @@ async def mark_reminder_sent(db: Database, reminder_id: int) -> None:
 async def advance_recurring_reminder(
     db: Database, reminder_id: int, next_trigger_at: str
 ) -> None:
-    """Re-arm a recurring reminder for its next occurrence.
-
-    Sets the next ``trigger_at`` and returns the row to ``pending`` (it
-    was ``processing`` while in flight) so the scheduler picks it up at
-    the next slot rather than re-firing immediately.
-    """
+    """Update trigger_at for a recurring reminder to the next occurrence."""
     await db.execute(
-        "UPDATE reminders SET trigger_at = ?, status = 'pending' WHERE id = ?",
+        "UPDATE reminders SET trigger_at = ? WHERE id = ?",
         (next_trigger_at, reminder_id),
     )
-
-
-async def claim_reminder(db: Database, reminder_id: int) -> bool:
-    """Atomically claim a pending reminder for delivery.
-
-    Flips ``pending`` -> ``processing`` so the next poll's
-    :func:`fetch_due_reminders` skips it (that query only returns
-    ``pending`` rows). Returns True if this call won the row. The atomic
-    guard also stops a second poll tick from re-claiming a reminder that
-    is already in flight — the root cause of #44 / #48.
-    """
-    cursor = await db.connection.execute(
-        "UPDATE reminders SET status = 'processing' WHERE id = ? AND status = 'pending'",
-        (reminder_id,),
-    )
-    await db.connection.commit()
-    return cursor.rowcount > 0
-
-
-async def revert_reminder(db: Database, reminder_id: int) -> None:
-    """Return an in-flight reminder to ``pending`` so it re-fires.
-
-    Called when the turn delivering the reminder failed before CC
-    consumed it (subprocess crash, owner session reset). Preserves the
-    #22 'stay pending on failure' guarantee now that the row is claimed.
-    """
-    await db.execute(
-        "UPDATE reminders SET status = 'pending' WHERE id = ? AND status = 'processing'",
-        (reminder_id,),
-    )
-
-
-async def reset_stuck_reminders(db: Database) -> int:
-    """Re-arm reminders left ``processing`` by a crash or shutdown.
-
-    Run once at startup: nothing can be in flight immediately after boot,
-    so any ``processing`` row is a delivery that never finished. Returns
-    the number of rows re-armed.
-    """
-    cursor = await db.connection.execute(
-        "UPDATE reminders SET status = 'pending' WHERE status = 'processing'",
-    )
-    await db.connection.commit()
-    return int(cursor.rowcount)
 
 
 async def cancel_reminder(db: Database, reminder_id: int) -> bool:
