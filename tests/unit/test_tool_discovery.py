@@ -8,12 +8,40 @@ from pathlib import Path
 
 import pytest
 
+from mcp.server.fastmcp.utilities.func_metadata import func_metadata
+
 from pyclaudir import tools as tools_pkg
 from pyclaudir.cc_worker.event_handlers import USER_VISIBLE_TOOLS
-from pyclaudir.mcp_server import discover_tool_classes
+from pyclaudir.mcp_server import _make_wrapper, discover_tool_classes
 from pyclaudir.tools.base import BaseTool, ToolContext
 
 MCP_PREFIX = "mcp__pyclaudir__"
+
+
+def _input_schema(tool: BaseTool) -> dict:
+    """Build the JSON input schema FastMCP exposes for a tool — the exact
+    ``func_metadata`` path FastMCP uses at registration."""
+    wrapper = _make_wrapper(tool, db_logger=None)
+    meta = func_metadata(wrapper, structured_output=False)
+    return meta.arg_model.model_json_schema()
+
+
+def test_field_descriptions_and_constraints_reach_the_schema() -> None:
+    """The wrapper must carry each pydantic ``Field`` description AND its
+    constraints into the MCP input schema — otherwise everything we write in
+    ``Field(description=..., max_length=...)`` is invisible to the model."""
+    from pyclaudir.tools.telegram_create_poll import TelegramCreatePollTool
+
+    props = _input_schema(TelegramCreatePollTool(ToolContext()))["properties"]
+
+    # A per-field description survives the flat-parameter wrapper.
+    assert props["correct_option_id"]["description"], (
+        "Field descriptions are being dropped before the model sees them"
+    )
+    # A length constraint survives too.
+    assert props["question"]["maxLength"] == 300, (
+        "Field constraints are being dropped before the model sees them"
+    )
 
 
 def test_now_tool_is_discovered() -> None:

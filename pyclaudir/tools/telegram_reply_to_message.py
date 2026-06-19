@@ -9,16 +9,30 @@ from .telegram_send_message import SendMessageArgs, TelegramSendMessageTool
 
 
 class ReplyToMessageArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id.")
-    reply_to_message_id: int = Field(description="The message_id to quote-reply.")
-    text: str = Field(description="Reply body.")
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
+    reply_to_message_id: int = Field(
+        description="Numeric id of the message to quote-reply within chat_id."
+    )
+    text: str = Field(
+        description=(
+            "Reply body. Markdown by default — auto-converted to Telegram HTML."
+        )
+    )
 
 
 class TelegramReplyToMessageTool(BaseTool):
     name = "telegram_reply_to_message"
     description = (
-        "Send a quote-reply to a specific message. Use this when the chat is "
-        "active and your reply needs to be unambiguously tied to one message."
+        "Send a quote-reply tied to a specific message, so the parent is "
+        "unambiguous (useful in busy group chats). Use when your reply must "
+        "reference one message. For a standalone message with no quoted "
+        "parent, use telegram_send_message instead. Sends immediately; long "
+        "text auto-splits at paragraph boundaries."
     )
     args_model = ReplyToMessageArgs
 

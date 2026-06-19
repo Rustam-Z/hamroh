@@ -12,15 +12,18 @@ log = logging.getLogger(__name__)
 
 
 class StopPollArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id where the poll was sent.")
-    message_id: int = Field(description="message_id of the poll to close.")
+    chat_id: int = Field(
+        description="Numeric Telegram chat id where the poll was sent."
+    )
+    message_id: int = Field(description="Numeric message_id of the poll to close.")
 
 
 class TelegramStopPollTool(BaseTool):
     name = "telegram_stop_poll"
     description = (
-        "Close a Telegram poll early and return the final vote tallies. "
-        "Takes the chat_id and message_id returned by telegram_create_poll."
+        "Close an open Telegram poll early and return the final vote tallies. "
+        "Use the chat_id and message_id returned by the telegram_create_poll "
+        "that created it. The poll stops accepting votes immediately."
     )
     args_model = StopPollArgs
 

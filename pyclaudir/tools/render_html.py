@@ -180,11 +180,12 @@ class RenderHtmlTool(BaseTool):
     name = "render_html"
     description = (
         "Render an HTML snippet to a PNG via headless Chromium and save it "
-        "under data/renders/. Returns the relative path; pair with "
-        "telegram_send_photo to deliver it to a chat. Use for tables/charts/diffs "
-        "that Telegram markdown can't represent — Telegram doesn't render "
-        "ASCII tables well. Outbound network is BLOCKED inside the browser, "
-        "so inline any CSS/JS libs you need (Chart.js, D3, fonts)."
+        "under data/renders/. Returns the relative path; it is NOT sent — pair "
+        "with telegram_send_photo to deliver it. Use for tables/charts/diffs "
+        "Telegram markdown can't represent (it renders ASCII tables poorly); "
+        "for math formulas use render_latex. Outbound network is BLOCKED in "
+        "the browser, so inline any CSS/JS libs you need (Chart.js, D3, "
+        "fonts). Renders synchronously with a ~30s budget."
     )
     args_model = RenderHtmlArgs
 

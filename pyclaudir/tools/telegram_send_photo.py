@@ -20,7 +20,12 @@ _CAPTION_LIMIT = 1024
 
 
 class SendPhotoArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id.")
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
     path: str = Field(
         description=(
             "Relative path under data/renders/ — typically the value "
@@ -30,17 +35,27 @@ class SendPhotoArgs(BaseModel):
     caption: str | None = Field(
         default=None,
         max_length=_CAPTION_LIMIT,
-        description="Optional plain-text caption shown under the photo.",
+        description="Optional plain-text caption shown under the photo (max 1024 chars).",
     )
-    reply_to_message_id: int | None = None
+    reply_to_message_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional. Quote-reply the photo to this message id; omit for a "
+            "standalone send."
+        ),
+    )
 
 
 class TelegramSendPhotoTool(BaseTool):
     name = "telegram_send_photo"
     description = (
-        "Send a rendered photo (under data/renders/) to a Telegram chat. "
-        "Use after render_html to deliver the image as an inline photo "
-        "(with preview), not a document. Path-locked to the renders root."
+        "Deliver a rendered image (from data/renders/, e.g. the path returned "
+        "by render_html or render_latex) to a chat as an inline Telegram photo "
+        "with preview. Use for tables/charts/math that Telegram markdown can't "
+        "show. For an arbitrary file as a download use "
+        "telegram_send_memory_document; for plain text use "
+        "telegram_send_message. Path-locked to the renders root; sends "
+        "immediately."
     )
     args_model = SendPhotoArgs
 

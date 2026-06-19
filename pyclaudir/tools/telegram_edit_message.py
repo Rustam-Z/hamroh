@@ -11,16 +11,33 @@ from .base import BaseTool, ToolResult
 
 
 class EditMessageArgs(BaseModel):
-    chat_id: int
-    message_id: int
-    text: str = Field(description="New message body.")
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
+    message_id: int = Field(
+        description=(
+            "Numeric id of the bot's own message to edit (e.g. a message_id "
+            "returned by telegram_send_message)."
+        )
+    )
+    text: str = Field(
+        description=(
+            "New body, replacing the old text entirely. Markdown by default — "
+            "auto-converted to Telegram HTML."
+        )
+    )
 
 
 class TelegramEditMessageTool(BaseTool):
     name = "telegram_edit_message"
     description = (
-        "Edit a previously sent message. Edits don't trigger Telegram push "
-        "notifications, so use this for interim progress updates."
+        "Replace the text of a message THIS BOT already sent. Use for "
+        "in-progress updates on a long task — edits do NOT trigger a Telegram "
+        "push notification, unlike a new message. Only works on the bot's own "
+        "recent messages; to post fresh text use telegram_send_message."
     )
     args_model = EditMessageArgs
 

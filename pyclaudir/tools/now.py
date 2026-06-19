@@ -16,8 +16,10 @@ class NowArgs(BaseModel):
 class NowTool(BaseTool):
     name = "now"
     description = (
-        "Return the current time as ISO8601 in both UTC and the host's local timezone. "
-        "Useful as a basic 'is the tool channel alive' check."
+        "Return the current time as ISO8601 in both UTC and the host's local "
+        "timezone. Use to ground 'now' before computing a date/time. To "
+        "schedule a future action use set_reminder, not this. Doubles as a "
+        "basic 'is the tool channel alive' check."
     )
     args_model = NowArgs
 

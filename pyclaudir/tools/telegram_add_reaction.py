@@ -28,8 +28,13 @@ _ALLOWLIST_DISPLAY = " ".join(sorted(SUPPORTED_REACTIONS))
 
 
 class AddReactionArgs(BaseModel):
-    chat_id: int
-    message_id: int
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
+    message_id: int = Field(description="Numeric id of the message to react to.")
     emoji: str = Field(
         description=f"One of the Telegram-supported reaction emojis: {_ALLOWLIST_DISPLAY}."
     )
@@ -38,8 +43,10 @@ class AddReactionArgs(BaseModel):
 class TelegramAddReactionTool(BaseTool):
     name = "telegram_add_reaction"
     description = (
-        "React to a Telegram message with a single Telegram-supported emoji. "
-        f"Allowed emojis: {_ALLOWLIST_DISPLAY}."
+        "React to a Telegram message with a single emoji from Telegram's fixed "
+        "allowlist (see the emoji parameter for the exact set). Prefer a "
+        "reaction over a throwaway 'ok'/'👍' text message in groups. Replaces "
+        "any previous reaction the bot left on that message."
     )
     args_model = AddReactionArgs
 

@@ -13,17 +13,45 @@ log = logging.getLogger(__name__)
 
 
 class CreatePollArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id.")
-    question: str = Field(min_length=1, max_length=300)
-    options: list[str] = Field(min_length=2, max_length=10)
-    is_anonymous: bool = True
-    type: Literal["regular", "quiz"] = "regular"
-    allows_multiple_answers: bool = False
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
+    question: str = Field(
+        min_length=1, max_length=300, description="Poll question (1–300 chars)."
+    )
+    options: list[str] = Field(
+        min_length=2,
+        max_length=10,
+        description="Answer options: 2–10 strings, each 1–100 chars.",
+    )
+    is_anonymous: bool = Field(
+        default=True, description="Whether votes are anonymous. Default true."
+    )
+    type: Literal["regular", "quiz"] = Field(
+        default="regular",
+        description=(
+            "'regular' for a normal vote, 'quiz' for a single-correct-answer "
+            "quiz. Default 'regular'."
+        ),
+    )
+    allows_multiple_answers: bool = Field(
+        default=False,
+        description=(
+            "Let voters pick several options. Regular polls only; must be "
+            "false for quizzes. Default false."
+        ),
+    )
     correct_option_id: int | None = Field(
         default=None,
         ge=0,
         le=9,
-        description="0-based index of the correct option. Required for quizzes.",
+        description=(
+            "0-based index of the correct option. Required when type='quiz'; "
+            "omit for regular polls."
+        ),
     )
     explanation: str | None = Field(
         default=None,
@@ -40,7 +68,13 @@ class CreatePollArgs(BaseModel):
         default=None,
         description="Unix timestamp 5-600s in the future. Mutually exclusive with open_period.",
     )
-    reply_to_message_id: int | None = None
+    reply_to_message_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional. Quote-reply the poll to this message id; omit for a "
+            "standalone poll."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "CreatePollArgs":
@@ -67,9 +101,14 @@ class CreatePollArgs(BaseModel):
 class TelegramCreatePollTool(BaseTool):
     name = "telegram_create_poll"
     description = (
-        "Send a Telegram poll. Supports regular polls, quizzes (with correct "
-        "answer + explanation), multi-answer, non-anonymous voting, an auto-close "
-        "timer, and reply-to. Returns the new message_id and poll_id."
+        "Send a Telegram poll — a regular vote or a quiz with one correct "
+        "answer. Use for structured voting; for plain text use "
+        "telegram_send_message. Sends immediately. Rules: 2–10 options, each "
+        "1–100 chars; for type='quiz' you MUST set correct_option_id and must "
+        "NOT set allows_multiple_answers; for type='regular' omit "
+        "correct_option_id and explanation; open_period and close_date are "
+        "mutually exclusive. Returns message_id and poll_id (pass them to "
+        "telegram_stop_poll to close the poll early)."
     )
     args_model = CreatePollArgs
 

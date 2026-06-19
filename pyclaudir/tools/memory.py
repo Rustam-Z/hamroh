@@ -94,7 +94,9 @@ class WriteMemoryTool(BaseTool):
         "If the file already exists you MUST call read_memory on it first "
         "in the same session — this is a safety rail to stop accidental "
         "destruction of operator-curated notes. New files (that don't yet "
-        "exist) can be created without a prior read."
+        "exist) can be created without a prior read. Writes to local storage "
+        "only — to send a memory file to the user, use "
+        "telegram_send_memory_document."
     )
     args_model = WriteMemoryArgs
 

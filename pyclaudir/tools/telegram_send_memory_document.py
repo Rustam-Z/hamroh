@@ -21,7 +21,12 @@ _CAPTION_LIMIT = 1024
 
 
 class SendMemoryDocumentArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id.")
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
     path: str = Field(
         description=(
             "Relative path under data/memories/ — same shape as "
@@ -31,19 +36,26 @@ class SendMemoryDocumentArgs(BaseModel):
     caption: str | None = Field(
         default=None,
         max_length=_CAPTION_LIMIT,
-        description="Optional plain-text caption shown under the file.",
+        description="Optional plain-text caption shown under the file (max 1024 chars).",
     )
-    reply_to_message_id: int | None = None
+    reply_to_message_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional. Quote-reply the document to this message id; omit for a "
+            "standalone send."
+        ),
+    )
 
 
 class TelegramSendMemoryDocumentTool(BaseTool):
     name = "telegram_send_memory_document"
     description = (
-        "Send a memory file (under data/memories/) to a Telegram chat as a "
-        "downloadable document. Path is locked to the memories root with the "
-        "same hardening as read_memory. Use this when the user asks for a "
-        "memory file as an attachment rather than pasted text — handy for "
-        "csv/log/large markdown they want to save."
+        "Send a memory file (from data/memories/) to a chat as a downloadable "
+        "document. Use when the user asks for a memory file as an attachment "
+        "rather than pasted text — handy for csv/log/large markdown. For a "
+        "rendered image use telegram_send_photo; for plain text use "
+        "telegram_send_message. Path-locked to the memories root (same "
+        "hardening as read_memory); sends immediately."
     )
     args_model = SendMemoryDocumentArgs
 

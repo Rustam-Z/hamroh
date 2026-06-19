@@ -15,18 +15,46 @@ log = logging.getLogger(__name__)
 
 
 class SendMessageArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id.")
-    text: str = Field(description="Message body. Plain text by default.")
-    reply_to_message_id: int | None = Field(default=None)
-    parse_mode: Literal["HTML", "MarkdownV2", None] = Field(default=None)
+    chat_id: int = Field(
+        description=(
+            "Numeric Telegram chat id (e.g. -1001234567890 for a group, a "
+            "positive int for a DM). Not an @username."
+        )
+    )
+    text: str = Field(
+        description=(
+            "Message body. Markdown by default — auto-converted to Telegram "
+            "HTML. Sent verbatim when parse_mode is set."
+        )
+    )
+    reply_to_message_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional. Make this a quote-reply to the given message id. When a "
+            "reply target is required, prefer telegram_reply_to_message."
+        ),
+    )
+    parse_mode: Literal["HTML", "MarkdownV2", None] = Field(
+        default=None,
+        description=(
+            "Optional. Leave null for normal markdown text (auto-converted to "
+            "HTML). Set 'HTML' or 'MarkdownV2' only to send pre-formatted "
+            "content verbatim."
+        ),
+    )
 
 
 class TelegramSendMessageTool(BaseTool):
     name = "telegram_send_message"
     description = (
-        "Send a text message to a Telegram chat. Long replies are split "
-        "automatically at paragraph boundaries. Returns the first new "
-        "message_id plus the full list in ``message_ids``."
+        "Send a NEW text message to a Telegram chat — the primary way to "
+        "deliver text to the user. Use for any standalone reply. Does NOT edit "
+        "or quote existing messages (use telegram_edit_message / "
+        "telegram_reply_to_message) and does NOT send images or files (use "
+        "telegram_send_photo / telegram_send_memory_document). Sends "
+        "immediately and cannot be unsent. Long text is auto-split at "
+        "paragraph boundaries; returns the first message_id plus every id in "
+        "``message_ids``."
     )
     args_model = SendMessageArgs
 

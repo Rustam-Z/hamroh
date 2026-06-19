@@ -85,11 +85,13 @@ class RenderLatexArgs(BaseModel):
 class RenderLatexTool(BaseTool):
     name = "render_latex"
     description = (
-        "Render a LaTeX expression to a PNG via KaTeX. Use for math "
-        "formulas, equations, integrals, matrices — anything LaTeX-native "
-        "that Telegram can't display inline. Returns the relative path "
-        "under data/renders/; pair with telegram_send_photo to deliver. Pass the "
-        "LaTeX without surrounding $$ — the wrapper adds them."
+        "Render a LaTeX expression to a PNG via KaTeX. Use for math formulas, "
+        "equations, integrals, matrices — anything LaTeX-native Telegram can't "
+        "display inline; for general tables/charts use render_html. Returns "
+        "the relative path under data/renders/; it is NOT sent — pair with "
+        "telegram_send_photo to deliver. Pass the LaTeX without surrounding $$ "
+        "(the wrapper adds them) and without a literal </script> token. "
+        "Renders synchronously with a ~30s budget."
     )
     args_model = RenderLatexArgs
 

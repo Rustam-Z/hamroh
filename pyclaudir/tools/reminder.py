@@ -20,22 +20,26 @@ from .base import BaseTool, ToolResult
 # ---------------------------------------------------------------------------
 
 class SetReminderArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id where the reminder should fire.")
-    user_id: int = Field(description="Telegram user id who requested the reminder.")
+    chat_id: int = Field(
+        description="Numeric Telegram chat id where the reminder should fire."
+    )
+    user_id: int = Field(
+        description="Numeric Telegram user id who requested the reminder."
+    )
     text: str = Field(description="The reminder message text.")
     trigger_at: str = Field(
         description=(
-            "When to fire, as a UTC ISO-8601 datetime string "
-            "(e.g. '2026-04-15T14:30:00Z'). You MUST convert the user's "
-            "local time to UTC before passing this value."
+            "When to fire, as a UTC ISO-8601 datetime string with offset "
+            "(e.g. '2026-04-15T14:30:00Z'). Must be in the FUTURE. Convert the "
+            "user's local time to UTC before passing this value."
         ),
     )
     cron_expr: str | None = Field(
         default=None,
         description=(
-            "Optional cron expression for recurring reminders "
-            "(e.g. '0 9 * * 1-5' for weekdays at 09:00 UTC). "
-            "Leave null for one-shot reminders."
+            "Optional 5-field cron expression (evaluated in UTC) for recurring "
+            "reminders, e.g. '0 9 * * 1-5' for weekdays at 09:00 UTC. Leave "
+            "null for one-shot reminders."
         ),
     )
 
@@ -43,10 +47,11 @@ class SetReminderArgs(BaseModel):
 class SetReminderTool(BaseTool):
     name = "set_reminder"
     description = (
-        "Schedule a reminder. Provide trigger_at in UTC. "
-        "For recurring reminders, also provide a cron expression. "
-        "Ask the user for their timezone if not already known, and convert "
-        "to UTC before calling this tool."
+        "Schedule a reminder to fire later — one-shot (trigger_at only) or "
+        "recurring (also set cron_expr). trigger_at is UTC ISO-8601 and must "
+        "be in the future; ask the user's timezone if unknown and convert to "
+        "UTC first. Do NOT use for something to do right now — just do it. "
+        "Manage existing reminders with list_reminders and cancel_reminder."
     )
     args_model = SetReminderArgs
 
@@ -120,12 +125,15 @@ class SetReminderTool(BaseTool):
 # ---------------------------------------------------------------------------
 
 class ListRemindersArgs(BaseModel):
-    chat_id: int = Field(description="Telegram chat id to list reminders for.")
+    chat_id: int = Field(description="Numeric Telegram chat id to list reminders for.")
 
 
 class ListRemindersTool(BaseTool):
     name = "list_reminders"
-    description = "List all pending reminders for a chat, ordered by trigger time."
+    description = (
+        "List all pending reminders for a chat, ordered by trigger time. Use "
+        "to find a reminder's id before calling cancel_reminder."
+    )
     args_model = ListRemindersArgs
 
     async def run(self, args: ListRemindersArgs) -> ToolResult:
@@ -151,16 +159,20 @@ class ListRemindersTool(BaseTool):
 # ---------------------------------------------------------------------------
 
 class CancelReminderArgs(BaseModel):
-    reminder_id: int = Field(description="The id of the reminder to cancel.")
+    reminder_id: int = Field(
+        description=(
+            "Numeric id of the reminder to cancel, as shown by list_reminders."
+        )
+    )
 
 
 class CancelReminderTool(BaseTool):
     name = "cancel_reminder"
     description = (
-        "Cancel a pending reminder by id. Auto-seeded mandatory "
-        "reminders (e.g. the self-reflection loop) cannot be cancelled "
-        "through this tool — attempts are refused and the reminder "
-        "continues to fire on schedule."
+        "Cancel a pending reminder by id (get ids from list_reminders). "
+        "Auto-seeded mandatory reminders (e.g. the self-reflection loop) "
+        "cannot be cancelled through this tool — attempts are refused and the "
+        "reminder continues to fire on schedule."
     )
     args_model = CancelReminderArgs
 

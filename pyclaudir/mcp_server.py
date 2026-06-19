@@ -19,7 +19,7 @@ import logging
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
@@ -37,10 +37,13 @@ MCP_SERVER_NAME = "pyclaudir"
 def _make_wrapper(tool: BaseTool, db_logger):
     """Build a flat-parameter callable FastMCP can introspect.
 
-    Pydantic field info is dropped because FastMCP reads ``inspect.signature``,
-    not Pydantic, but the input schema (types, required, defaults) is
-    preserved. The wrapper validates with the model, runs the tool, beats the
-    heartbeat, and audit-logs the call.
+    FastMCP reads ``inspect.signature`` (not Pydantic) to build the tool's
+    input schema, so each parameter's annotation is wrapped as
+    ``Annotated[type, FieldInfo]`` — reusing the model's own ``FieldInfo``.
+    That carries the per-field description and constraints (min/max length,
+    ge/le, enums) through into the schema the model sees; without it only the
+    bare type and default would survive. The wrapper validates with the
+    model, runs the tool, beats the heartbeat, and audit-logs the call.
     """
     args_model = tool.args_model
     fields = args_model.model_fields
@@ -53,7 +56,7 @@ def _make_wrapper(tool: BaseTool, db_logger):
                 fname,
                 inspect.Parameter.KEYWORD_ONLY,
                 default=default,
-                annotation=finfo.annotation,
+                annotation=Annotated[finfo.annotation, finfo],
             )
         )
     # No fixed return annotation — most tools return str, but telegram_read_attachment
