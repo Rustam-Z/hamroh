@@ -142,6 +142,23 @@ async def pending_with_auto_seed_key(db: Database, key: str) -> int:
     return int(row["c"]) if row is not None else 0
 
 
+async def cancel_auto_seeded(db: Database, key: str) -> int:
+    """Cancel pending reminders tagged with the given auto_seed_key.
+
+    Counterpart to :func:`pending_with_auto_seed_key`. Used when an
+    auto-seeded loop (currently self-reflection) is switched off by the
+    operator so the existing pending row stops firing. Returns the number
+    of rows cancelled.
+    """
+    cursor = await db.connection.execute(
+        "UPDATE reminders SET status = 'cancelled' "
+        "WHERE auto_seed_key = ? AND status = 'pending'",
+        (key,),
+    )
+    await db.connection.commit()
+    return int(cursor.rowcount)
+
+
 async def fetch_reminder_by_id(db: Database, reminder_id: int) -> dict | None:
     """Fetch a single reminder by id, or None if not found."""
     row = await db.fetch_one(

@@ -28,6 +28,7 @@ from .config import Config
 from .db.database import Database
 from .db.messages import fetch_unconsumed_inbound, insert_tool_call
 from .db.reminders import (
+    cancel_auto_seeded,
     insert_auto_seeded_reminder,
     pending_with_auto_seed_key,
     reset_stuck_reminders,
@@ -76,16 +77,30 @@ _SELF_REFLECTION_KEY = "self-reflection-default"
 
 
 async def _seed_default_reminders(db, config) -> None:
-    """Ensure the default self-reflection reminder is active.
+    """Reconcile the default self-reflection reminder with the config flag.
 
-    The self-reflection loop is **mandatory** — the bot shouldn't be
-    able to stop learning. On every startup we check whether a PENDING
-    row with ``auto_seed_key='self-reflection-default'`` exists. If
-    not (missing entirely, cancelled, deleted, whatever the reason),
-    we re-seed. Cancellation is also blocked at the tool layer — see
-    ``CancelReminderTool`` — so this is defense in depth against DB
-    tampering or manual SQL.
+    The self-reflection loop is opt-in via ``PYCLAUDIR_SELF_REFLECTION_ENABLED``
+    (off by default). This is an operator-only switch read from the
+    environment — the bot can't reach it, and while the loop is on the
+    agent can't cancel it (see ``CancelReminderTool``).
+
+    Off: cancel any pending auto-seeded row so it stops firing, then return.
+    On: ensure a PENDING row with ``auto_seed_key='self-reflection-default'``
+    exists. If it's missing (cancelled, deleted, whatever the reason) we
+    re-seed it — defense in depth against DB tampering while enabled.
     """
+    if not config.self_reflection_enabled:
+        cancelled = await cancel_auto_seeded(db, _SELF_REFLECTION_KEY)
+        log.info(
+            "self-reflection disabled; cancelled %d pending reminder(s)",
+            cancelled,
+        )
+        return
+    await _ensure_self_reflection_seeded(db, config)
+
+
+async def _ensure_self_reflection_seeded(db, config) -> None:
+    """Seed the self-reflection reminder unless a pending row already exists."""
     existing = await pending_with_auto_seed_key(db, _SELF_REFLECTION_KEY)
     if existing > 0:
         log.info(

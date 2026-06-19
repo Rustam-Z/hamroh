@@ -55,6 +55,13 @@ def _float(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a number, got {raw!r}") from exc
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = _env(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Config:
     """All settings the bot uses at runtime."""
@@ -81,8 +88,14 @@ class Config:
     #: created automatically by ``ensure_dirs``.
     #: Env var: ``PYCLAUDIR_DATA_DIR`` (default ``"./data"``).
     data_dir: Path
-    #: When the daily self-reflection task runs. Standard cron format,
-    #: in UTC time.
+    #: Whether the daily self-reflection loop runs at all. Off by default
+    #: — set this to turn it on. While on, it's seeded at startup and the
+    #: bot can't cancel it (operator-only switch). While off, no
+    #: self-reflection reminder is seeded and any existing one is cancelled.
+    #: Env var: ``PYCLAUDIR_SELF_REFLECTION_ENABLED`` (default ``False``).
+    self_reflection_enabled: bool
+    #: When the daily self-reflection task runs, if enabled. Standard cron
+    #: format, in UTC time. Only matters when ``self_reflection_enabled``.
     #: Env var: ``PYCLAUDIR_SELF_REFLECTION_CRON`` (default ``"0 0 * * *"``,
     #: which means midnight UTC every day).
     self_reflection_cron: str
@@ -198,9 +211,10 @@ class Config:
             effort=_required("PYCLAUDIR_EFFORT"),
             claude_code_bin=_env("CLAUDE_CODE_BIN", "claude") or "claude",
             data_dir=Path(_env("PYCLAUDIR_DATA_DIR", "./data") or "./data").resolve(),
+            self_reflection_enabled=_bool("PYCLAUDIR_SELF_REFLECTION_ENABLED", False),
             self_reflection_cron=(
                 _env("PYCLAUDIR_SELF_REFLECTION_CRON", "0 0 * * *") or "0 0 * * *"
-            ),  
+            ),
             debounce_ms=_int("PYCLAUDIR_DEBOUNCE_MS", 0),
             rate_limit_per_min=_int("PYCLAUDIR_RATE_LIMIT_PER_MIN", 20),
             attachment_max_bytes=_int("PYCLAUDIR_ATTACHMENT_MAX_BYTES", 20_000_000),
@@ -235,6 +249,7 @@ class Config:
             effort="high",
             claude_code_bin="claude",
             data_dir=data_dir.resolve(),
+            self_reflection_enabled=False,
             self_reflection_cron="0 0 * * *",
             debounce_ms=1000,
             rate_limit_per_min=20,

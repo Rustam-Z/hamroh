@@ -4,6 +4,8 @@ Verifies:
 - First startup inserts exactly one row with the self-reflection auto_seed_key.
 - Subsequent startups don't duplicate.
 - A cancelled row still blocks re-seeding (cancel-sticky semantics).
+- With self-reflection disabled, nothing is seeded and an existing pending
+  row is cancelled.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import pytest
 from pyclaudir.__main__ import _seed_default_reminders
 from pyclaudir.config import Config
 from pyclaudir.db.database import Database
+from pyclaudir.db.reminders import pending_with_auto_seed_key
 
 
 async def _open(tmp_path: Path) -> Database:
@@ -23,9 +26,10 @@ async def _open(tmp_path: Path) -> Database:
     return await Database.open(cfg.db_path)
 
 
-def _cfg(tmp_path: Path, owner_id: int = 42) -> Config:
+def _cfg(tmp_path: Path, owner_id: int = 42, *, enabled: bool = True) -> Config:
     cfg = Config.for_test(tmp_path)
     object.__setattr__(cfg, "owner_id", owner_id)
+    object.__setattr__(cfg, "self_reflection_enabled", enabled)
     return cfg
 
 
@@ -154,5 +158,59 @@ async def test_reminder_tool_refuses_to_cancel_auto_seeded(tmp_path: Path) -> No
             "SELECT status FROM reminders WHERE id = ?", (int(row["id"]),)
         )
         assert after["status"] == "pending"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_disabled_does_not_seed(tmp_path: Path) -> None:
+    """Given self-reflection is disabled, when the startup hook runs, then no
+    self-reflection reminder is seeded."""
+    # Arrange: a fresh DB and a config with self-reflection turned off.
+    db = await _open(tmp_path)
+    try:
+        # Act: run the startup seed hook with the feature disabled.
+        await _seed_default_reminders(db, _cfg(tmp_path, enabled=False))
+
+        # Assert: nothing was inserted for the self-reflection key.
+        rows = await db.fetch_all(
+            "SELECT id FROM reminders WHERE auto_seed_key = 'self-reflection-default'"
+        )
+        assert rows == [], f"expected no seeded rows, got {len(rows)}"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_disabling_cancels_existing(tmp_path: Path) -> None:
+    """Given a self-reflection reminder was seeded while enabled, when the bot
+    restarts with the feature disabled, then the pending row is cancelled and
+    no pending row remains — so 'off' actually takes effect."""
+    db = await _open(tmp_path)
+    try:
+        # Arrange: seed the reminder while the feature is enabled.
+        await _seed_default_reminders(db, _cfg(tmp_path, enabled=True))
+        seeded = await db.fetch_one(
+            "SELECT status FROM reminders "
+            "WHERE auto_seed_key = 'self-reflection-default'"
+        )
+        assert seeded is not None and seeded["status"] == "pending", (
+            "precondition: an enabled run should leave one pending row"
+        )
+
+        # Act: restart with the feature disabled.
+        await _seed_default_reminders(db, _cfg(tmp_path, enabled=False))
+
+        # Assert: the row is now cancelled and nothing is pending.
+        rows = await db.fetch_all(
+            "SELECT status FROM reminders "
+            "WHERE auto_seed_key = 'self-reflection-default'"
+        )
+        assert len(rows) == 1, f"expected the single row to remain, got {len(rows)}"
+        assert rows[0]["status"] == "cancelled", (
+            f"expected cancelled, got {rows[0]['status']!r}"
+        )
+        pending = await pending_with_auto_seed_key(db, "self-reflection-default")
+        assert pending == 0, f"expected no pending rows, got {pending}"
     finally:
         await db.close()

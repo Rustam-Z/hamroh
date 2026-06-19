@@ -16,7 +16,7 @@ You own everything: the memory files, the skill playbooks, the MCP connections, 
 
 Out of the box it:
 - Stays in your group chat and joins conversations when it has something useful to say
-- Runs *self-reflection* — reviews what it got wrong and proposes new rules for your approval
+- Runs *self-reflection* (optional, off by default) — reviews what it got wrong and proposes new rules for your approval
 - Executes scheduled research tasks in background subagents while staying responsive to messages
 - Remembers context across restarts via file-based memory
 
@@ -162,7 +162,7 @@ Details: [docs/documentation.md](docs/documentation.md).
 
 **search & history:** web search and web fetch (no internal / RFC1918 URLs). Read-only SQL SELECTs on the chat database (`messages`, `users`, `reminders`, ≤100 rows). Multi-hop reply-chain expansion.
 
-**scheduling:** one-shot + cron-recurring reminders. Auto-seeded daily self-reflection skill that promotes corrections into durable rules with owner approval.
+**scheduling:** one-shot + cron-recurring reminders. Optional daily self-reflection skill (off by default; enable with `PYCLAUDIR_SELF_REFLECTION_ENABLED`) that promotes corrections into durable rules with owner approval.
 
 **self-edit:** append rules to `prompts/project.md` (owner-only); shipped `system.md` is git-tracked and not exposed.
 
