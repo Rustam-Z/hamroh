@@ -28,15 +28,15 @@ def test_user_visible_tools_pin_to_real_tools() -> None:
     every entry maps to a real tool so a rename can't silently weaken
     detection (the one risk of a hand-maintained list)."""
     assert USER_VISIBLE_TOOLS == {
-        f"{MCP_PREFIX}send_message",
-        f"{MCP_PREFIX}reply_to_message",
-        f"{MCP_PREFIX}send_photo",
-        f"{MCP_PREFIX}send_memory_document",
-        f"{MCP_PREFIX}create_poll",
-        f"{MCP_PREFIX}add_reaction",
-        f"{MCP_PREFIX}edit_message",
-        f"{MCP_PREFIX}delete_message",
-        f"{MCP_PREFIX}stop_poll",
+        f"{MCP_PREFIX}telegram_send_message",
+        f"{MCP_PREFIX}telegram_reply_to_message",
+        f"{MCP_PREFIX}telegram_send_photo",
+        f"{MCP_PREFIX}telegram_send_memory_document",
+        f"{MCP_PREFIX}telegram_create_poll",
+        f"{MCP_PREFIX}telegram_add_reaction",
+        f"{MCP_PREFIX}telegram_edit_message",
+        f"{MCP_PREFIX}telegram_delete_message",
+        f"{MCP_PREFIX}telegram_stop_poll",
     }
     discovered = {c.name for c in discover_tool_classes()}
     for namespaced in USER_VISIBLE_TOOLS:

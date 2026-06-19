@@ -1,4 +1,4 @@
-"""``create_poll`` — send a Telegram poll (regular or quiz)."""
+"""``telegram_create_poll`` — send a Telegram poll (regular or quiz)."""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ class CreatePollArgs(BaseModel):
         return self
 
 
-class CreatePollTool(BaseTool):
-    name = "create_poll"
+class TelegramCreatePollTool(BaseTool):
+    name = "telegram_create_poll"
     description = (
         "Send a Telegram poll. Supports regular polls, quizzes (with correct "
         "answer + explanation), multi-answer, non-anonymous voting, an auto-close "

@@ -1,4 +1,4 @@
-"""Verify ``add_reaction`` rejects emojis Telegram won't accept."""
+"""Verify ``telegram_add_reaction`` rejects emojis Telegram won't accept."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from pyclaudir.tools.add_reaction import AddReactionArgs, AddReactionTool
+from pyclaudir.tools.telegram_add_reaction import AddReactionArgs, TelegramAddReactionTool
 from pyclaudir.tools.base import ToolContext
 
 
@@ -22,8 +22,8 @@ class _BotStub:
         return SimpleNamespace(id=42)
 
 
-def _tool(bot: _BotStub) -> AddReactionTool:
-    return AddReactionTool(ToolContext(bot=bot, database=None))
+def _tool(bot: _BotStub) -> TelegramAddReactionTool:
+    return TelegramAddReactionTool(ToolContext(bot=bot, database=None))
 
 
 @pytest.mark.asyncio

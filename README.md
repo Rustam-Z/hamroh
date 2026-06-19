@@ -82,7 +82,7 @@ Use as an **automation layer.** Wire up MCPs and schedule agents to do real work
 ### Try saying
 
 - *"hey reschedule the meeting, and message X"*
-- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `query_db` + `send_message`. Ships on by default.
+- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `query_db` + `telegram_send_message`. Ships on by default.
 - *"pull the top AI stories from Hacker News and send me a briefing"* — `WebFetch` + `WebSearch`, default tools.
 - *"watch https://example.com/changelog hourly and ping me the moment a new entry mentions 'pricing'."* — cron `set_reminder` + `WebFetch`. Diff state lives in a memory file.
 - *"review this week's git log on `~/code/myapp` and open a PR if the README has drifted."* — needs `tool_groups.bash: true` and `tool_groups.code: true` in `plugins.json`, plus `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for the PR.
@@ -120,7 +120,7 @@ One file, four blocks. Edit and restart to apply.
 
 - **`tool_groups`** — Claude Code's dangerous built-ins (shell / code editing / subagents). All off by default; flip to `true` to unlock.
 - **`mcps`** — external MCP servers (GitHub, Jira, Linear, Notion, your own). One array entry per server, `stdio` / `http` / `sse`, credentials pulled from `.env` via `${VAR}` references — no Python needed.
-- **`builtin_tools_disabled`** — pyclaudir built-ins to hide from the agent (e.g. `create_poll`).
+- **`builtin_tools_disabled`** — pyclaudir built-ins to hide from the agent (e.g. `telegram_create_poll`).
 - **`skills_disabled`** — skill directories under `skills/` to hide.
 
 A missing `plugins.json` boots locked-down (no integrations, no tool groups). A malformed file crashes boot loudly. Full schema, copy-paste examples, and per-MCP setup: [docs/tools.md](docs/tools.md).

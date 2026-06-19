@@ -1,4 +1,4 @@
-"""``add_reaction`` — add an emoji reaction to a Telegram message."""
+"""``telegram_add_reaction`` — add an emoji reaction to a Telegram message."""
 
 from __future__ import annotations
 
@@ -35,8 +35,8 @@ class AddReactionArgs(BaseModel):
     )
 
 
-class AddReactionTool(BaseTool):
-    name = "add_reaction"
+class TelegramAddReactionTool(BaseTool):
+    name = "telegram_add_reaction"
     description = (
         "React to a Telegram message with a single Telegram-supported emoji. "
         f"Allowed emojis: {_ALLOWLIST_DISPLAY}."

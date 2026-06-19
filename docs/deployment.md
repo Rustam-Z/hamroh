@@ -82,7 +82,7 @@ sample Jira / GitLab / GitHub entries to copy from — they're not
 first-class, just convenient starting points.
 
 For the per-tool list, the schema, "How to add a new MCP", and how
-to disable individual built-in tools (e.g. `create_poll`,
+to disable individual built-in tools (e.g. `telegram_create_poll`,
 `render_latex`) or skills, see [tools.md](tools.md). Restart the
 container after editing either file: `docker compose up -d
 --force-recreate`.

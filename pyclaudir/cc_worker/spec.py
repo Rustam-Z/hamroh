@@ -54,7 +54,7 @@ DEFAULT_DISALLOWED_TOOLS: tuple[str, ...] = (
 )
 
 #: Always-allowed tools, regardless of any ``enable_*`` flag. These are
-#: the bot's core surface — the local pyclaudir MCP server (send_message,
+#: the bot's core surface — the local pyclaudir MCP server (telegram_send_message,
 #: memory, reminders, etc.) and read-only web tools.
 BASE_ALLOWED_TOOLS: tuple[str, ...] = (
     "mcp__pyclaudir",

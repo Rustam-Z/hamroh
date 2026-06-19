@@ -1,4 +1,4 @@
-"""``render_html`` + ``send_photo``: store, mocked render, mocked sender,
+"""``render_html`` + ``telegram_send_photo``: store, mocked render, mocked sender,
 plus an end-to-end pipeline test gated on playwright + chromium being
 installed."""
 
@@ -14,7 +14,7 @@ from pyclaudir.storage.render import RenderPathError, RenderStore
 from pyclaudir.tools import render_html as render_html_mod
 from pyclaudir.tools.base import ToolContext
 from pyclaudir.tools.render_html import RenderHtmlArgs, RenderHtmlTool
-from pyclaudir.tools.send_photo import SendPhotoArgs, SendPhotoTool
+from pyclaudir.tools.telegram_send_photo import SendPhotoArgs, TelegramSendPhotoTool
 
 
 @pytest.fixture()
@@ -163,7 +163,7 @@ async def test_render_html_rejects_invalid_dimensions(store: RenderStore) -> Non
 
 
 # ---------------------------------------------------------------------------
-# send_photo tool
+# telegram_send_photo tool
 # ---------------------------------------------------------------------------
 
 
@@ -182,7 +182,7 @@ async def test_send_photo_happy_path(store: RenderStore) -> None:
     p.write_bytes(b"\x89PNG\r\n\x1a\nfake-bytes")
     rel = store.relative(p)
     bot = _mock_bot(message_id=123)
-    tool = SendPhotoTool(ToolContext(bot=bot, render_store=store))
+    tool = TelegramSendPhotoTool(ToolContext(bot=bot, render_store=store))
 
     result = await tool.run(SendPhotoArgs(chat_id=42, path=rel, caption="here"))
 
@@ -198,7 +198,7 @@ async def test_send_photo_happy_path(store: RenderStore) -> None:
 @pytest.mark.asyncio
 async def test_send_photo_path_traversal_rejected(store: RenderStore) -> None:
     bot = _mock_bot()
-    tool = SendPhotoTool(ToolContext(bot=bot, render_store=store))
+    tool = TelegramSendPhotoTool(ToolContext(bot=bot, render_store=store))
     result = await tool.run(SendPhotoArgs(chat_id=1, path="../etc/passwd"))
     assert result.is_error is True
     bot.send_photo.assert_not_awaited()
@@ -207,7 +207,7 @@ async def test_send_photo_path_traversal_rejected(store: RenderStore) -> None:
 @pytest.mark.asyncio
 async def test_send_photo_missing_file(store: RenderStore) -> None:
     bot = _mock_bot()
-    tool = SendPhotoTool(ToolContext(bot=bot, render_store=store))
+    tool = TelegramSendPhotoTool(ToolContext(bot=bot, render_store=store))
     result = await tool.run(SendPhotoArgs(chat_id=1, path="missing.png"))
     assert result.is_error is True
     assert "not found" in result.content
@@ -216,7 +216,7 @@ async def test_send_photo_missing_file(store: RenderStore) -> None:
 
 @pytest.mark.asyncio
 async def test_send_photo_no_bot(store: RenderStore) -> None:
-    tool = SendPhotoTool(ToolContext(bot=None, render_store=store))
+    tool = TelegramSendPhotoTool(ToolContext(bot=None, render_store=store))
     result = await tool.run(SendPhotoArgs(chat_id=1, path="x.png"))
     assert result.is_error is True
     assert "bot not configured" in result.content
@@ -225,7 +225,7 @@ async def test_send_photo_no_bot(store: RenderStore) -> None:
 @pytest.mark.asyncio
 async def test_send_photo_no_render_store() -> None:
     bot = _mock_bot()
-    tool = SendPhotoTool(ToolContext(bot=bot, render_store=None))
+    tool = TelegramSendPhotoTool(ToolContext(bot=bot, render_store=None))
     result = await tool.run(SendPhotoArgs(chat_id=1, path="x.png"))
     assert result.is_error is True
     assert "render store" in result.content
@@ -352,7 +352,7 @@ def _playwright_available() -> bool:
 @pytest.mark.asyncio
 async def test_render_html_end_to_end_with_real_browser(store: RenderStore) -> None:
     """Renders a real HTML table to a real PNG and routes it through
-    send_photo. Skipped when playwright/chromium isn't on the host."""
+    telegram_send_photo. Skipped when playwright/chromium isn't on the host."""
     html = """
     <!DOCTYPE html>
     <html><head><style>
@@ -386,9 +386,9 @@ async def test_render_html_end_to_end_with_real_browser(store: RenderStore) -> N
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     assert len(png) > 1000  # a real screenshot, not an empty file
 
-    # Pipe through send_photo with a mocked bot to confirm the handoff.
+    # Pipe through telegram_send_photo with a mocked bot to confirm the handoff.
     bot = _mock_bot(message_id=2024)
-    sender = SendPhotoTool(ToolContext(bot=bot, render_store=store))
+    sender = TelegramSendPhotoTool(ToolContext(bot=bot, render_store=store))
     sent = await sender.run(SendPhotoArgs(chat_id=99, path=rel, caption="Q3"))
     assert sent.is_error is False
     bot.send_photo.assert_awaited_once()

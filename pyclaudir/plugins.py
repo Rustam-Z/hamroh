@@ -113,7 +113,7 @@ class Plugins:
     tool_groups: Mapping[str, bool] = field(default_factory=dict)
     mcps: tuple[McpPluginSpec, ...] = ()
     skills_disabled: frozenset[str] = frozenset()
-    #: Names of built-in pyclaudir tools (e.g. ``create_poll``,
+    #: Names of built-in pyclaudir tools (e.g. ``telegram_create_poll``,
     #: ``render_html``) to exclude from MCP registration. The names
     #: are validated against the discovered tool classes at
     #: ``McpServer`` construction time — a typo crashes boot with a

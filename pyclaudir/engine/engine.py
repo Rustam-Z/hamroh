@@ -359,11 +359,11 @@ class Engine(TypingIndicatorMixin):
                 log.warning("failed to send error notification to %s: %s", chat_id, exc)
 
     async def _handle_dropped_text(self, result: "TurnResult") -> None:
-        """Deliver text the model produced but never sent via ``send_message``.
+        """Deliver text the model produced but never sent via ``telegram_send_message``.
 
         The model occasionally writes its reply as a plain text content
-        block and then stops, instead of calling ``send_message`` /
-        ``reply_to_message`` — those blocks are invisible to the user.
+        block and then stops, instead of calling ``telegram_send_message`` /
+        ``telegram_reply_to_message`` — those blocks are invisible to the user.
         Rather than burn a whole retry turn nagging it to resend, deliver
         the text it already produced.
 
@@ -567,7 +567,7 @@ class Engine(TypingIndicatorMixin):
 
         Five outcome paths: short-circuited turn (``aborted_reason``),
         API-rejected turn (``api_error``), stderr-classified failure
-        (rate-limit/auth/quota), dropped-text (no ``send_message``),
+        (rate-limit/auth/quota), dropped-text (no ``telegram_send_message``),
         or a clean turn (see :meth:`_finish_clean_turn`).
         """
         self._is_processing.clear()

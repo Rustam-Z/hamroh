@@ -101,7 +101,7 @@ async def _warm_up_round_trip(cfg: E2EConfig, timeout: float) -> None:
 
     This spends the model's first-turn cold-start here, in setup, so the first
     real test measures warm latency instead of inference spin-up. It also
-    exercises the ``send_message`` round-trip once, end to end. ``send_and_wait``
+    exercises the ``telegram_send_message`` round-trip once, end to end. ``send_and_wait``
     drains until the reply is quiet, leaving the DM silent before tests run.
     """
     client = TelegramClient(StringSession(cfg.session), cfg.api_id, cfg.api_hash)

@@ -1,6 +1,6 @@
 """E2E: the bot reacts to a message with an emoji — DM and group.
 
-Mirrors the "emojis" scenario: the bot's add_reaction tool, proven by the
+Mirrors the "emojis" scenario: the bot's telegram_add_reaction tool, proven by the
 reaction actually showing up on the message via Telethon.
 """
 

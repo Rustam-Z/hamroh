@@ -4,7 +4,7 @@ Same path-traversal hardening as :class:`pyclaudir.storage.memory.MemoryStore`
 and :class:`pyclaudir.storage.attachments.AttachmentStore`: no ``..``, no
 absolute paths, no symlinks, must stay inside the renders root.
 
-Writers: ``render_html`` tool only. Reader: ``send_photo`` tool only.
+Writers: ``render_html`` tool only. Reader: ``telegram_send_photo`` tool only.
 Operator handles cleanup; this module never deletes.
 """
 

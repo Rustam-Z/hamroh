@@ -1,4 +1,4 @@
-"""``delete_message`` — delete a Telegram message."""
+"""``telegram_delete_message`` — delete a Telegram message."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ class DeleteMessageArgs(BaseModel):
     message_id: int
 
 
-class DeleteMessageTool(BaseTool):
-    name = "delete_message"
+class TelegramDeleteMessageTool(BaseTool):
+    name = "telegram_delete_message"
     description = "Delete a Telegram message by id. Bots can only delete recent messages."
     args_model = DeleteMessageArgs
 

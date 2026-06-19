@@ -5,7 +5,7 @@ markdown can't represent: tables of any width, charts (Chart.js, D3 — but
 inline the lib bytes; network is blocked), formatted comparisons/diffs.
 
 Output lands under ``data/renders/`` with a unique filename. Pair with
-``send_photo`` to actually deliver it to a chat.
+``telegram_send_photo`` to actually deliver it to a chat.
 
 Security: the headless browser has **all network access blocked** at the
 route layer. Inline anything you need (CSS, JS libs, fonts). file:// is
@@ -181,7 +181,7 @@ class RenderHtmlTool(BaseTool):
     description = (
         "Render an HTML snippet to a PNG via headless Chromium and save it "
         "under data/renders/. Returns the relative path; pair with "
-        "send_photo to deliver it to a chat. Use for tables/charts/diffs "
+        "telegram_send_photo to deliver it to a chat. Use for tables/charts/diffs "
         "that Telegram markdown can't represent — Telegram doesn't render "
         "ASCII tables well. Outbound network is BLOCKED inside the browser, "
         "so inline any CSS/JS libs you need (Chart.js, D3, fonts)."
@@ -253,7 +253,7 @@ class RenderHtmlTool(BaseTool):
         return ToolResult(
             content=(
                 f"rendered to {relative} ({size} bytes). "
-                f"Pass this path to send_photo to deliver it."
+                f"Pass this path to telegram_send_photo to deliver it."
             ),
             data={
                 "path": relative,

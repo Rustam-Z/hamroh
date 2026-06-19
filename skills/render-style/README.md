@@ -32,7 +32,7 @@ the rendering browser has all outbound network blocked.
 3. Picks the matching layout mode; copies the skeleton; substitutes
    real content into the placeholders.
 4. `render_html` → PNG under `data/renders/`.
-5. `send_photo` → delivers the image inline to the chat.
+5. `telegram_send_photo` → delivers the image inline to the chat.
 
 The pointer to read this skill before rendering lives in
 `prompts/system.md` next to the `render_html` capability note.

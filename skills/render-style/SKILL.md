@@ -2,7 +2,7 @@
 name: render-style
 description: House style for the render_html tool — dark dashboard / architecture-diagram look with stat tiles, bar rows, numbered timeline steps, two-panel grids, status pills, connector arrows, callout bands, and verdict blocks. Read this skill before calling render_html so the output is visually consistent. Provides CSS tokens, layout rules, color semantics, and three copy-paste HTML skeletons to adapt.
 license: MIT
-compatibility: Requires the render_html and send_photo tools.
+compatibility: Requires the render_html and telegram_send_photo tools.
 ---
 
 # Skill: render-style
@@ -275,7 +275,7 @@ tile/card/step.
 
   <div class="step purple"><div class="circle">5</div><div class="body">
     <div class="ttl"><h3>Claude Code Turn</h3><span class="pill purple">~2.5s</span></div>
-    <div class="txt">AI processes message, calls MCP tools (<code>send_message</code>,
+    <div class="txt">AI processes message, calls MCP tools (<code>telegram_send_message</code>,
     <code>query_db</code>, <code>get_image</code>…), returns control action.</div>
   </div></div>
 

@@ -1,11 +1,11 @@
-"""``reply_to_message`` — convenience wrapper that *requires* a reply target."""
+"""``telegram_reply_to_message`` — convenience wrapper that *requires* a reply target."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
 from .base import BaseTool, ToolResult
-from .send_message import SendMessageArgs, SendMessageTool
+from .telegram_send_message import SendMessageArgs, TelegramSendMessageTool
 
 
 class ReplyToMessageArgs(BaseModel):
@@ -14,8 +14,8 @@ class ReplyToMessageArgs(BaseModel):
     text: str = Field(description="Reply body.")
 
 
-class ReplyToMessageTool(BaseTool):
-    name = "reply_to_message"
+class TelegramReplyToMessageTool(BaseTool):
+    name = "telegram_reply_to_message"
     description = (
         "Send a quote-reply to a specific message. Use this when the chat is "
         "active and your reply needs to be unambiguously tied to one message."
@@ -23,9 +23,9 @@ class ReplyToMessageTool(BaseTool):
     args_model = ReplyToMessageArgs
 
     async def run(self, args: ReplyToMessageArgs) -> ToolResult:
-        # Reuse the send_message tool's logic verbatim, including rate limit
-        # and persistence.
-        delegate = SendMessageTool(self.ctx)
+        # Reuse the telegram_send_message tool's logic verbatim, including rate
+        # limit and persistence.
+        delegate = TelegramSendMessageTool(self.ctx)
         return await delegate.run(
             SendMessageArgs(
                 chat_id=args.chat_id,

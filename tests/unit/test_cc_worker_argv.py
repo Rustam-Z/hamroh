@@ -171,7 +171,7 @@ def test_event_parser_logs_tool_use(spec: CcSpawnSpec, cfg: Config, caplog) -> N
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "send_message",
+                    "name": "telegram_send_message",
                     "id": "toolu_abcdef1234",
                     "input": {"chat_id": 12345, "text": "hello!"},
                 }
@@ -179,7 +179,7 @@ def test_event_parser_logs_tool_use(spec: CcSpawnSpec, cfg: Config, caplog) -> N
         },
     })
     msgs = [r.getMessage() for r in caplog.records if r.name == "pyclaudir.cc"]
-    assert any("[CC.tool→]" in m and "send_message" in m for m in msgs)
+    assert any("[CC.tool→]" in m and "telegram_send_message" in m for m in msgs)
 
 
 def test_event_parser_logs_tool_result(spec: CcSpawnSpec, cfg: Config, caplog) -> None:
@@ -354,7 +354,7 @@ def test_text_without_delivery_tool_is_dropped_even_with_control(
     spec: CcSpawnSpec, cfg: Config
 ) -> None:
     """Regression: the model wrote its answer as plain text, then called
-    StructuredOutput(stop) — but never ``send_message``. The user received
+    StructuredOutput(stop) — but never ``telegram_send_message``. The user received
     nothing, so dropped_text must be True so the engine nags the model to
     resend via the tool. (StructuredOutput is a clean turn-end signal,
     not proof of delivery.)"""
@@ -375,7 +375,7 @@ def test_text_without_delivery_tool_is_dropped_even_with_control(
 
 
 def test_text_with_delivery_tool_is_not_dropped(spec: CcSpawnSpec, cfg: Config) -> None:
-    """Text blocks alongside a real ``send_message`` call are fine — the
+    """Text blocks alongside a real ``telegram_send_message`` call are fine — the
     user got the message, no nag needed."""
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
@@ -389,7 +389,7 @@ def test_text_with_delivery_tool_is_not_dropped(spec: CcSpawnSpec, cfg: Config) 
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "mcp__pyclaudir__send_message",
+                    "name": "mcp__pyclaudir__telegram_send_message",
                     "id": "toolu_send",
                     "input": {"chat_id": 587272213, "text": "Yep, here I am."},
                 }
@@ -399,7 +399,7 @@ def test_text_with_delivery_tool_is_not_dropped(spec: CcSpawnSpec, cfg: Config) 
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
-    assert queued.user_visible_action is True, "send_message call must be tracked"
+    assert queued.user_visible_action is True, "telegram_send_message call must be tracked"
     assert queued.dropped_text is False, "delivered text must not trigger the nag"
 
 
@@ -420,7 +420,7 @@ def test_text_with_reaction_is_not_dropped(spec: CcSpawnSpec, cfg: Config) -> No
             "content": [
                 {
                     "type": "tool_use",
-                    "name": "mcp__pyclaudir__add_reaction",
+                    "name": "mcp__pyclaudir__telegram_add_reaction",
                     "id": "toolu_react",
                     "input": {"chat_id": 587272213, "message_id": 444, "emoji": "👀"},
                 }
@@ -430,7 +430,7 @@ def test_text_with_reaction_is_not_dropped(spec: CcSpawnSpec, cfg: Config) -> No
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
-    assert queued.user_visible_action is True, "add_reaction must count as a visible action"
+    assert queued.user_visible_action is True, "telegram_add_reaction must count as a visible action"
     assert queued.dropped_text is False, "a reaction is a response — no nag"
 
 

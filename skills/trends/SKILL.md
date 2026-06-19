@@ -2,7 +2,7 @@
 name: trends
 description: On-demand global research playbook covering tech, startup, AI, finance, future, and economy. Sweeps X / Reddit / HN / Business Insider / LinkedIn / big-tech earnings / AI-lab blogs, then synthesises a two-minute digest with money-making angles.
 license: MIT
-compatibility: Requires WebFetch, WebSearch, send_message.
+compatibility: Requires WebFetch, WebSearch, telegram_send_message.
 metadata:
   pyclaudir-invocation: '<skill name="trends">run</skill>'
 ---
@@ -66,7 +66,7 @@ Sources to sweep:
    carry signal in the window (earnings week? AI lab event? rate
    decision?). Don't sweep all 20+ — you'll run out of turn.
 3. **Send a heads-up.** This is a long task — the §Long tasks rule in
-   `system.md` applies. `send_message` to the target `chat_id`: e.g.
+   `system.md` applies. `telegram_send_message` to the target `chat_id`: e.g.
    *"Pulling the trends digest — ~2 min."* Not "On it".
 4. **Fetch in parallel.** Issue multiple `WebFetch` / `WebSearch` calls
    in a single turn — the harness runs them concurrently, so 8 fetches
@@ -106,11 +106,11 @@ Tone: §Tone in `system.md`. Concrete nouns and numbers, no
 
 ## Delivery
 
-`send_message` to the `chat_id` from the triggering. Markdown
+`telegram_send_message` to the `chat_id` from the triggering. Markdown
 formatting per system.md §Outgoing message formatting (bullets `•`,
 flow `→`, no headers, no tables).
 
-Send **exactly one** `send_message` per run. No follow-ups, no
+Send **exactly one** `telegram_send_message` per run. No follow-ups, no
 continuations. If the draft is approaching 4096 chars, tighten before
 sending: drop the lowest-signal bullets first, shorten clauses, merge
 near-duplicates. Never split into a second message. Per §Keep outputs
@@ -121,7 +121,7 @@ it.
 
 - Every bullet carries an **exact URL** to the specific source item —
   no bare domain links, no homepage links, no uncited facts.
-- **One** `send_message` per run. Trim, don't split.
+- **One** `telegram_send_message` per run. Trim, don't split.
 
 ## Don'ts
 

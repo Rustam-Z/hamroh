@@ -56,7 +56,7 @@ def _make_wrapper(tool: BaseTool, db_logger):
                 annotation=finfo.annotation,
             )
         )
-    # No fixed return annotation — most tools return str, but read_attachment
+    # No fixed return annotation — most tools return str, but telegram_read_attachment
     # returns a FastMCP ``Image`` object for photos. Leaving this off lets
     # FastMCP introspect the actual return value at call time.
     sig = inspect.Signature(parameters=params)
@@ -184,7 +184,7 @@ class McpServer:
                 "url": self.url,
                 # Claude Code >=2.1.9 defers MCP tool schemas behind
                 # ToolSearch when they'd eat >10% of context. The bot then
-                # "forgets" send_message/reply_to_message exist and drops
+                # "forgets" telegram_send_message/telegram_reply_to_message exist and drops
                 # its reply as plain text. alwaysLoad keeps our core tools
                 # in context; external plugin MCPs stay deferrable.
                 "alwaysLoad": True,

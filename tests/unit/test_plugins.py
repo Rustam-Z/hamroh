@@ -432,9 +432,9 @@ def test_skills_disabled_filters_skills_store(tmp_path: Path) -> None:
 
 def test_builtin_tools_disabled_parsed(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({"builtin_tools_disabled": ["create_poll", "render_html"]}))
+    p.write_text(json.dumps({"builtin_tools_disabled": ["telegram_create_poll", "render_html"]}))
     plugins = load_plugins(p)
-    assert plugins.builtin_tools_disabled == frozenset({"create_poll", "render_html"})
+    assert plugins.builtin_tools_disabled == frozenset({"telegram_create_poll", "render_html"})
 
 
 def test_builtin_tools_disabled_non_string_crashes(tmp_path: Path) -> None:
@@ -458,25 +458,25 @@ def test_builtin_tools_disabled_filters_mcp_server(tmp_path: Path) -> None:
     )
 
     all_names = {cls.name for cls in discover_tool_classes()}
-    assert "create_poll" in all_names  # sanity
+    assert "telegram_create_poll" in all_names  # sanity
 
     _mcp_full, instances_full = build_fastmcp(ctx)
     full_names = {i.name for i in instances_full}
-    assert "create_poll" in full_names
+    assert "telegram_create_poll" in full_names
 
     _mcp_filtered, instances_filtered = build_fastmcp(
-        ctx, disabled=frozenset({"create_poll", "stop_poll"}),
+        ctx, disabled=frozenset({"telegram_create_poll", "telegram_stop_poll"}),
     )
     filtered_names = {i.name for i in instances_filtered}
-    assert "create_poll" not in filtered_names
-    assert "stop_poll" not in filtered_names
+    assert "telegram_create_poll" not in filtered_names
+    assert "telegram_stop_poll" not in filtered_names
     # Other tools survive.
-    assert "send_message" in filtered_names
+    assert "telegram_send_message" in filtered_names
 
 
 def test_builtin_tools_disabled_unknown_name_crashes(tmp_path: Path) -> None:
     """A typo in ``builtin_tools_disabled`` (e.g. ``poll`` instead of
-    ``create_poll``) must fail boot loudly with a list of available
+    ``telegram_create_poll``) must fail boot loudly with a list of available
     tool names — not silently do nothing."""
     from pyclaudir.mcp_server import build_fastmcp
     from pyclaudir.tools.base import ToolContext

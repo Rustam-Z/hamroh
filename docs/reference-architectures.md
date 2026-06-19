@@ -17,7 +17,7 @@ Two systems pyclaudir descends from. Read before proposing changes.
 |------|------|-------|
 | `reply` | `chat_id`, `text`, `reply_to?`, `files?`, `format?` | Auto-chunks at 4096 chars. Images as photos, rest as documents. Max 50MB/file. Calls `assertAllowedChat()` before sending. |
 | `react` | `chat_id`, `message_id`, `emoji` | Telegram's fixed emoji whitelist only. |
-| `edit_message` | `chat_id`, `message_id`, `text`, `format?` | Tool description tells the LLM edits don't trigger push notifications. |
+| `telegram_edit_message` | `chat_id`, `message_id`, `text`, `format?` | Tool description tells the LLM edits don't trigger push notifications. |
 | `download_attachment` | `file_id` | Saves to `~/.claude/channels/telegram/inbox/`. 20MB cap (Telegram limit). Sanitizes extension to `[a-zA-Z0-9]`. |
 
 ### System prompt (MCP `instructions` field)
@@ -384,7 +384,7 @@ In pyclaudir: **not implemented**. We use SIGTERM/SIGINT for shutdown and `/kill
 | Crash recovery | PID file + orphan watchdog | Unknown | Exponential backoff, 10/10min limit |
 | Scheduled events | No | Yes (reminder pseudo-user) | Yes (reminder tools + background poller; auto-seeded mandatory reminders via `auto_seed_key`) |
 | Reactions (inbound) | No | Yes (per log samples) | Yes — MessageReactionHandler → `messages.reactions` JSON column. Bot receives reactions only in DMs or admin-in-group (Telegram constraint). |
-| Reactions (outbound) | Yes (`react` tool) | Yes | Yes — `add_reaction` tool, stored on same JSON column |
+| Reactions (outbound) | Yes (`react` tool) | Yes | Yes — `telegram_add_reaction` tool, stored on same JSON column |
 | Self-editing instructions | No | Unknown | Yes — instruction tools over system.md (read-only) + project.md (writable); owner-only policy enforced via system prompt; auto-backup per write |
 | Agent skills | No | Unknown | Yes — `skills/<name>/SKILL.md` playbooks invoked via `<skill>` inside `<reminder>` envelope |
 | Self-reflection loop | No | Unknown | Yes — daily two-phase skill (introspect + process pending), mandatory reminder, owner-approval-gated promotions |
@@ -399,7 +399,7 @@ In pyclaudir: **not implemented**. We use SIGTERM/SIGINT for shutdown and `/kill
 
 ### From the official plugin (not yet in pyclaudir)
 
-1. **File attachments in `reply`** — send photos and documents. Our `send_message` is text-only.
+1. **File attachments in `reply`** — send photos and documents. Our `telegram_send_message` is text-only.
 2. **`download_attachment`** — lazy download of user-sent files so the model can see photos/documents.
 3. **Outbound gate (`assertAllowedChat`)** — prevent the model from messaging arbitrary chat IDs. We rely on the model's system prompt but don't enforce programmatically.
 4. ~~**Hot-reloadable access config**~~ — now implemented. `access.json` is re-read on every inbound message.
@@ -459,7 +459,7 @@ Key properties:
 
 ### 5.2 Reactions as first-class on `messages` (migration 003)
 
-**Files:** `pyclaudir/telegram_io.py:_on_reaction`, `pyclaudir/db/messages.py:apply_user_reaction`, `pyclaudir/tools/add_reaction.py:add_bot_reaction`.
+**Files:** `pyclaudir/telegram_io.py:_on_reaction`, `pyclaudir/db/messages.py:apply_user_reaction`, `pyclaudir/tools/telegram_add_reaction.py:add_bot_reaction`.
 
 Originally there was a separate `reactions` table that only recorded
 *outbound* bot reactions — writes went in, nothing ever read them,
@@ -476,7 +476,7 @@ Populated from **both directions**:
   dedicated handler class — not a `MessageHandler` variant). The
   dispatcher's `_on_reaction` extracts old/new reaction sets and
   calls `apply_user_reaction` to mutate the JSON.
-- **Outbound** via `add_reaction` tool, which calls
+- **Outbound** via `telegram_add_reaction` tool, which calls
   `bot.set_message_reaction()` and then `add_bot_reaction` to
   update the column.
 
@@ -731,7 +731,7 @@ at the start of every turn.
 **Model-side guidance.** `prompts/system.md` tells the model up
 front (short line at the top of `# Identity`) to flag long tasks
 with one sentence, and the dedicated `# Long tasks` section gives
-the full rule — send an upfront `send_message` heads-up ("Fetching
+the full rule — send an upfront `telegram_send_message` heads-up ("Fetching
 the GitLab issue…", "Running the test suite — about a minute.")
 before any operation the user will visibly wait on. There is no
 harness-level fallback: the bot is solely responsible for keeping

@@ -69,7 +69,7 @@ class ToolContext:
     #: chat_id → display name. Populated by the dispatcher on every inbound
     #: message so outbound transcript lines can show the chat's title.
     chat_titles: dict[int, str] = field(default_factory=dict)
-    #: Sync callback the ``send_message`` tool fires the moment Telegram
+    #: Sync callback the ``telegram_send_message`` tool fires the moment Telegram
     #: confirms delivery. The engine wires it to drop the chat from the
     #: typing-indicator set so "typing..." vanishes as soon as the user has
     #: the message in their hand — not when the entire CC turn officially
@@ -89,7 +89,7 @@ class ToolResult:
     ``image_path``, when set, signals the MCP wrapper to deliver the file
     at that absolute path as an MCP image content block (so Claude actually
     *sees* it) instead of returning ``content`` as text. Used by
-    ``read_attachment`` to surface inbound photos.
+    ``telegram_read_attachment`` to surface inbound photos.
     """
 
     content: str
@@ -138,7 +138,7 @@ class OutboundDelivery:
     reply_to_id: int | None
     transcript_text: str
     #: Text persisted to the DB when it differs from the transcript line
-    #: (``create_poll`` stores the options too). Defaults to transcript.
+    #: (``telegram_create_poll`` stores the options too). Defaults to transcript.
     db_text: str | None = None
 
 
@@ -185,8 +185,8 @@ async def record_outbound(
 ) -> None:
     """Persist one outbound message row with the bot's identity.
 
-    Used by ``send_message``, ``send_photo``, ``send_memory_document``,
-    and ``create_poll`` after the Telegram API confirms delivery. No-ops
+    Used by ``telegram_send_message``, ``telegram_send_photo``, ``telegram_send_memory_document``,
+    and ``telegram_create_poll`` after the Telegram API confirms delivery. No-ops
     when the database or bot is unavailable (tests).
     """
     if ctx.database is None or ctx.bot is None:

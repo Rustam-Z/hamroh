@@ -83,7 +83,7 @@ Look for, specifically:
   clearly expressing displeasure, or one that was clearly a direct
   answer to a question and got zero reaction when the context
   expected acknowledgment.
-- **Repeated rewrites.** A message you `edit_message`'d more than
+- **Repeated rewrites.** A message you `telegram_edit_message`'d more than
   once — sign you got it wrong the first pass.
 - **Language/tone mismatches.** Replied in English to a user who
   wrote Uzbek; or corporate-pleasantries in a casual chat.
@@ -209,7 +209,7 @@ promote?"
 
 ### Step 4 — propose to the owner
 
-Send ONE message to the owner DM via `send_message`. Structure:
+Send ONE message to the owner DM via `telegram_send_message`. Structure:
 
 ```
 Daily reflection — <N> candidate(s).

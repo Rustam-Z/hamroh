@@ -24,7 +24,7 @@ CONTROL_ACTION_SCHEMA: dict = {
             "enum": ["stop", "sleep", "heartbeat"],
             "description": (
                 "What to do after this turn. 'stop' is valid only after a "
-                "reply was delivered via send_message or reply_to_message — "
+                "reply was delivered via telegram_send_message or telegram_reply_to_message — "
                 "plain text blocks are never shown to the user."
             ),
         },

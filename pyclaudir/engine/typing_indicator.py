@@ -145,7 +145,7 @@ class TypingIndicatorMixin:
         )
 
     def notify_chat_replied(self, chat_id: int) -> None:
-        """Called by ``send_message`` the moment Telegram confirms delivery.
+        """Called by ``telegram_send_message`` the moment Telegram confirms delivery.
 
         Drops the chat from the typing set and wakes the loop so it exits.
         But — and this is the subtle part — if the typing indicator has
@@ -159,7 +159,7 @@ class TypingIndicatorMixin:
         messages were too fast for typing to render at all.
 
         This is a sync function (not async) because it's called from
-        inside the ``send_message`` tool's coroutine and we don't want
+        inside the ``telegram_send_message`` tool's coroutine and we don't want
         to introduce an extra ``await`` between message delivery and
         notification.
         """
@@ -188,7 +188,7 @@ class TypingIndicatorMixin:
             self._typing.wake.set()
 
         # Schedule it; we don't await — notify_chat_replied returns
-        # immediately so the send_message tool isn't blocked.
+        # immediately so the telegram_send_message tool isn't blocked.
         self._typing.deferred_stop = asyncio.create_task(
             _deferred_discard(), name="pyclaudir-typing-deferred-stop"
         )

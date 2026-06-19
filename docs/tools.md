@@ -22,18 +22,18 @@ server. Auto-discovered from `pyclaudir/tools/*.py` (each tool is a
 
 | Tool | What it does |
 |---|---|
-| `send_message` | Send a text message to a chat. **The only way the user sees anything** — a plain text content block produces no Telegram output. |
-| `reply_to_message` | Reply to a specific user message (threads in groups). |
-| `edit_message` | Edit one of the bot's previous messages. No push notification — good for in-progress updates on long tasks. |
-| `delete_message` | Delete a bot message. Use sparingly. |
-| `add_reaction` | React to a message with an emoji. Prefer over "ok"/"👍" replies in groups. |
-| `create_poll` | Send a poll. Supports regular/quiz, multi-answer, anonymity toggle, auto-close (`open_period` or `close_date`), and reply-to. |
-| `stop_poll` | Close a live poll early and return final tallies. |
-| `read_attachment` | Read a photo or document the user sent. The dispatcher saves inbound attachments under `data/attachments/` and surfaces them as `[attachment: <path> ...]` markers — pass that path here. Images come back as image content blocks (you actually see them); text-like files (md/txt/log/csv/json/yaml/code) come back as UTF-8; PDFs are extracted via `pypdf` and returned as text with `--- page N ---` markers. Path traversal is rejected. GIFs/videos are unsupported. |
-| `send_memory_document` | Send a memory file (under `data/memories/`) to a chat as a downloadable document. Path-locked to memories root. Optional caption + reply-to. |
+| `telegram_send_message` | Send a text message to a chat. **The only way the user sees anything** — a plain text content block produces no Telegram output. |
+| `telegram_reply_to_message` | Reply to a specific user message (threads in groups). |
+| `telegram_edit_message` | Edit one of the bot's previous messages. No push notification — good for in-progress updates on long tasks. |
+| `telegram_delete_message` | Delete a bot message. Use sparingly. |
+| `telegram_add_reaction` | React to a message with an emoji. Prefer over "ok"/"👍" replies in groups. |
+| `telegram_create_poll` | Send a poll. Supports regular/quiz, multi-answer, anonymity toggle, auto-close (`open_period` or `close_date`), and reply-to. |
+| `telegram_stop_poll` | Close a live poll early and return final tallies. |
+| `telegram_read_attachment` | Read a photo or document the user sent. The dispatcher saves inbound attachments under `data/attachments/` and surfaces them as `[attachment: <path> ...]` markers — pass that path here. Images come back as image content blocks (you actually see them); text-like files (md/txt/log/csv/json/yaml/code) come back as UTF-8; PDFs are extracted via `pypdf` and returned as text with `--- page N ---` markers. Path traversal is rejected. GIFs/videos are unsupported. |
+| `telegram_send_memory_document` | Send a memory file (under `data/memories/`) to a chat as a downloadable document. Path-locked to memories root. Optional caption + reply-to. |
 | `render_html` | Render an HTML snippet to PNG via headless Chromium → `data/renders/`. Use for tables/charts/diffs that markdown can't fit. Network blocked — inline any CSS/JS. Returns the relative path. |
-| `render_latex` | Render a LaTeX expression to PNG via KaTeX (loaded from `cdn.jsdelivr.net` only — narrow allow-list). Pass the LaTeX without surrounding `$$`. Optional `title`. Returns the relative path; pair with `send_photo`. |
-| `send_photo` | Send a rendered photo (from `data/renders/`) as an inline Telegram photo with preview. Pair with `render_html` or `render_latex`. |
+| `render_latex` | Render a LaTeX expression to PNG via KaTeX (loaded from `cdn.jsdelivr.net` only — narrow allow-list). Pass the LaTeX without surrounding `$$`. Optional `title`. Returns the relative path; pair with `telegram_send_photo`. |
+| `telegram_send_photo` | Send a rendered photo (from `data/renders/`) as an inline Telegram photo with preview. Pair with `render_html` or `render_latex`. |
 
 ### Memory (`data/memories/`)
 
@@ -43,7 +43,7 @@ server. Auto-discovered from `pyclaudir/tools/*.py` (each tool is a
 | `read_memory` | Read a memory file by relative path. |
 | `write_memory` | Create or overwrite a memory file (read-before-write rail enforced; 64 KiB cap). |
 | `append_memory` | Append to an existing memory file. |
-| `send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to memories root. Optional caption + reply-to. |
+| `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to memories root. Optional caption + reply-to. |
 
 There is no `delete_memory` by design — overwriting is the supported
 "forget" path. Operator handles real deletion on host.
@@ -278,8 +278,8 @@ rendering eating context), list its name in `builtin_tools_disabled`:
 ```jsonc
 {
   "builtin_tools_disabled": [
-    "create_poll", "stop_poll",
-    "render_latex", "render_html", "send_photo"
+    "telegram_create_poll", "telegram_stop_poll",
+    "render_latex", "render_html", "telegram_send_photo"
   ]
 }
 ```
@@ -290,8 +290,8 @@ it. Names must match an exact tool name (the `name` class attribute
 on the `BaseTool` subclass — also the cell text in this doc's
 tables). A typo crashes boot with the available list.
 
-There is no curated "essential" set — disabling `send_message` mutes
-the bot, disabling `read_attachment` makes it blind to inbound
+There is no curated "essential" set — disabling `telegram_send_message` mutes
+the bot, disabling `telegram_read_attachment` makes it blind to inbound
 photos and documents. The operator owns this trade-off.
 
 ### Disabling a skill

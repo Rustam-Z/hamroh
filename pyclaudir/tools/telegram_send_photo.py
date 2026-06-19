@@ -1,7 +1,7 @@
-"""``send_photo`` — send a rendered image to a chat as a Telegram photo.
+"""``telegram_send_photo`` — send a rendered image to a chat as a Telegram photo.
 
 Companion to :mod:`pyclaudir.tools.render_html`. Path is locked to the
-renders root with the same hardening pattern as ``send_memory_document``.
+renders root with the same hardening pattern as ``telegram_send_memory_document``.
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ class SendPhotoArgs(BaseModel):
     reply_to_message_id: int | None = None
 
 
-class SendPhotoTool(BaseTool):
-    name = "send_photo"
+class TelegramSendPhotoTool(BaseTool):
+    name = "telegram_send_photo"
     description = (
         "Send a rendered photo (under data/renders/) to a Telegram chat. "
         "Use after render_html to deliver the image as an inline photo "

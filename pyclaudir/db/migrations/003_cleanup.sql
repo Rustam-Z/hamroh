@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS cc_sessions;
 -- Fold reactions into the messages row. Stored as JSON:
 --   {"👍": [user_id, user_id, ...], "❤️": [user_id, ...]}
 -- Populated from MessageReactionUpdated handler (inbound user reactions)
--- and from the add_reaction tool (bot reactions). NULL means no reactions.
+-- and from the telegram_add_reaction tool (bot reactions). NULL means no reactions.
 DROP TABLE IF EXISTS reactions;
 ALTER TABLE messages ADD COLUMN reactions TEXT;
 

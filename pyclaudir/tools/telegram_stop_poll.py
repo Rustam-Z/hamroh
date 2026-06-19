@@ -1,4 +1,4 @@
-"""``stop_poll`` — close a Telegram poll and return final tallies."""
+"""``telegram_stop_poll`` — close a Telegram poll and return final tallies."""
 
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ class StopPollArgs(BaseModel):
     message_id: int = Field(description="message_id of the poll to close.")
 
 
-class StopPollTool(BaseTool):
-    name = "stop_poll"
+class TelegramStopPollTool(BaseTool):
+    name = "telegram_stop_poll"
     description = (
         "Close a Telegram poll early and return the final vote tallies. "
-        "Takes the chat_id and message_id returned by create_poll."
+        "Takes the chat_id and message_id returned by telegram_create_poll."
     )
     args_model = StopPollArgs
 

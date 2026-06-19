@@ -56,7 +56,7 @@ default the bot has only its own MCP tools (in `pyclaudir/tools/`,
 served by a local MCP server) plus `WebFetch` and `WebSearch`. The
 local server is registered with `alwaysLoad: true` so its tools are
 always in the model's context — never deferred behind Claude Code's
-ToolSearch (which made the bot "forget" `send_message` existed).
+ToolSearch (which made the bot "forget" `telegram_send_message` existed).
 Requires Claude Code ≥ 2.1.121.
 
 The toggle source of truth is [`plugins.json`](../plugins.json) at
@@ -73,7 +73,7 @@ the repo root:
   or delete — they're starting points, not first-class. Add a new
   entry to plug in any other MCP server.
 * `builtin_tools_disabled` — names of pyclaudir built-in tools to
-  hide (e.g. `create_poll`, `render_html`). Filtered at MCP
+  hide (e.g. `telegram_create_poll`, `render_html`). Filtered at MCP
   registration time, never advertised to Claude.
 * `skills_disabled` — names of skill directories to hide.
 
@@ -111,7 +111,7 @@ into a `Config` field.
 | `PYCLAUDIR_SELF_REFLECTION_CRON` | no | `0 0 * * *` | when the daily self-reflection task runs (UTC cron). Default: midnight UTC. |
 | `PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS` | no | `300` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |
 | `PYCLAUDIR_LIVENESS_POLL_SECONDS` | no | `30` | how often the watcher wakes up to check the timeout above. |
-| `PYCLAUDIR_TOOL_ERROR_MAX_COUNT` | no | `3` | how many tool errors trigger a stop. Used in two places: (a) failed tool calls in one turn — too many ends the turn; (b) turns where Claude wrote text but didn't call `send_message` — too many in a row makes the bot show the underlying error to the user. Stops the bot from looping forever on a broken tool or a broken model setup. |
+| `PYCLAUDIR_TOOL_ERROR_MAX_COUNT` | no | `3` | how many tool errors trigger a stop. Used in two places: (a) failed tool calls in one turn — too many ends the turn; (b) turns where Claude wrote text but didn't call `telegram_send_message` — too many in a row makes the bot show the underlying error to the user. Stops the bot from looping forever on a broken tool or a broken model setup. |
 | `PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS` | no | `30` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
 | `PYCLAUDIR_CRASH_BACKOFF_BASE` | no | `2` | seconds to wait before the first restart after Claude crashes. Doubles after each crash, up to `CRASH_BACKOFF_CAP`. |
 | `PYCLAUDIR_CRASH_BACKOFF_CAP` | no | `64` | maximum wait between restarts. Once the wait reaches this, it stops growing. |
@@ -152,7 +152,7 @@ Telegram listener  →  Engine (buffer + send/inject)  →  Claude worker  →  
    Bundles messages that arrive close together. If a new message comes in
    while Claude is mid-reply, the engine sends it via `worker.inject()` so
    the running turn picks it up. If a turn ends with text but no
-   `send_message` call (we call this "dropped text"), the engine sends a
+   `telegram_send_message` call (we call this "dropped text"), the engine sends a
    corrective `<error>...</error>` block to nudge Claude into using the
    tool.
 3. **Claude worker** (`pyclaudir/cc_worker/`). Starts the `claude`
@@ -181,7 +181,7 @@ to 3 minutes. For one user or a small group, this is fine. For busy
 setups with many chats, run a separate pyclaudir for each chat group.
 
 The system prompt tells the bot to send a quick "On it, reviewing
-now..." reply via `send_message` before it starts a long task, so users
+now..." reply via `telegram_send_message` before it starts a long task, so users
 know the bot got their message even when the full reply takes time.
 
 ## Adding a new tool
@@ -278,7 +278,7 @@ Edit `access.json` directly if you prefer — changes are hot-reloaded.
 - `read_memory` — read a file (cuts off at 64 KiB)
 - `write_memory` — create or overwrite a file (max 64 KiB)
 - `append_memory` — add text to an existing file
-- `send_memory_document` — send a memory file to a chat as a Telegram
+- `telegram_send_memory_document` — send a memory file to a chat as a Telegram
   document (path-locked to `data/memories/`, optional caption + reply-to)
 
 **Read before write.** To overwrite or append to a file that already
@@ -325,7 +325,7 @@ Two tools turn structured data into a Telegram photo:
   `data/renders/<utc-stamp>-<slug>-<rand>.png`, returns the relative
   path. Inline any CSS/JS the page needs (Chart.js, D3, fonts) — the
   browser can't fetch.
-- `send_photo(chat_id, path, caption?, reply_to_message_id?)` — sends
+- `telegram_send_photo(chat_id, path, caption?, reply_to_message_id?)` — sends
   a file from `data/renders/` as an inline Telegram photo. Path-locked
   to the renders root with the same hardening as `read_memory`.
 
@@ -539,7 +539,7 @@ structured tag lines on top of the usual lifecycle messages:
 | `[RX]` | inbound message we forwarded to the engine |
 | `[DROP]` | inbound message persisted but dropped (chat not allowed) |
 | `[RX↺]` | inbound edited message |
-| `[TX]` | outbound `send_message` / `reply_to_message` |
+| `[TX]` | outbound `telegram_send_message` / `telegram_reply_to_message` |
 | `[EDIT]` / `[DEL]` / `[REACT]` | outbound edits, deletions, reactions |
 
 **Claude Code subprocess transcript** (`pyclaudir.cc` logger):
@@ -803,11 +803,11 @@ is enforced by code, not by hope, and tested in
   looping on a deterministically-failing tool (e.g. permission
   denied, schema violation).
 - **Dropped-text retry cap.** A turn that ends with text blocks but
-  no `send_message` call (`dropped_text=True`) increments
+  no `telegram_send_message` call (`dropped_text=True`) increments
   `Engine._dropped_text_retries` — a *cross-turn* counter that
   shares the `PYCLAUDIR_TOOL_ERROR_MAX_COUNT` ceiling with the
   tool-error breaker. Below the cap the engine injects a corrective
-  `<error>Use send_message</error>`; at the cap it calls
+  `<error>Use telegram_send_message</error>`; at the cap it calls
   `classify_cc_failure` on the text blocks, surfaces a targeted
   message (e.g. "model unavailable — fix `PYCLAUDIR_MODEL`") to the
   user, and resets. Catches CC-native diagnostics (invalid model,
@@ -855,7 +855,7 @@ are load-bearing — keep them.
 
 Once configured, you should be able to:
 
-1. DM the bot, see the bot reply via `send_message`.
+1. DM the bot, see the bot reply via `telegram_send_message`.
 2. Drop `data/memories/user_preferences.md` containing "Alice prefers
    Russian", ask "what do you know about me?", watch it call
    `list_memories` → `read_memory` and reply in Russian.
@@ -926,7 +926,7 @@ One file, four blocks. Edit and restart to apply.
     // …Notion, Slack, Postgres, Playwright, your own — same shape; sse also supported
   ],
   "builtin_tools_disabled": [ // pyclaudir built-ins to hide from the agent
-    // e.g. "create_poll", "stop_poll", "render_html", "render_latex", "send_photo"
+    // e.g. "telegram_create_poll", "telegram_stop_poll", "render_html", "render_latex", "telegram_send_photo"
   ],
   "skills_disabled": [       // skill directories under skills/ to hide
     // e.g. "render-style"
@@ -936,7 +936,7 @@ One file, four blocks. Edit and restart to apply.
 
 - **Tool groups.** Claude Code's dangerous built-ins (shell / code edit / subagents). All off by default. Flip to `true` and restart to unlock.
 - **External MCPs.** Three transports supported, exactly as the [MCP spec](https://modelcontextprotocol.io) defines them: `stdio` (local subprocess, auth via `env`), `http` (remote streamable HTTP, auth via static `headers`), and `sse` (Server-Sent Events, same field shape as http). `${VAR}` references pull credentials from `.env`; if any required var is empty the MCP is silently skipped at boot. To stop advertising one without removing credentials, flip `"enabled": false`. Adding a new MCP (Linear, Notion, Slack, your own) is just a new array entry — no Python. Pyclaudir doesn't manage OAuth flows; supply an already-issued token via `${VAR}`.
-- **Built-in tool toggles.** Names of pyclaudir built-ins (e.g. `create_poll`, `render_latex`) you want hidden. Filtered at MCP registration — the agent literally can't see them. A typo crashes boot with the available list.
+- **Built-in tool toggles.** Names of pyclaudir built-ins (e.g. `telegram_create_poll`, `render_latex`) you want hidden. Filtered at MCP registration — the agent literally can't see them. A typo crashes boot with the available list.
 - **Skill toggles.** Directory names under `skills/` to hide. The skill stays on disk but isn't listed or readable, so it can't be invoked.
 
 ## Repo layout
@@ -1022,22 +1022,22 @@ pyclaudir/
 │   └── tools/
 │       ├── base.py             # BaseTool, ToolContext, Heartbeat
 │       ├── now.py
-│       ├── send_message.py
-│       ├── reply_to_message.py
-│       ├── edit_message.py
-│       ├── delete_message.py
-│       ├── add_reaction.py
-│       ├── create_poll.py
-│       ├── stop_poll.py
-│       ├── read_attachment.py  # read a Telegram photo/doc by path under data/attachments/
-│       ├── send_memory_document.py # send a memory file as a Telegram document
+│       ├── telegram_send_message.py
+│       ├── telegram_reply_to_message.py
+│       ├── telegram_edit_message.py
+│       ├── telegram_delete_message.py
+│       ├── telegram_add_reaction.py
+│       ├── telegram_create_poll.py
+│       ├── telegram_stop_poll.py
+│       ├── telegram_read_attachment.py  # read a Telegram photo/doc by path under data/attachments/
+│       ├── telegram_send_memory_document.py # send a memory file as a Telegram document
 │       ├── render_html.py      # HTML → PNG via headless Chromium (network blocked)
-│       ├── send_photo.py       # send a render as an inline Telegram photo
+│       ├── telegram_send_photo.py       # send a render as an inline Telegram photo
 │       ├── memory.py           # list/read/write/append memory (read-before-write)
 │       ├── instructions.py     # read/append project.md (owner-only by prompt policy)
 │       ├── skills.py           # list/read agent skill playbooks under skills/
-│       ├── create_poll.py      # send poll / quiz
-│       ├── stop_poll.py
+│       ├── telegram_create_poll.py      # send poll / quiz
+│       ├── telegram_stop_poll.py
 │       ├── query_db.py
 │       └── reminder.py         # set/list/cancel reminders
 └── tests/

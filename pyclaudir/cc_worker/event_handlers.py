@@ -39,15 +39,15 @@ log = logging.getLogger("pyclaudir.cc_worker")
 #: Add a tool here when the user can perceive its effect (test_tool_discovery
 #: pins every entry to a real tool so a rename can't silently break this).
 USER_VISIBLE_TOOLS: frozenset[str] = frozenset({
-    "mcp__pyclaudir__send_message",
-    "mcp__pyclaudir__reply_to_message",
-    "mcp__pyclaudir__send_photo",
-    "mcp__pyclaudir__send_memory_document",
-    "mcp__pyclaudir__create_poll",
-    "mcp__pyclaudir__add_reaction",
-    "mcp__pyclaudir__edit_message",
-    "mcp__pyclaudir__delete_message",
-    "mcp__pyclaudir__stop_poll",
+    "mcp__pyclaudir__telegram_send_message",
+    "mcp__pyclaudir__telegram_reply_to_message",
+    "mcp__pyclaudir__telegram_send_photo",
+    "mcp__pyclaudir__telegram_send_memory_document",
+    "mcp__pyclaudir__telegram_create_poll",
+    "mcp__pyclaudir__telegram_add_reaction",
+    "mcp__pyclaudir__telegram_edit_message",
+    "mcp__pyclaudir__telegram_delete_message",
+    "mcp__pyclaudir__telegram_stop_poll",
 })
 
 

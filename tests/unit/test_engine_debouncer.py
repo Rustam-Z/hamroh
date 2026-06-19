@@ -337,7 +337,7 @@ async def test_notify_chat_replied_only_stops_the_named_chat() -> None:
 async def test_typing_fires_on_two_consecutive_turns() -> None:
     """Regression: 'typing only visible on the first message after start.'
 
-    Run two complete turns end-to-end (kick → send_message → result → kick
+    Run two complete turns end-to-end (kick → telegram_send_message → result → kick
     again) and assert that the typing_action was called for BOTH turns,
     not just the first.
     """
@@ -359,7 +359,7 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
         assert len(typing_calls) >= 1, "no typing on turn 1"
         turn1_calls = len(typing_calls)
 
-        # send_message lands → notify
+        # telegram_send_message lands → notify
         eng.notify_chat_replied(-100)
         await asyncio.sleep(0.05)
 
@@ -410,7 +410,7 @@ async def test_inject_after_notify_restarts_typing() -> None:
 
     Sequence:
     1. User sends msg 1, turn 1 begins, typing on
-    2. Model calls send_message → notify_chat_replied stops typing
+    2. Model calls telegram_send_message → notify_chat_replied stops typing
     3. CC keeps processing (StructuredOutput etc.) — turn not yet "done"
     4. User sends msg 2 BEFORE the result event lands
     5. Engine injects msg 2 into the running turn
@@ -434,7 +434,7 @@ async def test_inject_after_notify_restarts_typing() -> None:
         await asyncio.sleep(0.1)
         assert len(typing_calls) >= 1
 
-        # send_message lands → notify_chat_replied stops typing
+        # telegram_send_message lands → notify_chat_replied stops typing
         # (slow turn so MIN_TYPING_VISIBLE_SECONDS doesn't kick in)
         from pyclaudir.engine import MIN_TYPING_VISIBLE_SECONDS
 
@@ -466,7 +466,7 @@ async def test_inject_after_notify_restarts_typing() -> None:
 async def test_typing_completes_before_cc_send() -> None:
     """The first typing call must complete BEFORE the user envelope reaches
     the CC subprocess. Otherwise PTB's single connection pool can let the
-    later send_message HTTP POST race ahead of the typing POST, and the
+    later telegram_send_message HTTP POST race ahead of the typing POST, and the
     user never sees typing because Telegram got the message first.
 
     This is the deliberate trade we make: ~100-300ms of added latency once

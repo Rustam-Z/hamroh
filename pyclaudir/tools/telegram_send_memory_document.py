@@ -1,4 +1,4 @@
-"""``send_memory_document`` — send a memory file to a chat as a document.
+"""``telegram_send_memory_document`` — send a memory file to a chat as a document.
 
 The narrow, secure first cut of "send a file out": locked to
 ``data/memories/`` via :meth:`MemoryStore.resolve_path`, so the agent
@@ -36,8 +36,8 @@ class SendMemoryDocumentArgs(BaseModel):
     reply_to_message_id: int | None = None
 
 
-class SendMemoryDocumentTool(BaseTool):
-    name = "send_memory_document"
+class TelegramSendMemoryDocumentTool(BaseTool):
+    name = "telegram_send_memory_document"
     description = (
         "Send a memory file (under data/memories/) to a Telegram chat as a "
         "downloadable document. Path is locked to the memories root with the "

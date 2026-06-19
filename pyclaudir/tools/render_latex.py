@@ -88,7 +88,7 @@ class RenderLatexTool(BaseTool):
         "Render a LaTeX expression to a PNG via KaTeX. Use for math "
         "formulas, equations, integrals, matrices — anything LaTeX-native "
         "that Telegram can't display inline. Returns the relative path "
-        "under data/renders/; pair with send_photo to deliver. Pass the "
+        "under data/renders/; pair with telegram_send_photo to deliver. Pass the "
         "LaTeX without surrounding $$ — the wrapper adds them."
     )
     args_model = RenderLatexArgs

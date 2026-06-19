@@ -1,4 +1,4 @@
-"""``edit_message`` — edit a message the bot previously sent."""
+"""``telegram_edit_message`` — edit a message the bot previously sent."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ class EditMessageArgs(BaseModel):
     text: str = Field(description="New message body.")
 
 
-class EditMessageTool(BaseTool):
-    name = "edit_message"
+class TelegramEditMessageTool(BaseTool):
+    name = "telegram_edit_message"
     description = (
         "Edit a previously sent message. Edits don't trigger Telegram push "
         "notifications, so use this for interim progress updates."

@@ -1,4 +1,4 @@
-"""``read_attachment`` — read a Telegram attachment by relative path.
+"""``telegram_read_attachment`` — read a Telegram attachment by relative path.
 
 Companion to the dispatcher's attachment ingest in ``telegram_io.py``. Path
 resolution is locked to ``data/attachments/``: same traversal-hardened
@@ -29,8 +29,8 @@ class ReadAttachmentArgs(BaseModel):
     )
 
 
-class ReadAttachmentTool(BaseTool):
-    name = "read_attachment"
+class TelegramReadAttachmentTool(BaseTool):
+    name = "telegram_read_attachment"
     description = (
         "Read a Telegram attachment that the user sent. Inbound photos and "
         "documents are saved under data/attachments/ by the dispatcher and "

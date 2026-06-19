@@ -1,4 +1,4 @@
-"""``send_memory_document``: path safety, missing file, happy path, callbacks."""
+"""``telegram_send_memory_document``: path safety, missing file, happy path, callbacks."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import pytest
 
 from pyclaudir.storage.memory import MemoryStore
 from pyclaudir.tools.base import ToolContext
-from pyclaudir.tools.send_memory_document import (
+from pyclaudir.tools.telegram_send_memory_document import (
     SendMemoryDocumentArgs,
-    SendMemoryDocumentTool,
+    TelegramSendMemoryDocumentTool,
 )
 
 
@@ -35,7 +35,7 @@ def _mock_bot(message_id: int = 999) -> MagicMock:
 async def test_happy_path_sends_document(store: MemoryStore) -> None:
     store.write("notes/report.md", "# Report\nbody")
     bot = _mock_bot(message_id=42)
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     result = await tool.run(
         SendMemoryDocumentArgs(chat_id=123, path="notes/report.md")
@@ -62,7 +62,7 @@ async def test_happy_path_sends_document(store: MemoryStore) -> None:
 async def test_caption_and_reply_to_passed_through(store: MemoryStore) -> None:
     store.write("a.md", "x")
     bot = _mock_bot()
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     await tool.run(
         SendMemoryDocumentArgs(
@@ -78,7 +78,7 @@ async def test_caption_and_reply_to_passed_through(store: MemoryStore) -> None:
 @pytest.mark.asyncio
 async def test_path_traversal_rejected(store: MemoryStore) -> None:
     bot = _mock_bot()
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     result = await tool.run(
         SendMemoryDocumentArgs(chat_id=1, path="../etc/passwd")
@@ -92,7 +92,7 @@ async def test_path_traversal_rejected(store: MemoryStore) -> None:
 @pytest.mark.asyncio
 async def test_absolute_path_rejected(store: MemoryStore) -> None:
     bot = _mock_bot()
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     result = await tool.run(
         SendMemoryDocumentArgs(chat_id=1, path="/etc/passwd")
@@ -105,7 +105,7 @@ async def test_absolute_path_rejected(store: MemoryStore) -> None:
 @pytest.mark.asyncio
 async def test_missing_file_returns_error_without_upload(store: MemoryStore) -> None:
     bot = _mock_bot()
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     result = await tool.run(
         SendMemoryDocumentArgs(chat_id=1, path="does/not/exist.md")
@@ -118,7 +118,7 @@ async def test_missing_file_returns_error_without_upload(store: MemoryStore) -> 
 
 @pytest.mark.asyncio
 async def test_no_bot_returns_error(store: MemoryStore) -> None:
-    tool = SendMemoryDocumentTool(ToolContext(bot=None, memory_store=store))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=None, memory_store=store))
     result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="a.md"))
     assert result.is_error is True
     assert "bot not configured" in result.content
@@ -127,7 +127,7 @@ async def test_no_bot_returns_error(store: MemoryStore) -> None:
 @pytest.mark.asyncio
 async def test_no_memory_store_returns_error() -> None:
     bot = _mock_bot()
-    tool = SendMemoryDocumentTool(ToolContext(bot=bot, memory_store=None))
+    tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=None))
     result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="a.md"))
     assert result.is_error is True
     assert "memory store" in result.content
@@ -141,7 +141,7 @@ async def test_on_chat_replied_invoked_after_send(store: MemoryStore) -> None:
     ctx = ToolContext(
         bot=bot, memory_store=store, on_chat_replied=lambda cid: seen.append(cid)
     )
-    tool = SendMemoryDocumentTool(ctx)
+    tool = TelegramSendMemoryDocumentTool(ctx)
 
     await tool.run(SendMemoryDocumentArgs(chat_id=999, path="note.md"))
 

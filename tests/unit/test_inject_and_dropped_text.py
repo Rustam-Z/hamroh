@@ -52,7 +52,7 @@ class FakeWorker:
 
 @pytest.mark.asyncio
 async def test_dropped_text_delivers_answer_to_user() -> None:
-    """A turn that ends with a text block but no ``send_message`` must
+    """A turn that ends with a text block but no ``telegram_send_message`` must
     deliver that text to the waiting chat — not burn a retry turn nagging
     the model to resend."""
     worker = FakeWorker()
@@ -69,7 +69,7 @@ async def test_dropped_text_delivers_answer_to_user() -> None:
         await asyncio.sleep(0.08)
         assert len(worker.sent) == 1, "the user turn was handed to the worker"
 
-        # When the turn ends with a text block but no send_message call
+        # When the turn ends with a text block but no telegram_send_message call
         worker.feed(TurnResult(
             text_blocks=["Here is your answer"],
             control=ControlAction(action="stop", reason="answered"),

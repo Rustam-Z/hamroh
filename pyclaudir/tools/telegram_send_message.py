@@ -1,4 +1,4 @@
-"""``send_message`` — The agent's primary way to talk to humans."""
+"""``telegram_send_message`` — The agent's primary way to talk to humans."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ class SendMessageArgs(BaseModel):
     parse_mode: Literal["HTML", "MarkdownV2", None] = Field(default=None)
 
 
-class SendMessageTool(BaseTool):
-    name = "send_message"
+class TelegramSendMessageTool(BaseTool):
+    name = "telegram_send_message"
     description = (
         "Send a text message to a Telegram chat. Long replies are split "
         "automatically at paragraph boundaries. Returns the first new "
