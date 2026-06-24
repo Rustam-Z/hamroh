@@ -55,6 +55,7 @@ async def _assert_reset_and_recover(
     )
 
 
+@pytest.mark.smoke
 async def test_reset_session_command_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -68,7 +69,6 @@ async def test_reset_session_command_dm(
     await _assert_reset_and_recover(pyclaudir_sut, tester_client, dm)
 
 
-@pytest.mark.smoke
 async def test_reset_session_command_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

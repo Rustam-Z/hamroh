@@ -46,6 +46,7 @@ async def _assert_scheduled(
     )
 
 
+@pytest.mark.smoke
 async def test_reminder_is_scheduled_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -59,6 +60,7 @@ async def test_reminder_is_scheduled_dm(
     await _assert_scheduled(pyclaudir_sut, tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_reminder_is_scheduled_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

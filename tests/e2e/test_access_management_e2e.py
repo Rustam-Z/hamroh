@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from pyclaudir.access import AccessConfig, load_access
@@ -46,6 +47,7 @@ async def _assert_allow_adds(
         await send_and_wait(client, convo, f"/deny user {dummy}")
 
 
+@pytest.mark.slow
 async def test_allow_command_dm(
     tester_client: TelegramClient, dm: Conversation, pyclaudir_sut: Sut
 ) -> None:
@@ -70,6 +72,7 @@ async def test_allow_command_group(
     await _assert_allow_adds(tester_client, group, pyclaudir_sut, _DUMMY_ALLOW_GROUP)
 
 
+@pytest.mark.smoke
 async def test_group_access_commands_take_effect_group(
     tester_client: TelegramClient,
     group: Conversation,
@@ -145,6 +148,7 @@ async def _assert_deny_removes(
         await send_and_wait(client, convo, f"/deny user {dummy}")
 
 
+@pytest.mark.smoke
 async def test_deny_command_dm(
     tester_client: TelegramClient, dm: Conversation, pyclaudir_sut: Sut
 ) -> None:
@@ -187,6 +191,7 @@ async def _assert_policy_sets(
         await send_and_wait(client, convo, f"/policy {original}")
 
 
+@pytest.mark.smoke
 async def test_policy_command_dm(
     tester_client: TelegramClient, dm: Conversation, pyclaudir_sut: Sut
 ) -> None:

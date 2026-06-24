@@ -52,6 +52,7 @@ async def _assert_context(client: TelegramClient, convo: Conversation) -> None:
     assert_reply_within(reply, MAX_TEXT_REPLY_S, "context recall")
 
 
+@pytest.mark.smoke
 async def test_reply_linkage_is_captured_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -64,6 +65,7 @@ async def test_reply_linkage_is_captured_dm(
     await _assert_reply_linkage(pyclaudir_sut, tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_reply_linkage_is_captured_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

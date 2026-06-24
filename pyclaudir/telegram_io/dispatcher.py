@@ -430,6 +430,12 @@ class TelegramDispatcher(OwnerCommandsMixin):
         await self._register_owner_commands()
         await self.application.start()
         await self.application.updater.start_polling(
+            # Discard the Telegram-side backlog left by a previous run (e.g. a
+            # SIGKILL'd instance that never ack'd its offset). Restart continuity
+            # comes from _replay_unconsumed, which replays messages we persisted
+            # ourselves; reprocessing arbitrary old updates here would, among
+            # other things, replay a stale message before "pyclaudir is live".
+            drop_pending_updates=True,
             allowed_updates=[
                 "message",
                 "edited_message",

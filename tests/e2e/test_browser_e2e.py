@@ -21,6 +21,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
@@ -91,6 +92,8 @@ async def _assert_drives_browser(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.smoke
+@pytest.mark.slow
 async def test_bot_google_images_screenshot_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -107,6 +110,7 @@ async def test_bot_google_images_screenshot_dm(
     )
 
 
+@pytest.mark.slow
 async def test_bot_google_images_screenshot_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:
@@ -128,6 +132,8 @@ async def test_bot_google_images_screenshot_group(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.smoke
+@pytest.mark.slow
 async def test_bot_clicks_link_and_screenshots_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -144,6 +150,7 @@ async def test_bot_clicks_link_and_screenshots_dm(
     )
 
 
+@pytest.mark.slow
 async def test_bot_clicks_link_and_screenshots_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

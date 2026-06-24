@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_reply_within
@@ -42,6 +43,7 @@ async def _assert_consults_skill(
     assert_reply_within(reply, MAX_SKILL_REPLY_S, "skill")
 
 
+@pytest.mark.smoke
 async def test_skill_consulted_in_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -54,6 +56,7 @@ async def test_skill_consulted_in_dm(
     await _assert_consults_skill(pyclaudir_sut, tester_client, dm, "trends")
 
 
+@pytest.mark.smoke
 async def test_skill_consulted_in_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

@@ -74,7 +74,7 @@ async def _assert_resumed_processes(
         await send_and_wait(client, dm, "/resume")
 
 
-@pytest.mark.slow
+@pytest.mark.smoke
 async def test_paused_drops_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -88,7 +88,7 @@ async def test_paused_drops_dm(
     await _assert_paused_drops(tester_client, pyclaudir_sut, dm, dm)
 
 
-@pytest.mark.slow
+@pytest.mark.smoke
 async def test_paused_drops_group(
     pyclaudir_sut: Sut,
     tester_client: TelegramClient,
@@ -105,6 +105,7 @@ async def test_paused_drops_group(
     await _assert_paused_drops(tester_client, pyclaudir_sut, dm, group)
 
 
+@pytest.mark.smoke
 async def test_resumed_processes_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:

@@ -10,6 +10,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
@@ -64,6 +65,8 @@ async def _assert_renders(
     assert_within(reply.t_complete_s, MAX_RENDER_REPLY_S, "render")
 
 
+@pytest.mark.smoke
+@pytest.mark.slow
 async def test_bot_renders_and_sends_photo_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -76,6 +79,7 @@ async def test_bot_renders_and_sends_photo_dm(
     await _assert_renders(pyclaudir_sut, tester_client, dm)
 
 
+@pytest.mark.slow
 async def test_bot_renders_and_sends_photo_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

@@ -40,6 +40,7 @@ async def _assert_burst_fully_handled(
 
 
 @pytest.mark.smoke
+@pytest.mark.slow
 async def test_handles_message_burst_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -53,6 +54,7 @@ async def test_handles_message_burst_dm(
 
 
 @pytest.mark.smoke
+@pytest.mark.slow
 async def test_handles_message_burst_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

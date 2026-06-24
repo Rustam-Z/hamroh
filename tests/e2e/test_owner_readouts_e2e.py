@@ -61,6 +61,7 @@ async def test_health_command_group(
 # --- /audit --------------------------------------------------------------
 
 
+@pytest.mark.smoke
 async def test_audit_command_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -97,6 +98,7 @@ async def _assert_access_report(
     assert str(cfg.owner_id) in reply.text, f"owner id missing: {reply.text!r}"
 
 
+@pytest.mark.smoke
 async def test_access_command_dm(
     tester_client: TelegramClient, dm: Conversation, e2e_config: E2EConfig
 ) -> None:

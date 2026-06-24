@@ -14,6 +14,7 @@ import logging
 import os
 from pathlib import Path
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.client import send_and_wait
@@ -38,6 +39,8 @@ async def _eval_chat(
     )
 
 
+@pytest.mark.smoke
+@pytest.mark.slow
 async def test_eval_dm(
     pyclaudir_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -52,6 +55,8 @@ async def test_eval_dm(
     await _eval_chat(tester_client, dm, pyclaudir_sut.db_path)
 
 
+@pytest.mark.smoke
+@pytest.mark.slow
 async def test_eval_group(
     pyclaudir_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

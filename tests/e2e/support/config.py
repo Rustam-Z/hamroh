@@ -60,8 +60,8 @@ MAX_BROWSER_REPLY_S = 300.0  # a multi-step browser flow may emit progress msgs;
 MAX_REMINDER_FIRE_S = 120.0  # a scheduled reminder actually fires (delayed)
 MAX_COMMAND_REPLY_S = 10.0  # an owner control command (/pause, /resume) acks
 MAX_USAGE_REPLY_S = 10.0  # /usage shells out to a short-lived `claude --print`
-MAX_RESET_REPLY_S = 30.0  # /reset_session respawns the engine (MCP-class bound)
-MAX_KILL_S = 10.0  # the bot process exits after /kill
+MAX_RESET_REPLY_S = 15.0  # /reset_session respawns the engine (MCP-class bound)
+MAX_KILL_S = 15.0  # the bot process exits after /kill
 
 
 def load_env() -> None:
