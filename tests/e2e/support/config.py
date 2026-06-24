@@ -38,6 +38,19 @@ _REQUIRED_ENV = (
     "PYCLAUDIR_EFFORT",
 )
 
+#: The status heartbeat interval for the dedicated ``status_sut`` bot only
+#: (operator default is 300s). NOT in ``SUT_ENV_OVERRIDES`` — it reaches the bot
+#: solely through the ``status_sut`` fixture's ``extra_env`` (see ``STATUS_SUT_ENV``
+#: and ``conftest.py``), so every other test keeps the production interval and
+#: never sees a "still working" ping mid-turn. Kept small so the test is quick:
+#: the parked turn only has to outlive this.
+STATUS_SUT_INTERVAL_S = 10.0
+
+#: The env override the ``status_sut`` fixture applies — and nothing else does.
+STATUS_SUT_ENV: dict[str, str] = {
+    "PYCLAUDIR_STATUS_INTERVAL_SECONDS": str(int(STATUS_SUT_INTERVAL_S))
+}
+
 #: Overrides applied over the operator's ``.env`` for the SUT (see ``child_env``).
 #: ``PYCLAUDIR_EFFORT="low"`` is pinned so turn latency stays fast and consistent
 #: regardless of the operator's setting — the per-test latency gates flake when a
@@ -56,8 +69,10 @@ MAX_MEMORY_REPLY_S = 30.0  # a turn that writes/reads a memory file
 MAX_SKILL_REPLY_S = 30.0  # a turn that reads a skill first
 MAX_REMINDER_REPLY_S = 30.0  # scheduling a reminder (reads the reminder-format skill)
 MAX_RENDER_REPLY_S = 60.0  # a turn that renders an image
-MAX_BROWSER_REPLY_S = 300.0  # a multi-step browser flow may emit progress msgs; wait ≤5min for the photo
-MAX_REMINDER_FIRE_S = 120.0  # a scheduled reminder actually fires (delayed)
+MAX_BROWSER_REPLY_S = 120.0  # a multi-step browser flow may emit progress msgs; wait ≤2min for the photo
+MAX_STATUS_PING_S = STATUS_SUT_INTERVAL_S + 5  # first heartbeat: fires AT the 10s interval, so it lands just after it
+MAX_STATUS_TURN_S = 60.0  # a turn parked in one short browser wait, then its done-marker
+MAX_REMINDER_FIRE_S = 60.0  # a scheduled reminder actually fires (delayed)
 MAX_COMMAND_REPLY_S = 10.0  # an owner control command (/pause, /resume) acks
 MAX_USAGE_REPLY_S = 10.0  # /usage shells out to a short-lived `claude --print`
 MAX_RESET_REPLY_S = 15.0  # /reset_session respawns the engine (MCP-class bound)
@@ -93,14 +108,19 @@ def group_ids() -> list[int]:
     return chats
 
 
-def child_env(data_dir: Path) -> dict[str, str]:
+def child_env(
+    data_dir: Path, extra_env: dict[str, str] | None = None
+) -> dict[str, str]:
     """The SUT's environment: the operator's ``.env`` (via ``os.environ``) and
     the root ``plugins.json`` / ``access.json``, plus an isolated data dir so
-    test artifacts (db, memories, renders) never touch the real ones, plus any
-    ``SUT_ENV_OVERRIDES``.
+    test artifacts (db, memories, renders) never touch the real ones, plus
+    ``SUT_ENV_OVERRIDES`` and any per-SUT ``extra_env`` (e.g. a squeezed status
+    interval for the heartbeat bot).
     """
     env = dict(os.environ)
     env.update(SUT_ENV_OVERRIDES)
+    if extra_env:
+        env.update(extra_env)
     env["PYCLAUDIR_DATA_DIR"] = str(data_dir)
     return env
 

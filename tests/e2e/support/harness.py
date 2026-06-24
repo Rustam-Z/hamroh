@@ -178,19 +178,22 @@ def kill_stray_suts(timeout: float = 10.0) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
-def launch_sut(cfg: E2EConfig, data_dir: Path) -> Sut:
+def launch_sut(
+    cfg: E2EConfig, data_dir: Path, extra_env: dict[str, str] | None = None
+) -> Sut:
     """Start ``python -m pyclaudir`` and block until it is 100% ready.
 
     Readiness is two-stage: wait for the ``READY_LINE`` (stack up, MCP/tools
     loaded), then drive a warm-up round-trip so the model's first-turn cold-start
-    happens before the first test runs.
+    happens before the first test runs. ``extra_env`` overrides the SUT's
+    environment for this process only (e.g. a squeezed status interval).
     """
     data_dir.mkdir(parents=True, exist_ok=True)
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "pyclaudir"],
         cwd=REPO_ROOT,
-        env=child_env(data_dir),
+        env=child_env(data_dir, extra_env),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -227,3 +230,24 @@ def stop_sut(sut: Sut, timeout: float = 15.0) -> None:
 def set_access(sut: Sut, access: AccessConfig) -> None:
     """Rewrite the SUT's access.json — the bot hot-reloads it per message."""
     save_access(sut.access_path, access)
+
+
+async def wait_for_engine_idle(sut: Sut, timeout: float = 30.0) -> None:
+    """Block until the SUT's engine has no turn running.
+
+    CC's ``stop`` event lags the bot's visible reply by several seconds, so
+    "Telegram went quiet" does not prove the turn closed — a message sent in
+    that gap is injected into the dying turn instead of starting a fresh one
+    (and only a fresh turn arms the status heartbeat). The engine logs
+    ``starting turn`` when a turn opens and ``turn done`` when it closes; it is
+    idle once a ``turn done`` is the most recent of the two.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        tail = sut.log_tail()
+        if tail.rfind("turn done") > tail.rfind("starting turn"):
+            return
+        await asyncio.sleep(0.2)
+    raise RuntimeError(
+        f"engine still busy after {timeout:.0f}s\n--- last output ---\n{sut.log_tail()}"
+    )

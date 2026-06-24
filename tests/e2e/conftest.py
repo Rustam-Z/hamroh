@@ -20,7 +20,13 @@ import pytest_asyncio
 from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
-from tests.e2e.support.config import E2EConfig, group_ids, load_env, missing_env
+from tests.e2e.support.config import (
+    STATUS_SUT_ENV,
+    E2EConfig,
+    group_ids,
+    load_env,
+    missing_env,
+)
 from tests.e2e.support.harness import Sut, kill_stray_suts, launch_sut, stop_sut
 from tests.e2e.support.models import Conversation
 
@@ -101,6 +107,37 @@ def killable_sut(
         yield victim
     finally:
         stop_sut(victim)
+        revived = launch_sut(e2e_config, pyclaudir_sut.data_dir)
+        pyclaudir_sut.proc = revived.proc
+        pyclaudir_sut._log = revived._log
+
+
+@pytest.fixture(scope="module")
+def status_sut(
+    pyclaudir_sut: Sut,
+    e2e_config: E2EConfig,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Sut]:
+    """A bot whose status-heartbeat interval is squeezed to ``STATUS_SUT_INTERVAL_S``.
+
+    The interval is read from the environment at startup, so it needs its own
+    process. Only one process may poll the bot token, so we stop the shared
+    session SUT, launch this one on the same token with the override, and revive
+    the shared SUT afterwards — the swap dance from ``killable_sut``. Module
+    scope means the heartbeat tests in one file share a single such bot, so the
+    dance runs once. Every other test keeps the production 300s interval and
+    never sees a "still working" ping.
+    """
+    stop_sut(pyclaudir_sut)
+    sut = launch_sut(
+        e2e_config,
+        tmp_path_factory.mktemp("status-data"),
+        extra_env=STATUS_SUT_ENV,
+    )
+    try:
+        yield sut
+    finally:
+        stop_sut(sut)
         revived = launch_sut(e2e_config, pyclaudir_sut.data_dir)
         pyclaudir_sut.proc = revived.proc
         pyclaudir_sut._log = revived._log
