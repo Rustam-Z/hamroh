@@ -30,7 +30,7 @@ def test_field_descriptions_and_constraints_reach_the_schema() -> None:
     """The wrapper must carry each pydantic ``Field`` description AND its
     constraints into the MCP input schema — otherwise everything we write in
     ``Field(description=..., max_length=...)`` is invisible to the model."""
-    from pyclaudir.tools.telegram_create_poll import TelegramCreatePollTool
+    from pyclaudir.tools.telegram.telegram_create_poll import TelegramCreatePollTool
 
     props = _input_schema(TelegramCreatePollTool(ToolContext()))["properties"]
 

@@ -6,7 +6,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from .base import BaseTool, ToolResult
+from ..base import BaseTool, ToolResult
 
 log = logging.getLogger(__name__)
 

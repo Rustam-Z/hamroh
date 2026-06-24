@@ -534,7 +534,6 @@ class Engine(TypingIndicatorMixin):
           stays intact for that callback. CC saw the messages before
           the abort, so callbacks fire — reminders advance and don't
           loop on a poisoned state.
-
         Neither path kicks ``_pending`` — the subprocess is mid-respawn.
         """
         if result.aborted_reason == "session-reset":

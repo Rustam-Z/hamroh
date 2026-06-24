@@ -9,7 +9,7 @@ import pytest
 
 from pyclaudir.storage.memory import MemoryStore
 from pyclaudir.tools.base import ToolContext
-from pyclaudir.tools.telegram_send_memory_document import (
+from pyclaudir.tools.telegram.telegram_send_memory_document import (
     SendMemoryDocumentArgs,
     TelegramSendMemoryDocumentTool,
 )

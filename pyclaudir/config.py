@@ -134,6 +134,12 @@ class Config:
     #: turn — even if the count is still under the limit.
     #: Env var: ``PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS`` (default 30).
     tool_error_window_seconds: float
+    #: How often a still-running turn reports progress. Every this-many seconds
+    #: the bot posts a status update ("still working, N min, last step: …") to
+    #: the waiting chat so a long task isn't silent. The turn is NOT stopped —
+    #: the owner can reply "stop" to halt it; otherwise it keeps going.
+    #: Env var: ``PYCLAUDIR_STATUS_INTERVAL_SECONDS`` (default 300, i.e. 5 min).
+    status_interval_seconds: float
 
     # ----- Settings for spotting a stuck Claude process -----
     # A separate watcher checks if Claude has gone silent in the middle
@@ -179,7 +185,14 @@ class Config:
     #: Env var: ``PYCLAUDIR_CRASH_WINDOW_SECONDS`` (default 600.0,
     #: which is 10 minutes).
     crash_window_seconds: float
-    
+
+    #: Run the shared Chromium headless (no visible window). Default ``True``.
+    #: Set to ``False`` to watch the browser tools (and renders) drive a real
+    #: window — handy for debugging a flow locally. Needs a display, so keep it
+    #: ``True`` on servers/CI.
+    #: Env var: ``PYCLAUDIR_BROWSER_HEADLESS`` (default ``True``).
+    browser_headless: bool
+
     # Derived paths
     db_path: Path = field(init=False)
     memories_dir: Path = field(init=False)
@@ -220,12 +233,14 @@ class Config:
             attachment_max_bytes=_int("PYCLAUDIR_ATTACHMENT_MAX_BYTES", 20_000_000),
             tool_error_max_count=_int("PYCLAUDIR_TOOL_ERROR_MAX_COUNT", 3),
             tool_error_window_seconds=_float("PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS", 30.0),
+            status_interval_seconds=_float("PYCLAUDIR_STATUS_INTERVAL_SECONDS", 300.0),
             liveness_timeout_seconds=_float("PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS", 300.0),
             liveness_poll_seconds=_float("PYCLAUDIR_LIVENESS_POLL_SECONDS", 30.0),
             crash_backoff_base=_float("PYCLAUDIR_CRASH_BACKOFF_BASE", 2.0),
             crash_backoff_cap=_float("PYCLAUDIR_CRASH_BACKOFF_CAP", 64.0),
             crash_limit=_int("PYCLAUDIR_CRASH_LIMIT", 10),
             crash_window_seconds=_float("PYCLAUDIR_CRASH_WINDOW_SECONDS", 600.0),
+            browser_headless=_bool("PYCLAUDIR_BROWSER_HEADLESS", True),
         )
         # access.json normally lives at the repo root (see __post_init__).
         # The e2e harness points this at a temp file via PYCLAUDIR_ACCESS_PATH
@@ -256,12 +271,14 @@ class Config:
             attachment_max_bytes=20_000_000,
             tool_error_max_count=3,
             tool_error_window_seconds=30.0,
+            status_interval_seconds=300.0,
             liveness_timeout_seconds=300.0,
             liveness_poll_seconds=30.0,
             crash_backoff_base=2.0,
             crash_backoff_cap=64.0,
             crash_limit=10,
             crash_window_seconds=600.0,
+            browser_headless=True,
         )
         # Tests use isolated tmp dirs — keep access.json inside data_dir
         # so each test gets its own copy and never touches the repo root.

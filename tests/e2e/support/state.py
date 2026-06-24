@@ -18,6 +18,27 @@ def new_png_files(renders_dir: Path, after: float) -> list[Path]:
     return [p for p in renders_dir.glob("*.png") if p.stat().st_mtime >= after]
 
 
+def current_cc_session_id(cc_logs_dir: Path) -> str | None:
+    """The bot's current Claude Code session id.
+
+    Each CC session writes one ``<session_id>.stream.jsonl`` capture file, so the
+    newest such file (by mtime) names the active session. Returns None before any
+    session has initialised. A test reads this before and after /reset_session and
+    asserts it changed. ``pending-*`` files (spawned but not yet init'd) are
+    skipped so the result is always a real session id.
+    """
+    if not cc_logs_dir.exists():
+        return None
+    files = [
+        p
+        for p in cc_logs_dir.glob("*.stream.jsonl")
+        if not p.name.startswith("pending-")
+    ]
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime).name.removesuffix(".stream.jsonl")
+
+
 def memory_files_containing(memories_dir: Path, token: str) -> list[Path]:
     """Memory files whose text contains ``token`` — proves disk persistence."""
     return [

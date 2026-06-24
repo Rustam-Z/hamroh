@@ -88,7 +88,7 @@ async def test_render_latex_passes_allow_list_and_networkidle(
     captured: dict = {}
 
     async def _fake(html, width, height, out_path, *, allowed_hosts=None,
-                    wait_until="domcontentloaded"):
+                    wait_until="domcontentloaded", manager=None):
         captured["html"] = html
         captured["allowed_hosts"] = allowed_hosts
         captured["wait_until"] = wait_until
@@ -130,7 +130,7 @@ async def test_render_html_does_not_pass_allow_list(
     captured: dict = {}
 
     async def _fake(html, width, height, out_path, *, allowed_hosts=None,
-                    wait_until="domcontentloaded"):
+                    wait_until="domcontentloaded", manager=None):
         captured["allowed_hosts"] = allowed_hosts
         captured["wait_until"] = wait_until
         out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 50)

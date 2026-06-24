@@ -15,13 +15,13 @@ also blocked — it would be a local-file-read primitive otherwise.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from .base import BaseTool, ToolResult
+from .browser import BrowserManager
 
 log = logging.getLogger(__name__)
 
@@ -36,13 +36,9 @@ _DEFAULT_HEIGHT = 600
 #: Per-page render timeout (set_content + screenshot). Inside the browser.
 _RENDER_TIMEOUT_MS = 15_000
 
-#: Cap on how long ``browser.close()`` is allowed to take. A wedged
-#: chromium otherwise blocks the whole CC turn here.
-_CLOSE_TIMEOUT_S = 5.0
-
-#: Wall-clock budget for the whole render call (launch + render + close).
-#: If we exceed this, we cancel the inner coroutine, which fires the
-#: cleanup path. Sized larger than the page timeout + close budget.
+#: Wall-clock budget for the whole render call (context + render). If we
+#: exceed this, we cancel the inner coroutine, which fires the cleanup
+#: path. Sized larger than the page timeout.
 _WALL_CLOCK_S = 30.0
 
 
@@ -82,23 +78,29 @@ async def _render_to_png(
     *,
     allowed_hosts: tuple[str, ...] | None = None,
     wait_until: str = "domcontentloaded",
+    manager: BrowserManager | None = None,
 ) -> None:
     """Drive playwright to render ``html`` → ``out_path``.
 
     Pulled out so tests can monkey-patch a fake without spinning up a
-    real browser. Cleanup is layered:
+    real browser. Uses the process-wide warm ``manager`` (from
+    ``ToolContext``) so Chromium isn't relaunched per call. When
+    ``manager`` is None (unit/e2e tests, or a ctx built without one) a
+    throwaway manager is created and closed for this one call — same
+    behaviour as the old launch-per-call path.
+
+    Cleanup is layered:
 
     1. Page-level: ``set_content(timeout=_RENDER_TIMEOUT_MS)`` bounds
        rendering inside the browser.
-    2. Browser-level: a ``try/finally`` wraps every browser interaction;
-       ``browser.close()`` runs on any path, with its own
-       ``_CLOSE_TIMEOUT_S`` budget. If close hangs we force-kill the
-       chromium subprocess.
+    2. Context-level: ``manager.context()`` closes the per-render context
+       (with its own bounded budget) on any path; the warm browser is NOT
+       closed.
     3. Wall-clock: the whole coroutine is wrapped in
        ``asyncio.wait_for(_WALL_CLOCK_S)``. If we time out, the inner
-       task is cancelled — the ``finally`` still fires — and the
-       ``async with async_playwright()`` __aexit__ tears down the driver
-       subprocess, which kills any surviving children.
+       task is cancelled — the context ``finally`` still fires — and a
+       wedged Chromium is relaunched on the next render via
+       ``is_connected``.
 
     ``allowed_hosts`` is **internal** — not exposed via any tool arg.
     Default ``None`` blocks all outbound traffic. ``render_latex`` passes
@@ -110,43 +112,40 @@ async def _render_to_png(
     pages. Set to ``"networkidle"`` when external assets need to load
     + run before screenshot (e.g. KaTeX rendering).
     """
-    from playwright.async_api import async_playwright  # local import — heavy
     from urllib.parse import urlparse
 
+    owns_manager = manager is None
+    mgr = manager if manager is not None else BrowserManager()
+
     async def _do() -> None:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            try:
-                ctx = await browser.new_context(
-                    viewport={"width": width, "height": height},
-                    java_script_enabled=True,
-                )
-                page = await ctx.new_page()
+        async with mgr.context(
+            viewport={"width": width, "height": height},
+            java_script_enabled=True,
+        ) as ctx:
+            page = await ctx.new_page()
 
-                async def _route(route):
-                    if allowed_hosts is None:
-                        await route.abort()
-                        return
-                    url = route.request.url
-                    scheme = url.split(":", 1)[0].lower()
-                    if scheme in ("data", "about", "blob"):
-                        await route.continue_()
-                        return
-                    host = urlparse(url).hostname or ""
-                    if host in allowed_hosts:
-                        await route.continue_()
-                    else:
-                        await route.abort()
+            async def _route(route):
+                if allowed_hosts is None:
+                    await route.abort()
+                    return
+                url = route.request.url
+                scheme = url.split(":", 1)[0].lower()
+                if scheme in ("data", "about", "blob"):
+                    await route.continue_()
+                    return
+                host = urlparse(url).hostname or ""
+                if host in allowed_hosts:
+                    await route.continue_()
+                else:
+                    await route.abort()
 
-                await page.route("**/*", _route)
-                await page.set_content(
-                    html,
-                    wait_until=wait_until,
-                    timeout=_RENDER_TIMEOUT_MS,
-                )
-                await page.screenshot(path=str(out_path), full_page=True)
-            finally:
-                await _close_browser(browser)
+            await page.route("**/*", _route)
+            await page.set_content(
+                html,
+                wait_until=wait_until,
+                timeout=_RENDER_TIMEOUT_MS,
+            )
+            await page.screenshot(path=str(out_path), full_page=True)
 
     try:
         await asyncio.wait_for(_do(), timeout=_WALL_CLOCK_S)
@@ -154,26 +153,9 @@ async def _render_to_png(
         raise TimeoutError(
             f"render exceeded {_WALL_CLOCK_S}s wall-clock budget"
         ) from exc
-
-
-async def _close_browser(browser) -> None:
-    """Close ``browser`` with a bounded budget; force-kill on hang.
-
-    Failure to close cleanly is logged but never re-raised — we're
-    already in a ``finally``, the outer code wants the original
-    exception (if any) preserved.
-    """
-    try:
-        await asyncio.wait_for(browser.close(), timeout=_CLOSE_TIMEOUT_S)
-    except (asyncio.TimeoutError, Exception) as exc:
-        log.warning(
-            "browser.close hung/failed (%s: %s); force-killing chromium",
-            type(exc).__name__, exc,
-        )
-        proc = getattr(browser, "process", None)
-        if proc is not None:
-            with contextlib.suppress(Exception):
-                proc.kill()
+    finally:
+        if owns_manager:
+            await mgr.close()
 
 
 class RenderHtmlTool(BaseTool):
@@ -216,6 +198,7 @@ class RenderHtmlTool(BaseTool):
                 out_path,
                 allowed_hosts=allowed_hosts,
                 wait_until=wait_until,
+                manager=self.ctx.browser_manager,
             )
         except ImportError as exc:
             return ToolResult(

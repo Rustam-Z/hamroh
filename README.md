@@ -162,6 +162,14 @@ Details: [docs/documentation.md](docs/documentation.md).
 
 **search & history:** web search and web fetch (no internal / RFC1918 URLs). Read-only SQL SELECTs on the chat database (`messages`, `users`, `reminders`, ≤100 rows). Multi-hop reply-chain expansion.
 
+**browser:** drive a real headless Chromium for pages `WebFetch` can't reach (JS-rendered, multi-step, form-driven). `browser_navigate` opens a page and the rest act on that same page across the turn, so flows like *search → open the images tab → grab the first image → send it* work:
+- *navigate & history:* `browser_navigate`, `browser_back`, `browser_reload`, `browser_reset` (clear cookies/state).
+- *interact:* `browser_click`, `browser_fill`, `browser_press_key` (Enter/Tab), `browser_select_option`, `browser_scroll` (reveal lazy-loaded content).
+- *read:* `browser_get_text`, `browser_get_html`, `browser_get_attribute` (an image's `src`, a link's `href`), `browser_list` (enumerate matching links/images), `browser_wait_for`.
+- *capture:* `browser_screenshot` (whole page or one element) and `browser_download` (fetch the original file — e.g. an image — and send it).
+
+It reuses one warm Chromium kept alive for the whole session, and follows popups / new tabs automatically. Live network is allowed here (unlike renders), but localhost / RFC1918 / link-local / `file://` targets are refused. On by default; disable by listing the tools in `builtin_tools_disabled` in `plugins.json`.
+
 **scheduling:** one-shot + cron-recurring reminders. Optional daily self-reflection skill (off by default; enable with `PYCLAUDIR_SELF_REFLECTION_ENABLED`) that promotes corrections into durable rules with owner approval.
 
 **self-edit:** append rules to `prompts/project.md` (owner-only); shipped `system.md` is git-tracked and not exposed.

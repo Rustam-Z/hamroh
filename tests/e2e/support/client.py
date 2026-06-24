@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 
 from telethon import TelegramClient, events  # type: ignore[import-untyped]
 from telethon.tl.custom.message import Message  # type: ignore[import-untyped]
@@ -101,6 +102,66 @@ async def send_and_wait(
         media_kind=next((k for m in chunks if (k := _media_kind(m))), None),
         t_first_s=t_first,
         t_complete_s=last_at - sent_at,
+    )
+
+
+def has_photo(msg: Message) -> bool:
+    """Predicate for :func:`send_and_wait_until` — the message carries a photo."""
+    return msg.photo is not None
+
+
+async def send_and_wait_until(
+    client: TelegramClient,
+    convo: Conversation,
+    text: str,
+    *,
+    until: Callable[[Message], bool],
+    timeout: float,
+) -> Reply:
+    """Send ``text`` and keep collecting the bot's messages until one satisfies
+    ``until`` (e.g. carries a photo), or ``timeout`` elapses.
+
+    A long agent turn emits several progress messages ("on it…", "searching…")
+    before the real result lands. The quiet-window helpers stop at the first of
+    those; this keeps waiting — through any number of interim messages — for the
+    one that actually answers. ``t_complete_s`` is the time to that matching
+    message (the felt "time to the answer"); on timeout it's the last message
+    seen and ``media_kind`` reveals that no photo arrived.
+    """
+    chunks: list[Message] = []
+    matched = asyncio.Event()
+    first_at = last_at = matched_at = 0.0
+
+    async def _collect(event: events.NewMessage.Event) -> None:
+        nonlocal first_at, last_at, matched_at
+        now = time.perf_counter()
+        first_at = first_at or now
+        last_at = now
+        chunks.append(event.message)
+        if not matched.is_set() and until(event.message):
+            matched_at = now
+            matched.set()
+
+    evt = events.NewMessage(
+        chats=convo.chat, from_users=convo.reply_from, incoming=True
+    )
+    client.add_event_handler(_collect, evt)
+    try:
+        sent_at = time.perf_counter()
+        await client.send_message(convo.chat, _format_outbound(convo, text))
+        try:
+            await asyncio.wait_for(matched.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass
+    finally:
+        client.remove_event_handler(_collect, evt)
+
+    end = matched_at or last_at
+    return Reply(
+        chunks=tuple(m.raw_text or "" for m in chunks),
+        media_kind=next((k for m in chunks if (k := _media_kind(m))), None),
+        t_first_s=(first_at - sent_at) if first_at else 0.0,
+        t_complete_s=(end - sent_at) if end else 0.0,
     )
 
 

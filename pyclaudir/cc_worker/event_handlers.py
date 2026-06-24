@@ -50,6 +50,9 @@ USER_VISIBLE_TOOLS: frozenset[str] = frozenset({
     "mcp__pyclaudir__telegram_stop_poll",
 })
 
+#: Stripped from tool names for the status heartbeat's "last action" line.
+_MCP_PREFIX = "mcp__pyclaudir__"
+
 
 class CcEventHandlerMixin:
     """Event-dispatch methods mixed into ``CcWorker``."""
@@ -61,6 +64,9 @@ class CcEventHandlerMixin:
     #: Init-gate read by ``_handle_event`` / set by ``_on_system_init``;
     #: defined in ``CcWorker.__init__`` (see worker.py).
     _awaiting_turn_init: bool
+    #: Most recent tool the agent called this turn (prefix-stripped); written
+    #: here, read by the status heartbeat. Defined in ``CcWorker.__init__``.
+    _last_tool_action: str | None
 
     def _handle_event(self, event: dict[str, Any]) -> None:
         """Parse one stream-json event from the CC subprocess.
@@ -180,6 +186,9 @@ class CcEventHandlerMixin:
         )
         if tool_name in USER_VISIBLE_TOOLS:
             self._current_turn.user_visible_action = True
+        # Remember the latest real action so the status heartbeat can name it.
+        if tool_name != "StructuredOutput":
+            self._last_tool_action = tool_name.removeprefix(_MCP_PREFIX)
         # StructuredOutput is the definitive turn-end signal. Claudir
         # confirmed: the action lives in the tool_use event's input
         # field, NOT in the result event payload.
@@ -247,9 +256,10 @@ class CcEventHandlerMixin:
             action=ctrl.action if ctrl else None,
             reason=ctrl.reason if ctrl else None,
         )
-        # Turn finished cleanly; defuse the watchdog so a stale deadline
-        # from this turn can't trip the breaker after the fact.
+        # Turn finished cleanly; defuse the tool-error watchdog and stop the
+        # status heartbeat so neither fires after the turn is over.
         self._cancel_tool_error_watchdog()
+        self._cancel_status_heartbeat()
         self._result_queue.put_nowait(self._current_turn)
         self._current_turn = None
 

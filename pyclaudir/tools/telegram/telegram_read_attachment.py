@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from .base import BaseTool, ToolResult
+from ..base import BaseTool, ToolResult
 
 
 class ReadAttachmentArgs(BaseModel):

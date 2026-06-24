@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..db.messages import add_bot_reaction
-from ..transcript import log_reaction
-from .base import BaseTool, ToolResult, bot_identity
+from ...db.messages import add_bot_reaction
+from ...transcript import log_reaction
+from ..base import BaseTool, ToolResult, bot_identity
 
 # Telegram's Bot API only accepts this fixed set of emojis for
 # ReactionTypeEmoji. Source:

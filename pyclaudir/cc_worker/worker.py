@@ -87,6 +87,11 @@ class CcWorker(CcEventHandlerMixin):
     #: consume the crash budget.
     #: Signature: ``async on_stale_session(stale_id: str)``
     OnStaleSession = Any  # Callable[[str], Awaitable[None]] | None
+    #: Optional callback fired by the per-turn status heartbeat every
+    #: ``status_interval_seconds`` while a turn is still running. Lets a long
+    #: task report progress instead of going silent; the turn keeps running.
+    #: Signature: ``async on_status(elapsed_s: float, last_action: str | None)``
+    OnStatus = Any  # Callable[[float, str | None], Awaitable[None]] | None
 
     def __init__(
         self,
@@ -97,6 +102,7 @@ class CcWorker(CcEventHandlerMixin):
         on_crash: OnCrash = None,
         on_giveup: OnGiveup = None,
         on_stale_session: OnStaleSession = None,
+        on_status: OnStatus = None,
     ) -> None:
         self.spec = spec
         self.heartbeat = heartbeat or Heartbeat()
@@ -110,6 +116,7 @@ class CcWorker(CcEventHandlerMixin):
         self._liveness_poll: float = config.liveness_poll_seconds
         self._tool_error_max_count: int = config.tool_error_max_count
         self._tool_error_window: float = config.tool_error_window_seconds
+        self._status_interval: float = config.status_interval_seconds
         self._crash_backoff_base: float = config.crash_backoff_base
         self._crash_backoff_cap: float = config.crash_backoff_cap
         self._crash_limit: int = config.crash_limit
@@ -139,6 +146,7 @@ class CcWorker(CcEventHandlerMixin):
         self._on_crash = on_crash
         self._on_giveup = on_giveup
         self._on_stale_session = on_stale_session
+        self._on_status = on_status
         #: ``time.monotonic()`` of the last successfully parsed stdout
         #: event. Together with ``heartbeat.last_activity`` (bumped on
         #: every MCP tool call) this tells the liveness monitor whether
@@ -162,6 +170,15 @@ class CcWorker(CcEventHandlerMixin):
         #: for self-inflicted exits.
         self._supervisor_abort_reason: str | None = None
         self._tool_error_abort_task: asyncio.Task | None = None
+        #: Per-turn status heartbeat. A recurring timer that, every
+        #: ``status_interval`` seconds while a turn runs, fires ``on_status`` so a
+        #: long task reports progress instead of going silent. It does NOT abort
+        #: the turn — the owner can reply "stop" to halt it; otherwise it
+        #: continues. ``_last_tool_action`` is the most recent tool the agent
+        #: called this turn, surfaced in the status so the ping is meaningful.
+        self._turn_started_at: float | None = None
+        self._last_tool_action: str | None = None
+        self._status_task: asyncio.Task | None = None
         #: Raw stdout/stderr capture — see :class:`RawCapture`. No-ops
         #: entirely when ``spec.cc_logs_dir`` is None.
         self._capture = RawCapture(spec.cc_logs_dir)
@@ -212,6 +229,7 @@ class CcWorker(CcEventHandlerMixin):
     async def stop(self) -> None:
         self._stop_supervisor.set()
         self._cancel_tool_error_watchdog()
+        self._cancel_status_heartbeat()
         if self._liveness_task and not self._liveness_task.done():
             self._liveness_task.cancel()
             try:
@@ -471,6 +489,8 @@ class CcWorker(CcEventHandlerMixin):
         self._turn_tool_error_count = 0
         self._turn_first_tool_error_at = None
         self._cancel_tool_error_watchdog()
+        self._last_tool_action = None
+        self._arm_status_heartbeat()  # report progress on long turns
         log_cc_user(text)
         envelope = {
             "type": "user",
@@ -651,3 +671,45 @@ class CcWorker(CcEventHandlerMixin):
         self._tool_error_abort_task = asyncio.create_task(
             self._terminate_proc(), name="cc-tool-error-abort",
         )
+
+    def _arm_status_heartbeat(self) -> None:
+        """(Re)start the per-turn status heartbeat at the start of a turn."""
+        self._cancel_status_heartbeat()
+        self._turn_started_at = time.monotonic()
+        self._status_task = asyncio.create_task(
+            self._status_heartbeat(), name="cc-status-heartbeat",
+        )
+
+    async def _status_heartbeat(self) -> None:
+        """Report progress every ``status_interval`` while a turn is running.
+
+        Worker-side (not the agent), so it fires even if the agent is wedged.
+        The turn is NOT aborted — a long task keeps going; the owner can reply
+        "stop" to halt it. Recurs until the turn ends (this task is cancelled,
+        or ``_current_turn`` goes None). Other guards still apply: the liveness
+        monitor catches silence, the tool-error breaker catches error loops.
+        """
+        while True:
+            await asyncio.sleep(self._status_interval)
+            if self._current_turn is None:
+                return
+            started = self._turn_started_at or time.monotonic()
+            await self._fire_status(time.monotonic() - started)
+
+    async def _fire_status(self, elapsed: float) -> None:
+        """Invoke the status callback; never let a notify failure kill the loop."""
+        if self._on_status is None:
+            return
+        try:
+            await self._on_status(elapsed, self._last_tool_action)
+        except Exception:
+            log.warning("status callback failed", exc_info=True)
+
+    def _cancel_status_heartbeat(self) -> None:
+        """Stop the status heartbeat if running. Idempotent — safe from
+        ``send()`` (new turn), ``stop()`` (shutdown), or the result-event handler
+        (turn finished cleanly)."""
+        task = self._status_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._status_task = None

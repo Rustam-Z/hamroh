@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from .base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
+from ..base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
 
 log = logging.getLogger(__name__)
 

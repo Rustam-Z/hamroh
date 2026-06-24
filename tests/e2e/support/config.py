@@ -56,6 +56,7 @@ MAX_MEMORY_REPLY_S = 15.0  # a turn that writes/reads a memory file
 MAX_SKILL_REPLY_S = 30.0  # a turn that reads a skill first
 MAX_REMINDER_REPLY_S = 30.0  # scheduling a reminder (reads the reminder-format skill)
 MAX_RENDER_REPLY_S = 60.0  # a turn that renders an image
+MAX_BROWSER_REPLY_S = 300.0  # a multi-step browser flow may emit progress msgs; wait ≤5min for the photo
 MAX_REMINDER_FIRE_S = 160.0  # a scheduled reminder actually fires (delayed)
 MAX_COMMAND_REPLY_S = 5.0  # an owner control command (/pause, /resume) acks
 MAX_USAGE_REPLY_S = 10.0  # /usage shells out to a short-lived `claude --print`

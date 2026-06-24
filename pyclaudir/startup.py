@@ -44,6 +44,7 @@ from .storage.memory import MemoryStore
 from .storage.render import RenderStore
 from .telegram_io import TelegramDispatcher
 from .tools.base import ToolContext
+from .tools.browser import BrowserManager, BrowserSession
 
 # Pinned so log captures keyed on ``"pyclaudir"`` keep matching after
 # the module split.
@@ -281,6 +282,10 @@ class _App:
     dispatcher: TelegramDispatcher | None = None
     engine: Engine | None = None
     reminder_task: asyncio.Task | None = None
+    browser_manager: BrowserManager | None = None
+    browser_session: BrowserSession | None = None
+    #: Background task warming Chromium at boot; held so it isn't GC'd.
+    warm_task: asyncio.Task | None = None
     #: Open handle to ``data/.lock`` — held for the process lifetime so
     #: the flock stays alive. Released automatically on any exit.
     lock: IO[str] | None = None
@@ -356,6 +361,7 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
 
 
 async def _start_mcp_server(
+    config: Config,
     db: Database,
     stores: _Stores,
     plugins: Plugins,
@@ -366,6 +372,7 @@ async def _start_mcp_server(
     async def db_logger(**kwargs):  # called by every MCP tool wrapper
         await insert_tool_call(db, **kwargs)
 
+    browser_manager = BrowserManager(headless=config.browser_headless)
     ctx = ToolContext(
         bot=None,  # filled in once the dispatcher exists
         database=db,
@@ -374,6 +381,8 @@ async def _start_mcp_server(
         skills_store=stores.skills,
         attachment_store=stores.attachments,
         render_store=stores.renders,
+        browser_manager=browser_manager,
+        browser_session=BrowserSession(browser_manager),
         chat_titles=chat_titles,
     )
     mcp = McpServer(
@@ -497,6 +506,30 @@ def _make_on_cc_giveup(app: _App):
     return _on_cc_giveup
 
 
+def _make_on_cc_status(app: _App):
+    """Status heartbeat: while a turn keeps running, tell the waiting chats it's
+    still working (every ``status_interval_seconds``) so a long task isn't
+    silent. The turn keeps going — the owner can reply 'stop' to halt it."""
+
+    async def _on_cc_status(elapsed: float, last_action: str | None) -> None:
+        engine = app.engine
+        if engine is None or not engine._turn.active_chats:
+            return
+        minutes = max(1, int(elapsed // 60))
+        step = f" (last step: {last_action})" if last_action else ""
+        text = (
+            f"⏳ Still working on this — about {minutes} min so far{step}. "
+            "Reply 'stop' if you want me to halt."
+        )
+        for chat_id in set(engine._turn.active_chats):
+            try:
+                await app.dispatcher.bot.send_message(chat_id=chat_id, text=text)
+            except Exception:
+                log.warning("status notify to %s failed", chat_id, exc_info=True)
+
+    return _on_cc_status
+
+
 def _build_dispatcher_and_engine(
     app: _App,
     stores: _Stores,
@@ -554,5 +587,9 @@ async def _run_until_stopped(app: _App) -> None:
         await app.engine.stop()
         await app.worker.stop()
         await app.mcp.stop()
+        if app.browser_session is not None:
+            await app.browser_session.close()
+        if app.browser_manager is not None:
+            await app.browser_manager.close()
         await app.db.close()
         log.info("clean shutdown complete")

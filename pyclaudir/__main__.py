@@ -27,6 +27,7 @@ from .startup import (
     _make_on_cc_crash,
     _make_on_cc_giveup,
     _make_on_cc_stale_session,
+    _make_on_cc_status,
     _open_db_and_stores,
     _replay_unconsumed,
     _run_until_stopped,
@@ -51,7 +52,14 @@ async def _async_main() -> None:
     app = _App(config=config, db=db, lock=lock)
 
     chat_titles: dict[int, str] = {}  # dispatcher writes, outbound tools read
-    ctx, app.mcp = await _start_mcp_server(db, stores, plugins, chat_titles)
+    ctx, app.mcp = await _start_mcp_server(config, db, stores, plugins, chat_titles)
+    app.browser_manager = ctx.browser_manager
+    app.browser_session = ctx.browser_session
+    # Warm Chromium in the background so even the first render is fast.
+    if app.browser_manager is not None:
+        app.warm_task = asyncio.create_task(
+            app.browser_manager.warm(), name="pyclaudir-browser-warm",
+        )
     spec = _build_cc_spec(config, plugins, app.mcp)
 
     app.worker = CcWorker(
@@ -60,6 +68,7 @@ async def _async_main() -> None:
         on_crash=_make_on_cc_crash(app),
         on_giveup=_make_on_cc_giveup(app),
         on_stale_session=_make_on_cc_stale_session(app),
+        on_status=_make_on_cc_status(app),
     )
     await app.worker.start()
     await app.worker.supervise()

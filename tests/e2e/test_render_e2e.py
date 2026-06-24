@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
-from tests.e2e.support.assertions import assert_reply_within
-from tests.e2e.support.client import send_and_wait
+from tests.e2e.support.assertions import assert_within
+from tests.e2e.support.client import has_photo, send_and_wait_until
 from tests.e2e.support.data import new_sentinel
 from tests.e2e.support.harness import Sut
 from tests.e2e.support.models import Conversation
@@ -30,11 +30,14 @@ async def _assert_renders(
     since = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     before = time.time()
 
-    reply = await send_and_wait(
+    # The bot sometimes sends a text line before the photo, so wait for the
+    # message that actually carries the photo rather than stopping at the first.
+    reply = await send_and_wait_until(
         client,
         convo,
         f"Render a small HTML table containing the text {token} and send it to me "
         "as a photo.",
+        until=has_photo,
         timeout=180,
     )
 
@@ -46,14 +49,19 @@ async def _assert_renders(
         ),
         None,
     )
-    log.info("render: turn=%.2fs render_html=%sms", reply.t_complete_s, render_ms)
+    log.info(
+        "render: time-to-photo=%.2fs render_html=%sms msgs=%d",
+        reply.t_complete_s, render_ms, len(reply.chunks),
+    )
 
     assert reply.media_kind == "photo", (
-        f"expected a photo, got media_kind={reply.media_kind!r}; text {reply.text!r}"
+        f"no photo within {MAX_RENDER_REPLY_S:.0f}s; "
+        f"got {len(reply.chunks)} message(s), last text {reply.text!r}"
     )
     pngs = new_png_files(sut.renders_dir, before)
     assert pngs, f"no new PNG appeared in {sut.renders_dir}"
-    assert_reply_within(reply, MAX_RENDER_REPLY_S, "render")
+    # Time to the photo (not to a text ack) within the render budget.
+    assert_within(reply.t_complete_s, MAX_RENDER_REPLY_S, "render")
 
 
 async def test_bot_renders_and_sends_photo_dm(

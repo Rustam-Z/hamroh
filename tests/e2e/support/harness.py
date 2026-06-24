@@ -73,6 +73,12 @@ class Sut:
         return self.data_dir / "renders"
 
     @property
+    def cc_logs_dir(self) -> Path:
+        # One <session_id>.stream.jsonl per Claude Code session — lets a test
+        # observe the session id and prove /reset_session changed it.
+        return self.data_dir / "cc_logs"
+
+    @property
     def access_path(self) -> Path:
         # The SUT reads the real root access.json (REPO_ROOT is its cwd), so
         # access-management tests inspect and rewrite that same file.

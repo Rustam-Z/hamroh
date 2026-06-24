@@ -14,7 +14,7 @@ from pyclaudir.storage.render import RenderPathError, RenderStore
 from pyclaudir.tools import render_html as render_html_mod
 from pyclaudir.tools.base import ToolContext
 from pyclaudir.tools.render_html import RenderHtmlArgs, RenderHtmlTool
-from pyclaudir.tools.telegram_send_photo import SendPhotoArgs, TelegramSendPhotoTool
+from pyclaudir.tools.telegram.telegram_send_photo import SendPhotoArgs, TelegramSendPhotoTool
 
 
 @pytest.fixture()
@@ -232,100 +232,36 @@ async def test_send_photo_no_render_store() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Browser cleanup — finally + bounded close + force-kill fallback
+# Wall-clock budget — a hung launch is cancelled, not leaked
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_close_browser_force_kills_on_hang() -> None:
-    """If browser.close() hangs, _close_browser falls back to proc.kill()."""
-    from pyclaudir.tools.render_html import _close_browser
-
-    async def _hang():
-        await asyncio.sleep(60)  # would block past the close budget
-
-    killed = {"called": False}
-
-    class FakeProc:
-        def kill(self) -> None:
-            killed["called"] = True
-
-    class FakeBrowser:
-        process = FakeProc()
-        def close(self):  # returns a coroutine; bound by wait_for
-            return _hang()
-
-    # Patch the close timeout down so the test runs fast.
-    monkeypatched = 0.05
-    import pyclaudir.tools.render_html as m
-    orig = m._CLOSE_TIMEOUT_S
-    m._CLOSE_TIMEOUT_S = monkeypatched
-    try:
-        await _close_browser(FakeBrowser())
-    finally:
-        m._CLOSE_TIMEOUT_S = orig
-    assert killed["called"] is True
-
-
-@pytest.mark.asyncio
-async def test_close_browser_force_kills_on_exception() -> None:
-    """If close() raises (chromium already crashed), still try to kill."""
-    from pyclaudir.tools.render_html import _close_browser
-
-    killed = {"called": False}
-
-    class FakeProc:
-        def kill(self) -> None:
-            killed["called"] = True
-
-    class FakeBrowser:
-        process = FakeProc()
-        async def close(self) -> None:
-            raise RuntimeError("connection closed")
-
-    await _close_browser(FakeBrowser())
-    assert killed["called"] is True
-
-
-@pytest.mark.asyncio
-async def test_close_browser_handles_kill_failure_silently() -> None:
-    """proc.kill() raising must not propagate — we're in a finally."""
-    from pyclaudir.tools.render_html import _close_browser
-
-    class FakeProc:
-        def kill(self) -> None:
-            raise OSError("no such process")
-
-    class FakeBrowser:
-        process = FakeProc()
-        async def close(self) -> None:
-            raise RuntimeError("dead")
-
-    # Should not raise.
-    await _close_browser(FakeBrowser())
 
 
 @pytest.mark.asyncio
 async def test_render_to_png_wall_clock_enforces_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """If the inner browser work hangs, _render_to_png raises TimeoutError
-    on the wall-clock budget — proving cleanup runs and we don't leak."""
+    """If the browser launch hangs, _render_to_png raises TimeoutError on the
+    wall-clock budget — proving the inner task is cancelled, not leaked."""
     pytest.importorskip("playwright.async_api")
     import pyclaudir.tools.render_html as m
     import playwright.async_api as pw
 
-    # Fake async_playwright whose chromium.launch hangs forever.
+    # Fake async_playwright().start() whose chromium.launch hangs forever.
     class _Ch:
         async def launch(self, **_kw):
             await asyncio.sleep(60)
 
     class _PW:
         chromium = _Ch()
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): return None
 
-    monkeypatch.setattr(pw, "async_playwright", lambda: _PW())
+        async def stop(self) -> None:
+            return None
+
+    class _CM:  # what async_playwright() returns
+        async def start(self) -> _PW:
+            return _PW()
+
+    monkeypatch.setattr(pw, "async_playwright", lambda: _CM())
     monkeypatch.setattr(m, "_WALL_CLOCK_S", 0.1)
 
     with pytest.raises(TimeoutError, match="wall-clock budget"):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .base import BaseTool, ToolResult
+from ..base import BaseTool, ToolResult
 from .telegram_send_message import SendMessageArgs, TelegramSendMessageTool
 
 

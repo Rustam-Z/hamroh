@@ -32,6 +32,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..storage.memory import MemoryStore
     from ..storage.render import RenderStore
     from ..skills_store import SkillsStore
+    from .browser import BrowserManager, BrowserSession
 
 
 class Heartbeat:
@@ -65,6 +66,13 @@ class ToolContext:
     skills_store: "SkillsStore | None" = None
     attachment_store: "AttachmentStore | None" = None
     render_store: "RenderStore | None" = None
+    #: Process-wide warm Chromium shared by render_html/render_latex so the
+    #: browser isn't relaunched per call. None in tests (falls back to a
+    #: throwaway browser inside the renderer).
+    browser_manager: "BrowserManager | None" = None
+    #: Long-lived browser context+page shared by the ``browser_*`` tools so a
+    #: navigated page survives across separate tool calls. None in tests.
+    browser_session: "BrowserSession | None" = None
     heartbeat: Heartbeat = field(default_factory=Heartbeat)
     #: chat_id → display name. Populated by the dispatcher on every inbound
     #: message so outbound transcript lines can show the chat's title.
