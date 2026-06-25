@@ -8,10 +8,12 @@ debugging, or auditing.
 
 The parts of pyclaudir:
 
-- Custom MCP tools to interact with Telegram API, memory, context, web
+- Custom MCP tools: Telegram messaging (text/reply/edit/delete/reactions/polls), memory, chat history, web search/fetch
+- Vision + media: read inbound photos/docs/PDFs, render HTML and LaTeX to PNG, send photos back
+- Browser automation: drive a real headless Chromium for pages `WebFetch` can't reach (live network, stateful session)
 - Self-reasoning loop: after every response (reason: stop)
 - Memory: per person, group, instructions, learnings 
-- Reminders
+- Reminders (one-shot + cron-recurring)
 - Agent skills
 - plugins.json to extend with external MCPs
 - access.json for group and DM access with different access policy.
@@ -37,6 +39,7 @@ The parts of pyclaudir:
 - [Access control](#access-control)
 - [Memory](#memory)
 - [Rendered visuals](#rendered-visuals)
+- [Browser automation](#browser-automation)
 - [Self-reflection skill](#self-reflection-skill)
 - [Agent skills](#agent-skills)
 - [Reminders](#reminders)
@@ -105,10 +108,15 @@ into a `Config` field.
 | `PYCLAUDIR_MODEL` | yes | — | which Claude model to use (e.g. `claude-sonnet-4-6`); passed to `--model` |
 | `PYCLAUDIR_EFFORT` | yes | — | how hard Claude thinks; passed to `--effort` (one of `low`, `medium`, `high`, `max`) |
 | `PYCLAUDIR_DATA_DIR` | no | `./data` | SQLite, memories, access config, raw CC logs |
+| `PYCLAUDIR_ACCESS_PATH` | no | repo-root `access.json` | override where `access.json` lives (mainly so the e2e harness can point at a temp file). |
 | `CLAUDE_CODE_BIN` | no | `claude` | name or full path of the `claude` program |
 | `PYCLAUDIR_DEBOUNCE_MS` | no | `0` | wait this long after a message before sending it to Claude. Messages that arrive during the wait are bundled into one turn. `0` = send right away. |
 | `PYCLAUDIR_RATE_LIMIT_PER_MIN` | no | `20` | max DMs per minute from one user. The owner is not limited. Group chats are not limited. |
-| `PYCLAUDIR_SELF_REFLECTION_CRON` | no | `0 0 * * *` | when the daily self-reflection task runs (UTC cron). Default: midnight UTC. |
+| `PYCLAUDIR_ATTACHMENT_MAX_BYTES` | no | `20000000` | largest inbound photo/document (20 MB) the bot will download and read; bigger files are refused with a marker. |
+| `PYCLAUDIR_BROWSER_HEADLESS` | no | `true` | run the automation Chromium headless. Set `false` only for local debugging (visible window). |
+| `PYCLAUDIR_STATUS_INTERVAL_SECONDS` | no | `300` | while a turn is still running, ping the waiting chats with a progress note this often (seconds) so a long task isn't silent. |
+| `PYCLAUDIR_SELF_REFLECTION_ENABLED` | no | `false` | master switch for the daily self-reflection loop (off by default). When off, the auto-seeded reflection reminder is removed at boot. |
+| `PYCLAUDIR_SELF_REFLECTION_CRON` | no | `0 0 * * *` | when the daily self-reflection task runs (UTC cron). Default: midnight UTC. Only used when the loop is enabled. |
 | `PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS` | no | `300` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |
 | `PYCLAUDIR_LIVENESS_POLL_SECONDS` | no | `30` | how often the watcher wakes up to check the timeout above. |
 | `PYCLAUDIR_TOOL_ERROR_MAX_COUNT` | no | `3` | how many tool errors trigger a stop. Used in two places: (a) failed tool calls in one turn — too many ends the turn; (b) turns where Claude wrote text but didn't call `telegram_send_message` — too many in a row makes the bot show the underlying error to the user. Stops the bot from looping forever on a broken tool or a broken model setup. |
@@ -267,6 +275,9 @@ hides the `/` menu from non-owners.
                              queued messages
 /audit                       Recent tool failures, backups, memory footprint
 /logs [N]                    Tail the JSON log file (last 50 lines, or N)
+/usage                       Relay Claude Code's own usage report (subscription
+                             session + weekly rate limits, with reset times) by
+                             shelling out to `claude --print /usage`
 ```
 
 Application logs are written two ways: human-readable text to the console
@@ -345,6 +356,26 @@ with semantic colors (green/blue/red/amber/purple/cyan/gray).
 
 Playwright + Chromium are pre-installed in the Docker image. For local
 runs: `uv sync && uv run playwright install chromium`.
+
+## Browser automation
+
+For pages `WebFetch` can't reach (JS-rendered, multi-step, form-driven),
+the bot drives a real headless Chromium. Unlike `render_html` — which
+runs network-blocked — the browser tools have **live network access**,
+so this is the path for interacting with the open web. Private/internal
+targets (localhost, RFC1918, link-local, `file://`) are still refused.
+
+The key difference from the one-shot render path is **session state**:
+`browser_navigate` opens one shared page, and every other `browser_*`
+tool acts on that same page for the rest of the turn. One warm Chromium
+instance is kept alive across the whole bot session (not relaunched per
+call), and popups / new tabs are followed automatically. This lets the
+agent chain steps — *navigate → wait for an element → click → read text
+→ screenshot → send* — the way a person would.
+
+The full tool list (navigate/history, interact, read, capture) is in
+[tools.md](tools.md#browser). All sixteen are on by default; disable any
+by name via `builtin_tools_disabled` in `plugins.json`.
 
 ## Self-reflection skill
 

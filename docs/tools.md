@@ -35,6 +35,36 @@ server. Auto-discovered from `pyclaudir/tools/*.py` (each tool is a
 | `render_latex` | Render a LaTeX expression to PNG via KaTeX (loaded from `cdn.jsdelivr.net` only — narrow allow-list). Pass the LaTeX without surrounding `$$`. Optional `title`. Returns the relative path; pair with `telegram_send_photo`. |
 | `telegram_send_photo` | Send a rendered photo (from `data/renders/`) as an inline Telegram photo with preview. Pair with `render_html` or `render_latex`. |
 
+### Browser
+
+Drive a real headless Chromium for pages `WebFetch` can't reach
+(JS-rendered, multi-step, form-driven). One warm browser is reused for
+the whole session; `browser_navigate` opens a page and the rest of the
+tools act on that **same page** across the turn — so flows like *search →
+open the images tab → grab the first image → send it* work. Live network
+is allowed here (unlike renders), but localhost / RFC1918 / link-local /
+`file://` targets are refused. On by default; disable by listing the
+tools in `builtin_tools_disabled`.
+
+| Tool | What it does |
+|---|---|
+| `browser_navigate` | Open a URL in the shared Chromium page and wait for the DOM. Start here, then use the other `browser_*` tools on the same page. ~30s load budget. |
+| `browser_back` | Go back one entry in the page history. Returns the URL landed on. |
+| `browser_reload` | Reload the current page (content changed or didn't finish loading). |
+| `browser_reset` | Close the page and clear cookies/state; the next `browser_navigate` opens a fresh isolated tab. |
+| `browser_click` | Click an element. Waits up to ~10s for it to be actionable. |
+| `browser_fill` | Type a value into an input/textarea (replaces existing content). Pair with `browser_click` to submit. |
+| `browser_press_key` | Press a key (`Enter` to submit, `Tab` to move focus); optional selector targets a field. |
+| `browser_select_option` | Choose an option in a native `<select>` dropdown (use instead of `browser_fill`). |
+| `browser_scroll` | Scroll the page (or a selector into view) to reveal lazy-loaded content. |
+| `browser_get_text` | Return the visible text of the page, or one element via CSS selector. Truncated. |
+| `browser_get_html` | Return the page HTML, or one element's inner HTML. Use when structure/attributes matter. Truncated. |
+| `browser_get_attribute` | Read one HTML attribute of an element — e.g. an image's `src`, a link's `href`. |
+| `browser_list` | List elements matching a selector with their text and href/src — pick which link/image to act on. |
+| `browser_wait_for` | Wait for an element to appear (after an async-loading click) before reading or acting. |
+| `browser_screenshot` | Screenshot the page (or one element) to a PNG under `data/renders/`; pair with `telegram_send_photo`. |
+| `browser_download` | Download the original file at a URL (typically an image) into `data/renders/` and return its path; pair with `telegram_send_photo`. Get the URL first with `browser_get_attribute`. |
+
 ### Memory (`data/memories/`)
 
 | Tool | What it does |
