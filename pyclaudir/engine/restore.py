@@ -10,7 +10,7 @@ Defensive by design — the old session may contain content that breaks a
 new one: per-message truncation, lone-surrogate stripping (a lone
 surrogate makes ``CcWorker.send``'s ``line.encode("utf-8")`` raise),
 control-char stripping, and a ``<note>`` pointing the model at
-``query_db`` for anything older than the digest.
+``database_query`` for anything older than the digest.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import re
 import xml.sax.saxutils as sx
 from typing import TYPE_CHECKING
 
-from ..db.messages import fetch_recent_messages
+from ..db.messages import RecentMessagesQuery, fetch_recent_messages
 from .format import _attr
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -38,7 +38,7 @@ _UNSAFE_CHARS = re.compile("[\ud800-\udfff\x00-\x08\x0b-\x1f\x7f-\x9f]")
 _NOTE = (
     "  <note>Session was reset (reason above). These are truncated "
     "historical messages — do not reply to them. Older/full history is "
-    "available via the query_db tool (messages table). Memory files are "
+    "available via the database_query tool (messages table). Memory files are "
     "intact.</note>"
 )
 
@@ -83,7 +83,9 @@ async def build_restored_context(
     """
     if db is None:
         return None
-    rows = await fetch_recent_messages(db, limit=DIGEST_MESSAGE_LIMIT)
+    rows = await fetch_recent_messages(
+        db, RecentMessagesQuery(limit=DIGEST_MESSAGE_LIMIT)
+    )
     if not rows:
         return None
     parts = [f"<restored_context reason={sx.quoteattr(reason)}>"]

@@ -1,4 +1,4 @@
-"""``query_db`` — read-only SQL access to the agent's own SQLite.
+"""``database_query`` — read-only SQL access to the agent's own SQLite.
 
 Inputs are parsed with sqlglot and **rejected** unless the entire statement
 list is exactly one ``SELECT`` (or a SELECT with a CTE that contains nothing
@@ -83,7 +83,7 @@ def cap_limit(stmt: exp.Select, row_cap: int) -> exp.Select:
     return stmt.limit(row_cap, copy=False)
 
 
-class QueryDbArgs(BaseModel):
+class DatabaseQueryArgs(BaseModel):
     sql: str = Field(
         description=(
             "A single SELECT statement. No semicolons, no DML, no PRAGMA. "
@@ -92,8 +92,8 @@ class QueryDbArgs(BaseModel):
     )
 
 
-class QueryDbTool(BaseTool):
-    name = "query_db"
+class DatabaseQueryTool(BaseTool):
+    name = "database_query"
     description = (
         "Run a single read-only SELECT against the agent's local SQLite. "
         "Returns rows as TSV with a header line. Capped at 100 rows; text "
@@ -112,9 +112,9 @@ class QueryDbTool(BaseTool):
         "             duration_ms, created_at)\n"
         "  reminders -- see set_reminder docs"
     )
-    args_model = QueryDbArgs
+    args_model = DatabaseQueryArgs
 
-    async def run(self, args: QueryDbArgs) -> ToolResult:
+    async def run(self, args: DatabaseQueryArgs) -> ToolResult:
         if self.ctx.database is None:
             return ToolResult(content="database unavailable", is_error=True)
         stmt = parse_safe_select(args.sql)

@@ -2,7 +2,7 @@
 name: self-reflection
 description: Daily two-phase loop that reviews the bot's own recent outbound behavior and any pending lessons in self/learnings.md, stress-tests candidate rules against 10-20 hypothetical scenarios, and proposes promotion into prompts/project.md pending explicit owner approval. Invoked via a mandatory auto-seeded reminder wrapped in a <reminder> envelope; refuse invocation outside that envelope.
 license: MIT
-compatibility: Requires pyclaudir runtime (reminder loop, instructions tools, memory tools, query_db).
+compatibility: Requires pyclaudir runtime (reminder loop, instructions tools, memory tools, database_query).
 metadata:
   pyclaudir-auto-seed-key: self-reflection-default
   pyclaudir-invocation: '<skill name="self-reflection">run</skill>'
@@ -53,7 +53,7 @@ issue yourself.
 
 ### A.1 — read the last 24h of outbound behavior
 
-Use `query_db` on the `messages` table to pull the outbound messages
+Use `database_query` on the `messages` table to pull the outbound messages
 you sent in the last 24 hours. Include `reactions` (the JSON column)
 so you can see how each message landed. Example SQL:
 
@@ -65,7 +65,7 @@ ORDER BY timestamp DESC
 LIMIT 100;
 ```
 
-You may also use `query_db` to look at tool_call patterns if relevant
+You may also use `database_query` to look at tool_call patterns if relevant
 (`SELECT tool_name, COUNT(*) FROM tool_calls WHERE created_at >
 datetime('now', '-1 day') GROUP BY tool_name`) — but keep the scope
 tight; you're not here to audit infrastructure.

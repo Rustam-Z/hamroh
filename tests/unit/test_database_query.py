@@ -1,4 +1,4 @@
-"""Step 11: query_db tool."""
+"""Step 11: database_query tool."""
 
 from __future__ import annotations
 
@@ -12,7 +12,11 @@ from pyclaudir.db.database import Database
 from pyclaudir.db.messages import insert_message
 from pyclaudir.models import ChatMessage
 from pyclaudir.tools.base import ToolContext
-from pyclaudir.tools.query_db import QueryDbArgs, QueryDbTool, is_safe_select
+from pyclaudir.tools.database_query import (
+    DatabaseQueryArgs,
+    DatabaseQueryTool,
+    is_safe_select,
+)
 
 
 @pytest.mark.parametrize(
@@ -55,7 +59,7 @@ def test_safe_select_rejects_cte_with_dml() -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_db_executes_select(tmp_path: Path) -> None:
+async def test_database_query_executes_select(tmp_path: Path) -> None:
     cfg = Config.for_test(tmp_path)
     cfg.ensure_dirs()
     db = await Database.open(cfg.db_path)
@@ -72,8 +76,8 @@ async def test_query_db_executes_select(tmp_path: Path) -> None:
             ),
         )
         ctx = ToolContext(database=db)
-        tool = QueryDbTool(ctx)
-        result = await tool.run(QueryDbArgs(sql="SELECT direction, text FROM messages"))
+        tool = DatabaseQueryTool(ctx)
+        result = await tool.run(DatabaseQueryArgs(sql="SELECT direction, text FROM messages"))
         assert result.is_error is False
         assert "direction\ttext" in result.content
         assert "in\thi" in result.content
@@ -82,7 +86,7 @@ async def test_query_db_executes_select(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_db_respects_user_limit(tmp_path: Path) -> None:
+async def test_database_query_respects_user_limit(tmp_path: Path) -> None:
     """A user-supplied LIMIT must not collide with the ROW_CAP appender."""
     cfg = Config.for_test(tmp_path)
     cfg.ensure_dirs()
@@ -101,9 +105,9 @@ async def test_query_db_respects_user_limit(tmp_path: Path) -> None:
                 ),
             )
         ctx = ToolContext(database=db)
-        tool = QueryDbTool(ctx)
+        tool = DatabaseQueryTool(ctx)
         result = await tool.run(
-            QueryDbArgs(
+            DatabaseQueryArgs(
                 sql="SELECT text FROM messages ORDER BY message_id DESC LIMIT 2"
             )
         )
@@ -114,7 +118,7 @@ async def test_query_db_respects_user_limit(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_db_clamps_oversized_limit(tmp_path: Path) -> None:
+async def test_database_query_clamps_oversized_limit(tmp_path: Path) -> None:
     """A user LIMIT above ROW_CAP must be clamped to ROW_CAP rows."""
     cfg = Config.for_test(tmp_path)
     cfg.ensure_dirs()
@@ -133,8 +137,8 @@ async def test_query_db_clamps_oversized_limit(tmp_path: Path) -> None:
                 ),
             )
         ctx = ToolContext(database=db)
-        tool = QueryDbTool(ctx)
-        result = await tool.run(QueryDbArgs(sql="SELECT text FROM messages LIMIT 120"))
+        tool = DatabaseQueryTool(ctx)
+        result = await tool.run(DatabaseQueryArgs(sql="SELECT text FROM messages LIMIT 120"))
         assert result.is_error is False, result.content
         assert result.data == {"row_count": 100}
     finally:
@@ -142,14 +146,14 @@ async def test_query_db_clamps_oversized_limit(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_db_rejects_hostile_sql(tmp_path: Path) -> None:
+async def test_database_query_rejects_hostile_sql(tmp_path: Path) -> None:
     cfg = Config.for_test(tmp_path)
     cfg.ensure_dirs()
     db = await Database.open(cfg.db_path)
     try:
         ctx = ToolContext(database=db)
-        tool = QueryDbTool(ctx)
-        result = await tool.run(QueryDbArgs(sql="DROP TABLE messages"))
+        tool = DatabaseQueryTool(ctx)
+        result = await tool.run(DatabaseQueryArgs(sql="DROP TABLE messages"))
         assert result.is_error is True
         assert "rejected" in result.content
     finally:

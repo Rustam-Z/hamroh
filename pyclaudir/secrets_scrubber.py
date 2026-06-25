@@ -3,7 +3,7 @@
 The system prompt tells the bot not to echo secrets (OWASP LLM02), but
 the inbound message text and the raw Telegram Update JSON get stored
 in SQLite regardless. If a user pastes an API key into a DM, it sits
-in ``data/pyclaudir.db`` forever, queryable via ``query_db`` and
+in ``data/pyclaudir.db`` forever, queryable via ``database_query`` and
 visible in any DB dump. This module redacts well-known patterns at
 the persistence boundary so they never land in the DB.
 

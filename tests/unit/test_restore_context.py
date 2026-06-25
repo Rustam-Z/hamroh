@@ -20,6 +20,7 @@ from pyclaudir.cc_worker import TurnResult
 from pyclaudir.config import Config
 from pyclaudir.db.database import Database
 from pyclaudir.db.messages import (
+    RecentMessagesQuery,
     fetch_recent_messages,
     insert_message,
     mark_deleted,
@@ -129,7 +130,7 @@ async def test_fetch_recent_last_n_oldest_first_both_directions(db: Database) ->
     await insert_message(db, _msg(100, "bot reply", direction="out", user_id=1))
 
     # When fetching the last 10
-    rows = await fetch_recent_messages(db, limit=10)
+    rows = await fetch_recent_messages(db, RecentMessagesQuery(limit=10))
 
     # Then the newest 10 come back oldest-first, both directions included
     assert len(rows) == 10, "limit must cap the digest size"
@@ -151,7 +152,7 @@ async def test_fetch_recent_skips_deleted_and_untrusted_inbound(db: Database) ->
     await _insert_consumed(db, _msg(4, "poison from a failed turn"))
     await insert_message(db, _msg(5, "bot reply", direction="out", user_id=1))
 
-    rows = await fetch_recent_messages(db, limit=10)
+    rows = await fetch_recent_messages(db, RecentMessagesQuery(limit=10))
 
     texts = [r["text"] for r in rows]
     assert texts == ["kept", "bot reply"], (
@@ -168,7 +169,7 @@ async def test_fetch_recent_untrusted_dont_count_against_limit(db: Database) -> 
     await _insert_consumed(db, _msg(13, "failed turn a"))
     await _insert_consumed(db, _msg(14, "failed turn b"))
 
-    rows = await fetch_recent_messages(db, limit=10)
+    rows = await fetch_recent_messages(db, RecentMessagesQuery(limit=10))
 
     # Then the limit is filled entirely from trusted history
     assert [r["message_id"] for r in rows] == list(range(3, 13)), (
@@ -185,7 +186,7 @@ async def test_mark_edited_resets_processed(db: Database) -> None:
     await mark_edited(db, CHAT, 1, "edited into poison")
 
     # Then it loses trust and leaves digest range
-    rows = await fetch_recent_messages(db, limit=10)
+    rows = await fetch_recent_messages(db, RecentMessagesQuery(limit=10))
     assert rows == [], (
         "edited content must re-earn processed=1 — a committed message "
         "can't be edited into poison after the fact"
@@ -219,7 +220,7 @@ async def test_build_renders_reason_note_and_escaped_bodies(db: Database) -> Non
     assert block is not None
     assert block.startswith('<restored_context reason="api-error">')
     assert block.endswith("</restored_context>")
-    assert "query_db" in block, "the note must point at older history"
+    assert "database_query" in block, "the note must point at older history"
     assert "&lt;b&gt;this&lt;/b&gt; &amp; that" in block, (
         "bodies must be XML-escaped, never raw"
     )
@@ -342,7 +343,7 @@ async def test_failed_turn_leaves_messages_untrusted(
     assert await _processed_flag(db, 1) == 0, (
         "only a clean turn may commit — failure must leave processed=0"
     )
-    rows = await fetch_recent_messages(db, limit=10)
+    rows = await fetch_recent_messages(db, RecentMessagesQuery(limit=10))
     assert rows == [], "the failed batch must never re-enter a session"
     worker.reset_session.assert_awaited_once()
 

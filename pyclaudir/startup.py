@@ -51,29 +51,6 @@ from .tools.browser import BrowserManager, BrowserSession
 log = logging.getLogger("pyclaudir")
 
 
-def _setup_logging() -> None:
-    """Configure logging so the transcript is the star.
-
-    The ``pyclaudir.tx`` logger emits one line per inbound/outbound/edit/
-    delete/reaction message, prefixed ``[RX]`` / ``[TX]`` / etc. We quiet
-    down the high-volume HTTP polling chatter so those lines stand out.
-    """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-5s %(name)-22s %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    # httpx prints one INFO line per long-poll getUpdates (every ~10s).
-    # That spam buries the actual conversation. Silence everything below
-    # WARNING for it.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    # MCP per-request logs are interesting when debugging tool calls but
-    # noisy in normal operation. Comment this out if you want them back.
-    logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
-    logging.getLogger("mcp.server.streamable_http_manager").setLevel(logging.WARNING)
-
-
 _SELF_REFLECTION_KEY = "self-reflection-default"
 
 

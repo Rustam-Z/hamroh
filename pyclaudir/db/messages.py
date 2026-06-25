@@ -7,6 +7,7 @@ in tests and don't entangle the database wrapper with PTB types.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 
@@ -24,9 +25,7 @@ def _from_iso(raw: str) -> datetime:
     return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
 
-async def mark_messages_consumed(
-    db: Database, keys: list[tuple[int, int]]
-) -> None:
+async def mark_messages_consumed(db: Database, keys: list[tuple[int, int]]) -> None:
     """Flag ``(chat_id, message_id)`` rows as handed to the CC subprocess.
 
     Called by the engine once per turn, AFTER the send — never on the
@@ -43,9 +42,7 @@ async def mark_messages_consumed(
     )
 
 
-async def mark_messages_processed(
-    db: Database, keys: list[tuple[int, int]]
-) -> None:
+async def mark_messages_processed(db: Database, keys: list[tuple[int, int]]) -> None:
     """Flag this turn's inbound rows as successfully processed by CC.
 
     The only thing that makes a message digest-eligible (see
@@ -100,23 +97,50 @@ async def fetch_unconsumed_inbound(db: Database) -> list[ChatMessage]:
     ]
 
 
-async def fetch_recent_messages(db: Database, *, limit: int) -> list[dict]:
-    """Most recent trusted messages, both directions, oldest-first.
+@dataclass(frozen=True)
+class RecentMessagesQuery:
+    """Filters for :func:`fetch_recent_messages`.
 
-    Feeds the restored-context digest (``engine/restore.py``). Skips
-    deleted rows, synthetic rows (``message_id <= 0``), and inbound rows
-    without ``processed=1`` — only a cleanly completed turn commits its
-    messages, so anything from a failed/aborted/crashed turn (or still
-    pending replay as a live ``<msg>``) never re-enters a fresh session.
-    Outbound rows are always eligible: Telegram confirmed their delivery.
+    ``before_message_id`` paginates *within a chat* (message ids are per-chat),
+    so pass it together with ``chat_id``.
     """
+
+    limit: int
+    include_unprocessed: bool = False
+    chat_id: int | None = None
+    before_message_id: int | None = None
+
+
+async def fetch_recent_messages(db: Database, query: RecentMessagesQuery) -> list[dict]:
+    """Most recent real messages, both directions, oldest-first.
+
+    Always skips deleted and synthetic (``message_id <= 0``) rows. Outbound
+    rows are always eligible: Telegram confirmed their delivery.
+
+    ``include_unprocessed=False`` (default) also skips inbound rows without
+    ``processed=1`` — only a cleanly completed turn commits its messages, so a
+    failed/aborted turn (or a still-pending live ``<msg>``) never re-enters a
+    fresh session. The restored-context digest (``engine/restore.py``) needs
+    this; the ``database_get_recent_messages`` tool passes ``True`` for live
+    recall and narrows further with ``chat_id`` / ``before_message_id``.
+    """
+    where = ["message_id > 0", "deleted = 0"]
+    params: list[int] = []
+    if not query.include_unprocessed:
+        where.append("NOT (direction = 'in' AND processed = 0)")
+    if query.chat_id is not None:
+        where.append("chat_id = ?")
+        params.append(query.chat_id)
+    if query.before_message_id is not None:
+        where.append("message_id < ?")
+        params.append(query.before_message_id)
+    params.append(query.limit)
     rows = await db.fetch_all(
         "SELECT chat_id, message_id, user_id, username, first_name, "
-        "direction, timestamp, text FROM messages "
-        "WHERE message_id > 0 AND deleted = 0 "
-        "AND NOT (direction = 'in' AND processed = 0) "
-        "ORDER BY rowid DESC LIMIT ?",
-        (limit,),
+        "direction, timestamp, text FROM messages WHERE "
+        + " AND ".join(where)
+        + " ORDER BY rowid DESC LIMIT ?",
+        params,
     )
     kept = [dict(r) for r in rows]
     kept.reverse()  # oldest-first

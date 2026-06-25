@@ -276,7 +276,7 @@ tile/card/step.
   <div class="step purple"><div class="circle">5</div><div class="body">
     <div class="ttl"><h3>Claude Code Turn</h3><span class="pill purple">~2.5s</span></div>
     <div class="txt">AI processes message, calls MCP tools (<code>telegram_send_message</code>,
-    <code>query_db</code>, <code>get_image</code>…), returns control action.</div>
+    <code>database_query</code>, <code>get_image</code>…), returns control action.</div>
   </div></div>
 
   <div class="glossary"><div class="h">Shared State: Survives CC Restarts</div>

@@ -266,7 +266,15 @@ hides the `/` menu from non-owners.
                              rate-limit notices, current turn duration,
                              queued messages
 /audit                       Recent tool failures, backups, memory footprint
+/logs [N]                    Tail the JSON log file (last 50 lines, or N)
 ```
+
+Application logs are written two ways: human-readable text to the console
+(captured by `docker logs`) and a structured JSON line per record to
+`data/logs/pyclaudir.log` (rotated daily, 7 days kept). Each JSON record carries
+`ts`, `level`, `component` (derived from the logger — `dispatcher`, `cc_worker`,
+`tx`, `mcp`, `reminder`, …), `logger`, and `msg`. The root level is set by
+`PYCLAUDIR_LOG_LEVEL` (default `INFO`); `/logs` tails this file from Telegram.
 
 Edit `access.json` directly if you prefer — changes are hot-reloaded.
 
@@ -345,7 +353,7 @@ auto-seeded recurring reminder (default midnight UTC every day; override
 with `PYCLAUDIR_SELF_REFLECTION_CRON`):
 
 - **Phase A — introspect.** Bot reads the last 24h of outbound messages
-  + their reactions via `query_db`, applies a checklist (over-long
+  + their reactions via `database_query`, applies a checklist (over-long
   replies, ping-rule deviations, negative reactions, repeated rewrites,
   tone/language mismatches), and writes up to 3 candidate lessons into
   `learnings.md` with `[pending]` markers. This catches drift the user
@@ -670,8 +678,9 @@ sqlite3 data/pyclaudir.db \
    FROM messages WHERE user_id = 12345 AND reply_to_id IS NOT NULL;"
 ```
 
-`query_db` (the MCP tool) lets the agent run SELECTs against this same
-database — sqlglot-validated, capped at 100 rows.
+`database_query` (the MCP tool) lets the agent run SELECTs against this same
+database — sqlglot-validated, capped at 100 rows. `database_get_recent_messages`
+returns the latest messages without writing SQL.
 
 ### 5. Bonus — interactive replay (`claude --resume`)
 
@@ -754,7 +763,7 @@ is enforced by code, not by hope, and tested in
   `/access`, `/allow`, `/deny`, `/policy` check
   `update.effective_user.id == PYCLAUDIR_OWNER_ID` before running and
   silently no-op for anyone else.
-- **`query_db` is read-only.** Inputs are parsed with `sqlglot` and
+- **`database_query` is read-only.** Inputs are parsed with `sqlglot` and
   rejected unless they're a single SELECT. CTEs are walked
   recursively; semicolons, PRAGMA, ATTACH, INSERT/UPDATE/DELETE/DROP/
   CREATE/ALTER all fail. Results cap at 100 rows; text columns
@@ -1038,7 +1047,8 @@ pyclaudir/
 │       ├── skills.py           # list/read agent skill playbooks under skills/
 │       ├── telegram_create_poll.py      # send poll / quiz
 │       ├── telegram_stop_poll.py
-│       ├── query_db.py
+│       ├── database_query.py
+│       ├── database_get_recent_messages.py
 │       └── reminder.py         # set/list/cancel reminders
 └── tests/
 ```

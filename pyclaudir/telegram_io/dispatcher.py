@@ -168,6 +168,7 @@ class TelegramDispatcher(OwnerCommandsMixin):
         self.application.add_handler(CommandHandler("resume", self._cmd_resume))
         self.application.add_handler(CommandHandler("health", self._cmd_health))
         self.application.add_handler(CommandHandler("audit", self._cmd_audit))
+        self.application.add_handler(CommandHandler("logs", self._cmd_logs))
         self.application.add_handler(CommandHandler("usage", self._cmd_usage))
         # Owner-only access management commands.
         self.application.add_handler(CommandHandler("allow", self._cmd_allow))

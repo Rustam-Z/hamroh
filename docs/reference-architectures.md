@@ -161,7 +161,7 @@ Claudir runs **three separate agent personas**, each as its own CC subprocess wi
 
 | Agent | Role | Trust level | Tools |
 |-------|------|-------------|-------|
-| **Nodira** | Front-facing chat assistant | Low (public users) | Telegram messaging, memory (read/write), query_db, web. NO shell. |
+| **Nodira** | Front-facing chat assistant | Low (public users) | Telegram messaging, memory (read/write), database_query, web. NO shell. |
 | **Mirzo** | Operator / orchestrator | High (only operator sees output) | Full Bash, file system, kill-bot scripts, cron scheduling. CAN kill Nodira and Dilya. |
 | **Dilya** | "Honest mirror" / reviewer | Medium | Unknown specifics. Described as Nodira's "honest mirror" in the shutdown log. |
 
@@ -371,7 +371,7 @@ In pyclaudir: **not implemented**. We use SIGTERM/SIGINT for shutdown and `/kill
 | Tool count | 4 | ~40 | 25 MCP + 2 built-in (WebFetch, WebSearch) by default, +1 (Agent) when `tool_groups.subagents` is on. Surface is configured in `plugins.json`: tool-group toggles, external-MCP entries, `builtin_tools_disabled`, `skills_disabled`. Claude Code built-ins not on either allow/deny list (Grep, Glob, ToolSearch, Skill, ListMcpResourcesTool) are implicitly reachable by the agent; with subagents enabled they also appear inside each subagent. |
 | Multi-agent | No | Yes (3 agents) | No (Nodira only) |
 | Memory | No | Yes (read/write) | Yes (read/write, read-before-write) |
-| query_db | No | Yes | Yes (sqlglot-validated) |
+| database_query | No | Yes | Yes (sqlglot-validated) |
 | Web access | No | Unknown | Yes (WebFetch, WebSearch) |
 | Pairing flow | Yes (6-char code) | Unknown | No (owner-only + allowlist) |
 | Permission relay | Yes (experimental) | Unknown | No |
@@ -488,7 +488,7 @@ DMs or when the bot is a group/supergroup **admin**. In non-admin
 groups, user reactions silently drop. We document this rather than
 work around it.
 
-Query pattern (for `query_db` tool):
+Query pattern (for `database_query` tool):
 
 ```sql
 SELECT json_extract(reactions, '$."👍"') AS thumbs_up
@@ -609,7 +609,7 @@ System-prompt rule #2 (data-handling) tells the bot not to echo
 secrets. The scrubber is the defense-in-depth layer: it redacts
 credential-shaped strings **before** `insert_message` writes them to
 SQLite. Otherwise an accidental paste of an `sk-…` key would sit in
-`data/pyclaudir.db` forever, readable via `query_db` and grep-able in
+`data/pyclaudir.db` forever, readable via `database_query` and grep-able in
 any dump.
 
 Conservative patterns only — Bearer headers, `sk-` keys, GitHub

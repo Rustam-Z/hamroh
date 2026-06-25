@@ -83,7 +83,8 @@ The mode is determined by what the skill's body instructs, not by frontmatter.
 
 | Tool | What it does |
 |---|---|
-| `query_db` | Read-only SELECT over `messages`, `users`, `reminders`, `tool_calls`, `reactions`. Max 100 rows (user `LIMIT` is respected and clamped). Note: `messages` uses `timestamp`, not `created_at`. Reactions are JSON on `messages.reactions` — query with `json_extract(reactions, '$."👍"')`. |
+| `database_query` | Read-only SELECT over `messages`, `users`, `reminders`, `tool_calls`, `reactions`. Max 100 rows (user `LIMIT` is respected and clamped). Note: `messages` uses `timestamp`, not `created_at`. Reactions are JSON on `messages.reactions` — query with `json_extract(reactions, '$."👍"')`. |
+| `database_get_recent_messages` | Return the most recent messages (both directions), oldest-first, as TSV — no SQL needed. Includes the current turn's own inbound messages. `limit` defaults to 20, capped at 100; text truncated to 2000 chars. Optional `chat_id` scopes to one chat; `before_message_id` pages back through older history (per-chat, use with `chat_id`). |
 | `now` | Return the current UTC timestamp. |
 
 ---

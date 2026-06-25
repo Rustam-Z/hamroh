@@ -192,6 +192,11 @@ class Config:
     #: ``True`` on servers/CI.
     #: Env var: ``PYCLAUDIR_BROWSER_HEADLESS`` (default ``True``).
     browser_headless: bool
+    #: Root logging level for the console and the JSON log file. One of
+    #: ``DEBUG`` / ``INFO`` / ``WARNING`` / ``ERROR``. High-volume library
+    #: loggers (httpx, mcp) stay quieted regardless.
+    #: Env var: ``PYCLAUDIR_LOG_LEVEL`` (default ``"INFO"``).
+    log_level: str
 
     # Derived paths
     db_path: Path = field(init=False)
@@ -201,6 +206,7 @@ class Config:
     access_path: Path = field(init=False)
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)
+    log_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "db_path", self.data_dir / "pyclaudir.db")
@@ -214,6 +220,7 @@ class Config:
         object.__setattr__(self, "access_path", project_root / "access.json")
         object.__setattr__(self, "attachments_dir", self.data_dir / "attachments")
         object.__setattr__(self, "renders_dir", self.data_dir / "renders")
+        object.__setattr__(self, "log_dir", self.data_dir / "logs")
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -241,6 +248,7 @@ class Config:
             crash_limit=_int("PYCLAUDIR_CRASH_LIMIT", 10),
             crash_window_seconds=_float("PYCLAUDIR_CRASH_WINDOW_SECONDS", 600.0),
             browser_headless=_bool("PYCLAUDIR_BROWSER_HEADLESS", True),
+            log_level=(_env("PYCLAUDIR_LOG_LEVEL", "INFO") or "INFO").upper(),
         )
         # access.json normally lives at the repo root (see __post_init__).
         # The e2e harness points this at a temp file via PYCLAUDIR_ACCESS_PATH
@@ -279,6 +287,7 @@ class Config:
             crash_limit=10,
             crash_window_seconds=600.0,
             browser_headless=True,
+            log_level="INFO",
         )
         # Tests use isolated tmp dirs — keep access.json inside data_dir
         # so each test gets its own copy and never touches the repo root.
@@ -291,3 +300,4 @@ class Config:
         self.cc_logs_dir.mkdir(parents=True, exist_ok=True)
         self.attachments_dir.mkdir(parents=True, exist_ok=True)
         self.renders_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)

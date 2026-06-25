@@ -32,9 +32,9 @@ from .startup import (
     _replay_unconsumed,
     _run_until_stopped,
     _seed_default_reminders,
-    _setup_logging,
     _start_mcp_server,
 )
+from .logging_setup import setup_logging
 
 __all__ = ["main", "_seed_default_reminders"]
 
@@ -42,9 +42,9 @@ log = logging.getLogger("pyclaudir")
 
 
 async def _async_main() -> None:
-    _setup_logging()
     config = Config.from_env()
     config.ensure_dirs()
+    setup_logging(config)
     lock = _acquire_instance_lock(config)  # refuse to boot twice on one data dir
     _bootstrap_access(config)
 

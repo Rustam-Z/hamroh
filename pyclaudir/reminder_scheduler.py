@@ -25,7 +25,7 @@ from .db.reminders import (
 )
 from .engine import Engine
 
-log = logging.getLogger("pyclaudir")
+log = logging.getLogger("pyclaudir.reminder")
 
 
 async def _advance_or_close_reminder(db: Database, row: dict) -> None:

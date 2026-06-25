@@ -497,17 +497,17 @@ def test_invariant_7_owner_check_via_gate() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Invariant 8: query_db is SELECT-only (covered in detail when query_db lands
-# in Step 11; we leave a placeholder here that auto-skips until then so the
-# file's coverage stays honest).
+# Invariant 8: database_query is SELECT-only (covered in detail when
+# database_query lands in Step 11; we leave a placeholder here that auto-skips
+# until then so the file's coverage stays honest).
 # ---------------------------------------------------------------------------
 
 
-def test_invariant_8_query_db_select_only_when_present() -> None:
+def test_invariant_8_database_query_select_only_when_present() -> None:
     classes = {c.name: c for c in discover_tool_classes()}
-    if "query_db" not in classes:
-        pytest.skip("query_db not implemented yet (Step 11)")
-    from pyclaudir.tools.query_db import is_safe_select  # type: ignore
+    if "database_query" not in classes:
+        pytest.skip("database_query not implemented yet (Step 11)")
+    from pyclaudir.tools.database_query import is_safe_select  # type: ignore
 
     assert is_safe_select("SELECT 1") is True
     for hostile in (

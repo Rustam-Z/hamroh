@@ -17,10 +17,27 @@ from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import ContextTypes
 
 from ..access import load_access, save_access
+from ..formatting import chunk_text
+from ..logging_setup import format_log_line, tail_log
 
 # Pinned to the parent package name so log captures keyed on
 # ``"pyclaudir.telegram_io"`` keep matching after the module split.
 log = logging.getLogger("pyclaudir.telegram_io")
+
+#: ``/logs`` tail size: default and hard cap.
+_LOGS_DEFAULT = 50
+_LOGS_MAX = 200
+
+
+def _parse_log_count(args: list[str] | None) -> int:
+    """Parse the optional ``/logs N`` count; default 50, capped at 200."""
+    if not args:
+        return _LOGS_DEFAULT
+    try:
+        count = int(args[0])
+    except ValueError:
+        return _LOGS_DEFAULT
+    return max(1, min(count, _LOGS_MAX))
 
 
 def _parse_allow_args(
@@ -229,6 +246,23 @@ class OwnerCommandsMixin:
         except Exception as exc:
             return [f"*memory footprint:* error ({exc})"]
 
+    async def _cmd_logs(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Tail the structured JSON log file — owner-only.
+
+        ``/logs`` shows the last 50 lines; ``/logs N`` the last N (capped at
+        200). Output is chunked to fit Telegram's per-message limit.
+        """
+        if not self._is_owner(update):
+            return
+        count = _parse_log_count(ctx.args)
+        raw_lines = tail_log(self.config.log_dir / "pyclaudir.log", count)
+        if not raw_lines:
+            await update.effective_message.reply_text("no logs yet")
+            return
+        body = "\n".join(format_log_line(line) for line in raw_lines)
+        for chunk in chunk_text(body):
+            await update.effective_message.reply_text(chunk)
+
     async def _cmd_usage(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Relay Claude Code's own ``/usage`` output verbatim — owner-only.
 
@@ -340,6 +374,7 @@ class OwnerCommandsMixin:
         commands = [
             BotCommand("health", "quick health readout"),
             BotCommand("audit", "recent failures, backups, memory footprint"),
+            BotCommand("logs", "tail recent log lines: /logs [N]"),
             BotCommand("usage", "Claude Code usage and rate limits"),
             BotCommand("access", "show access policy"),
             BotCommand("allow", "add to allowlist: /allow <user|group> <id>"),

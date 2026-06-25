@@ -82,7 +82,7 @@ Use as an **automation layer.** Wire up MCPs and schedule agents to do real work
 ### Try saying
 
 - *"hey reschedule the meeting, and message X"*
-- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `query_db` + `telegram_send_message`. Ships on by default.
+- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `set_reminder` + `database_query` + `telegram_send_message`. Ships on by default.
 - *"pull the top AI stories from Hacker News and send me a briefing"* — `WebFetch` + `WebSearch`, default tools.
 - *"watch https://example.com/changelog hourly and ping me the moment a new entry mentions 'pricing'."* — cron `set_reminder` + `WebFetch`. Diff state lives in a memory file.
 - *"review this week's git log on `~/code/myapp` and open a PR if the README has drifted."* — needs `tool_groups.bash: true` and `tool_groups.code: true` in `plugins.json`, plus `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for the PR.
@@ -144,7 +144,8 @@ pulled into `plugins.json` via `${VAR}` references.
 Access lives in `access.json` at the repo root (hot-reloaded). One `policy`
 gates DMs and groups: `owner_only` (default, owner DM only) · `allowlist`
 (`allowed_users` for DMs, `allowed_chats` for groups) · `open` (everyone).
-Owner-only commands: `/access`, `/allow`, `/deny`, `/policy`, `/pause`, `/resume`, `/kill`, `/health`, `/audit`, `/usage`, `/reset_session`.
+Owner-only commands: `/access`, `/allow`, `/deny`, `/policy`, `/pause`, `/resume`, `/kill`, `/health`, `/audit`, `/logs`, `/usage`, `/reset_session`.
+`/logs` tails the structured JSON log (`/logs` for the last 50 lines, `/logs N` for the last N). Logs are written to `data/logs/pyclaudir.log` (one JSON object per line, rotated daily, 7 days kept); set the level with `PYCLAUDIR_LOG_LEVEL`.
 `/usage` relays Claude Code's own usage report (subscription session and weekly
 rate limits, with reset times) by shelling out to `claude --print /usage`.
 Blocked DMs get one canned "this is a private assistant" reply on their
