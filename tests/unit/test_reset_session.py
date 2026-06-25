@@ -17,7 +17,7 @@ from pyclaudir.cc_worker import CcSpawnSpec, CcWorker, TurnResult
 from pyclaudir.config import Config
 from pyclaudir.engine import Engine
 from pyclaudir.engine.engine import TurnCallbacks
-from pyclaudir.telegram_io import TelegramDispatcher
+from pyclaudir.telegram_io import DispatcherDeps, TelegramDispatcher
 
 OWNER = 42
 STRANGER = 100
@@ -43,7 +43,9 @@ def _update(user_id: int) -> MagicMock:
 
 def _dispatcher(cfg: Config) -> tuple[TelegramDispatcher, MagicMock]:
     engine = MagicMock(reset_session=AsyncMock(), stash_restore_context=AsyncMock())
-    return TelegramDispatcher(cfg, MagicMock(), engine=engine, chat_titles={}), engine
+    return TelegramDispatcher(
+        cfg, MagicMock(), DispatcherDeps(engine=engine, chat_titles={})
+    ), engine
 
 
 # ----------------------------------------------------------------------

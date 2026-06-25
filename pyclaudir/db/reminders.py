@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .database import Database
@@ -11,22 +12,32 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-async def insert_reminder(
-    db: Database,
-    *,
-    chat_id: int,
-    user_id: int,
-    text: str,
-    trigger_at: str,
-    cron_expr: str | None = None,
-) -> int:
+@dataclass(frozen=True)
+class NewReminder:
+    """The columns shared by both reminder-insert paths."""
+
+    chat_id: int
+    user_id: int
+    text: str
+    trigger_at: str
+    cron_expr: str | None = None
+
+
+async def insert_reminder(db: Database, reminder: NewReminder) -> int:
     """Insert a new reminder and return its id."""
     cursor = await db.connection.execute(
         """
         INSERT INTO reminders (chat_id, user_id, text, trigger_at, cron_expr, status, created_at)
         VALUES (?, ?, ?, ?, ?, 'pending', ?)
         """,
-        (chat_id, user_id, text, trigger_at, cron_expr, _utcnow_iso()),
+        (
+            reminder.chat_id,
+            reminder.user_id,
+            reminder.text,
+            reminder.trigger_at,
+            reminder.cron_expr,
+            _utcnow_iso(),
+        ),
     )
     await db.connection.commit()
     return cursor.lastrowid  # type: ignore[return-value]
@@ -172,14 +183,7 @@ async def fetch_reminder_by_id(db: Database, reminder_id: int) -> dict | None:
 
 
 async def insert_auto_seeded_reminder(
-    db: Database,
-    *,
-    auto_seed_key: str,
-    chat_id: int,
-    user_id: int,
-    text: str,
-    trigger_at: str,
-    cron_expr: str | None = None,
+    db: Database, reminder: NewReminder, auto_seed_key: str
 ) -> int:
     """Insert a default reminder tagged with an ``auto_seed_key``.
 
@@ -194,7 +198,15 @@ async def insert_auto_seeded_reminder(
         )
         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
         """,
-        (chat_id, user_id, text, trigger_at, cron_expr, _utcnow_iso(), auto_seed_key),
+        (
+            reminder.chat_id,
+            reminder.user_id,
+            reminder.text,
+            reminder.trigger_at,
+            reminder.cron_expr,
+            _utcnow_iso(),
+            auto_seed_key,
+        ),
     )
     await db.connection.commit()
     return cursor.lastrowid  # type: ignore[return-value]

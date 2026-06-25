@@ -274,5 +274,3 @@ async def test_send_resets_counters_and_cancels_watchdog(worker: CcWorker) -> No
     assert worker._tool_error_watchdog_task is None
     await asyncio.sleep(0)  # let cancellation propagate
     assert watchdog.cancelled() or watchdog.done()
-
-

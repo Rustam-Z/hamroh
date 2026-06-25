@@ -239,9 +239,13 @@ class Config:
             rate_limit_per_min=_int("PYCLAUDIR_RATE_LIMIT_PER_MIN", 20),
             attachment_max_bytes=_int("PYCLAUDIR_ATTACHMENT_MAX_BYTES", 20_000_000),
             tool_error_max_count=_int("PYCLAUDIR_TOOL_ERROR_MAX_COUNT", 3),
-            tool_error_window_seconds=_float("PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS", 30.0),
+            tool_error_window_seconds=_float(
+                "PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS", 30.0
+            ),
             status_interval_seconds=_float("PYCLAUDIR_STATUS_INTERVAL_SECONDS", 300.0),
-            liveness_timeout_seconds=_float("PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS", 300.0),
+            liveness_timeout_seconds=_float(
+                "PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS", 300.0
+            ),
             liveness_poll_seconds=_float("PYCLAUDIR_LIVENESS_POLL_SECONDS", 30.0),
             crash_backoff_base=_float("PYCLAUDIR_CRASH_BACKOFF_BASE", 2.0),
             crash_backoff_cap=_float("PYCLAUDIR_CRASH_BACKOFF_CAP", 64.0),

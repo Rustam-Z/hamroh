@@ -24,7 +24,7 @@ class BrowserGetHtmlArgs(BaseModel):
     )
 
 
-class BrowserGetHtmlTool(BrowserSessionTool):
+class BrowserGetHtmlTool(BrowserSessionTool[BrowserGetHtmlArgs]):
     name = "browser_get_html"
     description = (
         "Return the HTML of the current page, or one element's inner HTML with a "

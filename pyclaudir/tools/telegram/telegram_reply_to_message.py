@@ -25,7 +25,7 @@ class ReplyToMessageArgs(BaseModel):
     )
 
 
-class TelegramReplyToMessageTool(BaseTool):
+class TelegramReplyToMessageTool(BaseTool[ReplyToMessageArgs]):
     name = "telegram_reply_to_message"
     description = (
         "Send a quote-reply tied to a specific message, so the parent is "

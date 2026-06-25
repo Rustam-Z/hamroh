@@ -36,7 +36,9 @@ async def test_migration_creates_expected_tables(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
         names = {row["name"] for row in rows}
-        assert EXPECTED_TABLES.issubset(names), f"missing tables: {EXPECTED_TABLES - names}"
+        assert EXPECTED_TABLES.issubset(names), (
+            f"missing tables: {EXPECTED_TABLES - names}"
+        )
         leftover = DROPPED_TABLES & names
         assert not leftover, f"dead tables still present: {leftover}"
     finally:

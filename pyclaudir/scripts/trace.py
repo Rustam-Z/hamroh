@@ -185,8 +185,7 @@ def _render_tool_result_block(block: dict, ts: str, max_chars: int) -> str:
     raw = block.get("content")
     if isinstance(raw, list):
         text = " ".join(
-            (b.get("text", "") if isinstance(b, dict) else str(b))
-            for b in raw
+            (b.get("text", "") if isinstance(b, dict) else str(b)) for b in raw
         )
     else:
         text = "" if raw is None else str(raw)
@@ -265,7 +264,7 @@ def render_event(event: dict, max_chars: int) -> list[str]:
     for a transcript. Unknown types also produce no output.
     """
     etype = event.get("type")
-    if etype in _BORING_EVENT_TYPES:
+    if not isinstance(etype, str) or etype in _BORING_EVENT_TYPES:
         return []
     handler = _RENDERERS.get(etype)
     if handler is None:
@@ -322,33 +321,42 @@ def follow(path: Path, max_chars: int) -> None:
             print("# stopped following")
 
 
+_PARSER_DESCRIPTION = (
+    "Replay or tail the bot's CC session. By default picks the bot's "
+    "session via data/session_id, NOT the most-recent file (which "
+    "might be your own Claude Code session in the same cwd)."
+)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """CLI options for the trace script."""
-    parser = argparse.ArgumentParser(
-        description=(
-            "Replay or tail the bot's CC session. By default picks the bot's "
-            "session via data/session_id, NOT the most-recent file (which "
-            "might be your own Claude Code session in the same cwd)."
-        ),
-    )
+    parser = argparse.ArgumentParser(description=_PARSER_DESCRIPTION)
     parser.add_argument(
-        "--session", "-s",
+        "--session",
+        "-s",
         help="Specific session id (overrides --latest and the bot session finder)",
     )
     parser.add_argument(
-        "--follow", "-f", action="store_true",
+        "--follow",
+        "-f",
+        action="store_true",
         help="Tail the file like `tail -f`.",
     )
     parser.add_argument(
-        "--max", type=int, default=0,
+        "--max",
+        type=int,
+        default=0,
         help="Truncate long text blocks to N chars (0 = unlimited)",
     )
     parser.add_argument(
-        "--list", "-l", action="store_true",
+        "--list",
+        "-l",
+        action="store_true",
         help="List available session files and exit.",
     )
     parser.add_argument(
-        "--latest", action="store_true",
+        "--latest",
+        action="store_true",
         help=(
             "Use the most recently modified JSONL regardless of owner. "
             "Useful when you DO want to follow this CC session itself."

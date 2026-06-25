@@ -31,7 +31,7 @@ class BrowserNavigateArgs(BaseModel):
     )
 
 
-class BrowserNavigateTool(BaseTool):
+class BrowserNavigateTool(BaseTool[BrowserNavigateArgs]):
     name = "browser_navigate"
     description = (
         "Open a URL in a shared headless Chromium page and wait for the DOM to "

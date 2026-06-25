@@ -109,7 +109,10 @@ class FakePage:
         self.url = "about:blank"
         self.text = "hello world"
         self.html = "<html><body>hi</body></html>"
-        self.attrs: dict[str, str | None] = {"href": "https://x/y", "src": "https://i/p"}
+        self.attrs: dict[str, str | None] = {
+            "href": "https://x/y",
+            "src": "https://i/p",
+        }
         self.elements: list[FakeElement] = []
         self.api_response = FakeApiResponse()
         self.goto_calls: list[str] = []

@@ -7,6 +7,6 @@ module was split into ``attachments`` + ``dispatcher`` submodules.
 
 from __future__ import annotations
 
-from .dispatcher import EnginePort, TelegramDispatcher
+from .dispatcher import DispatcherDeps, EnginePort, TelegramDispatcher
 
-__all__ = ["EnginePort", "TelegramDispatcher"]
+__all__ = ["DispatcherDeps", "EnginePort", "TelegramDispatcher"]

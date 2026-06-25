@@ -27,7 +27,7 @@ class BrowserGetAttributeArgs(BaseModel):
     )
 
 
-class BrowserGetAttributeTool(BrowserSessionTool):
+class BrowserGetAttributeTool(BrowserSessionTool[BrowserGetAttributeArgs]):
     name = "browser_get_attribute"
     description = (
         "Read one HTML attribute of an element on the current page (call "

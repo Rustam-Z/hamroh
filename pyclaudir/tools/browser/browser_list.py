@@ -30,7 +30,7 @@ class BrowserListArgs(BaseModel):
     )
 
 
-class BrowserListTool(BrowserSessionTool):
+class BrowserListTool(BrowserSessionTool[BrowserListArgs]):
     name = "browser_list"
     description = (
         "List the elements matching a selector on the current page (call "

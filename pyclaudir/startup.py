@@ -26,23 +26,24 @@ from .cc_schema import schema_json
 from .cc_worker import CcSpawnSpec, CcWorker
 from .config import Config
 from .db.database import Database
-from .db.messages import fetch_unconsumed_inbound, insert_tool_call
+from .db.messages import ToolCall, fetch_unconsumed_inbound, insert_tool_call
 from .db.reminders import (
+    NewReminder,
     cancel_auto_seeded,
     insert_auto_seeded_reminder,
     pending_with_auto_seed_key,
     reset_stuck_reminders,
 )
-from .engine import Engine
+from .engine import Engine, EngineOptions, ErrorNotify, TypingAction
 from .instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
-from .rate_limiter import RateLimiter
+from .rate_limiter import RateLimitConfig, RateLimiter
 from .skills_store import SkillsStore
 from .storage.attachments import AttachmentStore
 from .storage.memory import MemoryStore
 from .storage.render import RenderStore
-from .telegram_io import TelegramDispatcher
+from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession
 
@@ -103,12 +104,14 @@ async def _ensure_self_reflection_seeded(db, config) -> None:
 
     await insert_auto_seeded_reminder(
         db,
-        auto_seed_key=_SELF_REFLECTION_KEY,
-        chat_id=config.owner_id,
-        user_id=-1,  # synthetic pseudo-user (same convention as reminder loop)
-        text='<skill name="self-reflection">run</skill>',
-        trigger_at=first_trigger.strftime("%Y-%m-%d %H:%M:%S"),
-        cron_expr=cron_expr,
+        NewReminder(
+            chat_id=config.owner_id,
+            user_id=-1,  # synthetic pseudo-user (same convention as reminder loop)
+            text='<skill name="self-reflection">run</skill>',
+            trigger_at=first_trigger.strftime("%Y-%m-%d %H:%M:%S"),
+            cron_expr=cron_expr,
+        ),
+        _SELF_REFLECTION_KEY,
     )
     log.info(
         "seeded default self-reflection reminder (cron=%s, next=%s UTC)",
@@ -131,7 +134,9 @@ def _bootstrap_access(config: Config) -> None:
     access = load_access(config.access_path)
     log.info(
         "access: policy=%s, allowed_users=%d, allowed_chats=%d",
-        access.policy, len(access.allowed_users), len(access.allowed_chats),
+        access.policy,
+        len(access.allowed_users),
+        len(access.allowed_chats),
     )
 
 
@@ -160,14 +165,16 @@ def _build_stores(config: Config, db: Database, plugins: Plugins) -> _Stores:
     )
     instructions.ensure_dirs()
     skills = SkillsStore(
-        root=project_root / "skills", disabled=plugins.skills_disabled,
+        root=project_root / "skills",
+        disabled=plugins.skills_disabled,
     )
     skills.ensure_root()
     attachments = AttachmentStore(config.attachments_dir)
     renders = RenderStore(config.renders_dir)
     renders.ensure_root()
     rate_limiter = RateLimiter(
-        db=db, limit=config.rate_limit_per_min, owner_id=config.owner_id,
+        db,
+        RateLimitConfig(limit=config.rate_limit_per_min, owner_id=config.owner_id),
     )
     return _Stores(
         memory=memory,
@@ -201,7 +208,8 @@ def _build_external_mcp_config(
             }
             log.info(
                 "mcp %s configured (type=stdio, command=%s)",
-                plugin.name, plugin.command,
+                plugin.name,
+                plugin.command,
             )
         else:  # http or sse — remote server, optional static auth headers
             entry: dict = {"type": plugin.type, "url": plugin.url}
@@ -210,7 +218,9 @@ def _build_external_mcp_config(
             extra_mcp[plugin.name] = entry
             log.info(
                 "mcp %s configured (type=%s, url=%s)",
-                plugin.name, plugin.type, plugin.url,
+                plugin.name,
+                plugin.type,
+                plugin.url,
             )
         mcp_allowed_tools.extend(plugin.allowed_tools)
     return extra_mcp, mcp_allowed_tools
@@ -227,13 +237,15 @@ def _load_session_id(config: Config) -> str | None:
 
 
 def _install_signal_handlers(
-    worker: CcWorker, stop_event: asyncio.Event,
+    worker: CcWorker,
+    stop_event: asyncio.Event,
 ) -> None:
     """Wire SIGINT/SIGTERM to the same stop path. Tells the cc supervisor
     we're shutting down BEFORE it observes the subprocess exit (the SIGINT
     propagates to the same process group, so cc is exiting in parallel).
     Without this the supervisor treats the clean exit as a crash and
     respawns."""
+
     def _stop(*_a) -> None:
         log.info("signal received, shutting down")
         worker._stop_supervisor.set()
@@ -338,18 +350,18 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
 
 
 async def _start_mcp_server(
-    config: Config,
-    db: Database,
+    app: _App,
     stores: _Stores,
     plugins: Plugins,
     chat_titles: dict[int, str],
 ) -> tuple[ToolContext, McpServer]:
     """Build the shared ToolContext and bring the MCP server live."""
+    db = app.db
 
     async def db_logger(**kwargs):  # called by every MCP tool wrapper
-        await insert_tool_call(db, **kwargs)
+        await insert_tool_call(db, ToolCall(**kwargs))
 
-    browser_manager = BrowserManager(headless=config.browser_headless)
+    browser_manager = BrowserManager(headless=app.config.browser_headless)
     ctx = ToolContext(
         bot=None,  # filled in once the dispatcher exists
         database=db,
@@ -383,7 +395,8 @@ def _build_cc_spec(config: Config, plugins: Plugins, mcp: McpServer) -> CcSpawnS
     schema_path.write_text(schema_json())
     extra_mcp, mcp_allowed_tools = _build_external_mcp_config(plugins)
     mcp_config_path = mcp.write_mcp_config(
-        tmpdir / "mcp.json", extra_servers=extra_mcp,
+        tmpdir / "mcp.json",
+        extra_servers=extra_mcp,
     )
     log.info("mcp config written to %s", mcp_config_path)
 
@@ -410,6 +423,9 @@ def _make_on_cc_crash(app: _App):
     is restarting."""
 
     async def _on_cc_crash(attempt: int, backoff: float) -> None:
+        dispatcher = app.dispatcher
+        if dispatcher is None:
+            return
         engine = app.engine
         user_text = (
             f"⚠️ Technical issue, restarting "
@@ -419,13 +435,13 @@ def _make_on_cc_crash(app: _App):
         if engine is not None and engine._turn.active_chats:
             for chat_id in engine._turn.active_chats:
                 try:
-                    await app.dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
+                    await dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
                 except Exception:
                     log.warning("crash notify to %s failed", chat_id, exc_info=True)
         owner_chat = app.config.owner_id
         if owner_chat not in (engine._turn.active_chats if engine else set()):
             try:
-                await app.dispatcher.bot.send_message(
+                await dispatcher.bot.send_message(
                     chat_id=owner_chat,
                     text=f"CC error (attempt {attempt}). Check logs.",
                 )
@@ -439,6 +455,9 @@ def _make_on_cc_stale_session(app: _App):
     """Stale-session notifier: drop the persisted id and tell the owner."""
 
     async def _on_cc_stale_session(stale_id: str) -> None:
+        dispatcher = app.dispatcher
+        if dispatcher is None:
+            return
         try:
             app.config.session_id_path.unlink(missing_ok=True)
         except OSError:
@@ -446,7 +465,7 @@ def _make_on_cc_stale_session(app: _App):
         if app.engine is not None:
             await app.engine.stash_restore_context("stale-session")
         try:
-            await app.dispatcher.bot.send_message(
+            await dispatcher.bot.send_message(
                 chat_id=app.config.owner_id,
                 text=(
                     "ℹ️ Previous Claude Code session expired — "
@@ -466,6 +485,9 @@ def _make_on_cc_giveup(app: _App):
     down for good and the operator must intervene."""
 
     async def _on_cc_giveup(crash_count: int) -> None:
+        dispatcher = app.dispatcher
+        if dispatcher is None:
+            return
         user_text = (
             f"⚠️ Shutting down — Claude Code failed {crash_count} times. "
             "The operator needs to intervene."
@@ -476,7 +498,7 @@ def _make_on_cc_giveup(app: _App):
         chats_to_notify.add(app.config.owner_id)
         for chat_id in chats_to_notify:
             try:
-                await app.dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
+                await dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
             except Exception:
                 log.warning("giveup notify to %s failed", chat_id, exc_info=True)
 
@@ -490,7 +512,8 @@ def _make_on_cc_status(app: _App):
 
     async def _on_cc_status(elapsed: float, last_action: str | None) -> None:
         engine = app.engine
-        if engine is None or not engine._turn.active_chats:
+        dispatcher = app.dispatcher
+        if engine is None or dispatcher is None or not engine._turn.active_chats:
             return
         minutes = max(1, int(elapsed // 60))
         step = f" (last step: {last_action})" if last_action else ""
@@ -500,7 +523,7 @@ def _make_on_cc_status(app: _App):
         )
         for chat_id in set(engine._turn.active_chats):
             try:
-                await app.dispatcher.bot.send_message(chat_id=chat_id, text=text)
+                await dispatcher.bot.send_message(chat_id=chat_id, text=text)
             except Exception:
                 log.warning("status notify to %s failed", chat_id, exc_info=True)
 
@@ -513,13 +536,27 @@ def _build_dispatcher_and_engine(
     chat_titles: dict[int, str],
 ) -> tuple[TelegramDispatcher, Engine]:
     """Construct the dispatcher (bot owner), then the engine wired to it."""
-    dispatcher = TelegramDispatcher(  # type: ignore[arg-type]
+    assert app.worker is not None  # set before this runs; satisfies the type checker
+    dispatcher = TelegramDispatcher(
         app.config,
         app.db,
-        engine=None,
-        chat_titles=chat_titles,
-        rate_limiter=stores.rate_limiter,
+        DispatcherDeps(chat_titles=chat_titles, rate_limiter=stores.rate_limiter),
     )
+    engine = Engine(
+        app.worker,
+        app.config,
+        EngineOptions(
+            debounce_ms=app.config.debounce_ms,
+            db=app.db,
+            typing_action=_make_typing_action(dispatcher),
+            error_notify=_make_error_notify(dispatcher),
+        ),
+    )
+    return dispatcher, engine
+
+
+def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
+    """Wire the engine's typing indicator to ``bot.send_chat_action``."""
 
     async def _typing(chat_id: int) -> None:
         t0 = time.monotonic()
@@ -528,10 +565,18 @@ def _build_dispatcher_and_engine(
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             log.debug(
                 "send_chat_action chat=%s returned=%r elapsed=%dms",
-                chat_id, ok, elapsed_ms,
+                chat_id,
+                ok,
+                elapsed_ms,
             )
         except Exception as exc:
             log.warning("send_chat_action failed for chat %s: %s", chat_id, exc)
+
+    return _typing
+
+
+def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
+    """Wire the engine's bypass error-notify to ``bot.send_message``."""
 
     async def _error_notify(chat_id: int, text: str) -> None:
         try:
@@ -539,18 +584,18 @@ def _build_dispatcher_and_engine(
         except Exception as exc:
             log.warning("error notify failed for chat %s: %s", chat_id, exc)
 
-    engine = Engine(
-        app.worker, app.config,
-        debounce_ms=app.config.debounce_ms,
-        db=app.db,
-        typing_action=_typing,
-        error_notify=_error_notify,
-    )
-    return dispatcher, engine
+    return _error_notify
 
 
 async def _run_until_stopped(app: _App) -> None:
     """Block until SIGINT/SIGTERM, then tear down opposite to construction."""
+    # All of these are wired during construction before this runs; the
+    # asserts narrow the dataclass's ``| None`` fields for the type checker.
+    assert app.worker is not None
+    assert app.dispatcher is not None
+    assert app.engine is not None
+    assert app.mcp is not None
+    assert app.reminder_task is not None
     stop_event = asyncio.Event()
     _install_signal_handlers(app.worker, stop_event)
     try:

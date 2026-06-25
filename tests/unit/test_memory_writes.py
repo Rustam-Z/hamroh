@@ -35,7 +35,9 @@ def store(tmp_path: Path) -> MemoryStore:
 def test_write_creates_new_file(store: MemoryStore) -> None:
     n = store.write("notes/users/alice.md", "Alice loves cats")
     assert n == len("Alice loves cats")
-    assert (store.root / "notes" / "users" / "alice.md").read_text() == "Alice loves cats"
+    assert (
+        store.root / "notes" / "users" / "alice.md"
+    ).read_text() == "Alice loves cats"
 
 
 def test_write_creates_parent_dirs(store: MemoryStore) -> None:
@@ -66,7 +68,9 @@ def test_overwrite_after_read_is_allowed(store: MemoryStore) -> None:
     assert operator_note.read_text() == "v2"
 
 
-def test_second_overwrite_in_same_session_does_not_need_reread(store: MemoryStore) -> None:
+def test_second_overwrite_in_same_session_does_not_need_reread(
+    store: MemoryStore,
+) -> None:
     """Once we've written it we know its content; further writes are fine."""
     store.write("journal.md", "entry 1")
     store.write("journal.md", "entry 2")  # we wrote it, so the read flag is set

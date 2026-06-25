@@ -14,8 +14,14 @@ from pyclaudir.storage.render import RenderStore
 from pyclaudir.tools.base import ToolContext
 from pyclaudir.tools.browser.browser_click import BrowserClickArgs, BrowserClickTool
 from pyclaudir.tools.browser.browser_fill import BrowserFillArgs, BrowserFillTool
-from pyclaudir.tools.browser.browser_get_text import BrowserGetTextArgs, BrowserGetTextTool
-from pyclaudir.tools.browser.browser_navigate import BrowserNavigateArgs, BrowserNavigateTool
+from pyclaudir.tools.browser.browser_get_text import (
+    BrowserGetTextArgs,
+    BrowserGetTextTool,
+)
+from pyclaudir.tools.browser.browser_navigate import (
+    BrowserNavigateArgs,
+    BrowserNavigateTool,
+)
 from pyclaudir.tools.browser.browser_screenshot import (
     BrowserScreenshotArgs,
     BrowserScreenshotTool,
@@ -30,9 +36,15 @@ from pyclaudir.tools.browser.browser_get_attribute import (
     BrowserGetAttributeArgs,
     BrowserGetAttributeTool,
 )
-from pyclaudir.tools.browser.browser_get_html import BrowserGetHtmlArgs, BrowserGetHtmlTool
+from pyclaudir.tools.browser.browser_get_html import (
+    BrowserGetHtmlArgs,
+    BrowserGetHtmlTool,
+)
 from pyclaudir.tools.browser.browser_list import BrowserListArgs, BrowserListTool
-from pyclaudir.tools.browser.browser_press_key import BrowserPressKeyArgs, BrowserPressKeyTool
+from pyclaudir.tools.browser.browser_press_key import (
+    BrowserPressKeyArgs,
+    BrowserPressKeyTool,
+)
 from pyclaudir.tools.browser.browser_reload import BrowserReloadArgs, BrowserReloadTool
 from pyclaudir.tools.browser.browser_reset import BrowserResetArgs, BrowserResetTool
 from pyclaudir.tools.browser.browser_scroll import BrowserScrollArgs, BrowserScrollTool
@@ -40,7 +52,10 @@ from pyclaudir.tools.browser.browser_select_option import (
     BrowserSelectOptionArgs,
     BrowserSelectOptionTool,
 )
-from pyclaudir.tools.browser.browser_wait_for import BrowserWaitForArgs, BrowserWaitForTool
+from pyclaudir.tools.browser.browser_wait_for import (
+    BrowserWaitForArgs,
+    BrowserWaitForTool,
+)
 from tests.unit.test_browser import FakeElement, FakePage
 
 #: A public literal IP — passes the SSRF guard without any DNS lookup, so

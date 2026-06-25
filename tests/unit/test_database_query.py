@@ -77,7 +77,9 @@ async def test_database_query_executes_select(tmp_path: Path) -> None:
         )
         ctx = ToolContext(database=db)
         tool = DatabaseQueryTool(ctx)
-        result = await tool.run(DatabaseQueryArgs(sql="SELECT direction, text FROM messages"))
+        result = await tool.run(
+            DatabaseQueryArgs(sql="SELECT direction, text FROM messages")
+        )
         assert result.is_error is False
         assert "direction\ttext" in result.content
         assert "in\thi" in result.content
@@ -138,7 +140,9 @@ async def test_database_query_clamps_oversized_limit(tmp_path: Path) -> None:
             )
         ctx = ToolContext(database=db)
         tool = DatabaseQueryTool(ctx)
-        result = await tool.run(DatabaseQueryArgs(sql="SELECT text FROM messages LIMIT 120"))
+        result = await tool.run(
+            DatabaseQueryArgs(sql="SELECT text FROM messages LIMIT 120")
+        )
         assert result.is_error is False, result.content
         assert result.data == {"row_count": 100}
     finally:

@@ -36,6 +36,11 @@ from .typing_indicator import TypingAction, TypingIndicatorMixin, TypingState
 #: dead when we need this). Engine doesn't import telegram.
 ErrorNotify = Callable[[int, str], Awaitable[None]]
 
+#: A per-turn success/failure hook: ``await hook()``. Aliased so signatures
+#: stay readable (and so naive comma-counting param linters don't trip on the
+#: ``Callable[[], ...]`` brackets).
+AsyncHook = Callable[[], Awaitable[None]]
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..cc_worker import CcWorker, TurnResult
     from ..db.database import Database
@@ -96,8 +101,24 @@ class TurnCallbacks:
     #22 and the claim model in ``db/reminders.py``.
     """
 
-    on_success: Callable[[], Awaitable[None]]
-    on_failure: Callable[[], Awaitable[None]] | None = None
+    on_success: AsyncHook
+    on_failure: AsyncHook | None = None
+
+
+@dataclass(frozen=True)
+class EngineOptions:
+    """Optional wiring + tuning for :class:`Engine`, all with safe defaults so
+    a test can build one from just a worker and config.
+
+    ``typing_action`` shows the "typing…" indicator (wired by ``__main__`` to
+    ``bot.send_chat_action``); ``error_notify`` sends a message straight via the
+    bot when the MCP path is dead.
+    """
+
+    debounce_ms: int = 1000
+    db: "Database | None" = None
+    typing_action: TypingAction | None = None
+    error_notify: ErrorNotify | None = None
 
 
 class Engine(TypingIndicatorMixin):
@@ -105,21 +126,13 @@ class Engine(TypingIndicatorMixin):
         self,
         worker: "CcWorker",
         config: Config,
-        *,
-        debounce_ms: int = 1000,
-        db: "Database | None" = None,
-        typing_action: TypingAction | None = None,
-        error_notify: ErrorNotify | None = None,
+        options: EngineOptions = EngineOptions(),
     ) -> None:
         self._worker = worker
-        self._debounce = debounce_ms / 1000.0
-        self._db = db
-        #: Optional callback that shows the "typing..." indicator in a
-        #: Telegram chat. Wired by ``__main__.py`` to ``bot.send_chat_action``.
-        self._typing_action = typing_action
-        #: Optional callback to send error messages directly via the bot
-        #: when CC is down and the MCP path is unavailable.
-        self._error_notify = error_notify
+        self._debounce = options.debounce_ms / 1000.0
+        self._db = options.db
+        self._typing_action = options.typing_action
+        self._error_notify = options.error_notify
         #: Per-turn user state — see :class:`TurnState`.
         self._turn = TurnState()
         #: ``<restored_context>`` digest set via :meth:`stash_restore_context`
@@ -213,8 +226,8 @@ class Engine(TypingIndicatorMixin):
         self,
         msg: ChatMessage,
         *,
-        on_success: Callable[[], Awaitable[None]] | None = None,
-        on_failure: Callable[[], Awaitable[None]] | None = None,
+        on_success: AsyncHook | None = None,
+        on_failure: AsyncHook | None = None,
     ) -> None:
         """Add an inbound message to the pending buffer.
 
@@ -279,18 +292,31 @@ class Engine(TypingIndicatorMixin):
         log.info("starting turn with %d msgs", len(batch))
         # Show "typing..." in every chat involved in this batch.
         await self._start_typing(set(self._turn.active_chats))
+        self._log_hot_path("worker-send", batch, self._turn.active_chats)
+        await self._worker.send(xml)
+        await self._mark_consumed(batch)
+
+    def _log_hot_path(
+        self, stage: str, batch: list[ChatMessage], chats: set[int]
+    ) -> None:
+        """Log inbound→worker latency for the batch, keyed on the oldest
+        message's receipt time (synthetic messages without one are ignored)."""
         now = time.monotonic()
         oldest_receipt = min(
-            (m.received_at_monotonic for m in batch if m.received_at_monotonic is not None),
+            (
+                m.received_at_monotonic
+                for m in batch
+                if m.received_at_monotonic is not None
+            ),
             default=now,
         )
         log.info(
-            "hot-path stage=worker-send chats=%s msgs=%d t_ms=%d",
-            sorted(self._turn.active_chats), len(batch),
+            "hot-path stage=%s chats=%s msgs=%d t_ms=%d",
+            stage,
+            sorted(chats),
+            len(batch),
             int((now - oldest_receipt) * 1000),
         )
-        await self._worker.send(xml)
-        await self._mark_consumed(batch)
 
     async def _mark_consumed(self, batch: list[ChatMessage]) -> None:
         """Flag the drained batch as handed to CC.
@@ -329,33 +355,17 @@ class Engine(TypingIndicatorMixin):
         xml = await format_messages_with_context(batch, self._db)
         await self._worker.inject(xml)
         await self._mark_consumed(batch)
+        self._log_hot_path("inject", batch, {m.chat_id for m in batch})
+        await self._rearm_typing({m.chat_id for m in batch})
 
-        now = time.monotonic()
-        oldest_receipt = min(
-            (m.received_at_monotonic for m in batch if m.received_at_monotonic is not None),
-            default=now,
-        )
-        log.info(
-            "hot-path stage=inject chats=%s msgs=%d t_ms=%d",
-            sorted({m.chat_id for m in batch}), len(batch),
-            int((now - oldest_receipt) * 1000),
-        )
+    async def _rearm_typing(self, new_chats: set[int]) -> None:
+        """Re-show "typing…" for chats whose follow-up was injected mid-turn.
 
-        # Re-arm the typing indicator for the injected chats. There are
-        # two cases to handle, and the bug we're fixing was that we only
-        # handled the first one:
-        #
-        # 1. Typing loop is still running (i.e., the model hasn't sent
-        #    anything yet this turn). Just add the new chats to the set
-        #    so the next refresh tick covers them.
-        #
-        # 2. Typing loop has already exited because ``notify_chat_replied``
-        #    fired earlier this turn (the model sent its first reply, we
-        #    stopped typing, and now the user is firing a follow-up while
-        #    CC is still processing the wrap-up of the previous turn —
-        #    StructuredOutput etc.). In this case the loop is gone and we
-        #    must restart it from scratch — same path as a fresh turn.
-        new_chats = {m.chat_id for m in batch}
+        Two cases: if the typing loop is still running (model hasn't replied
+        yet) we just widen its chat set; if it already exited (the model sent
+        its first reply and ``notify_chat_replied`` stopped it) we restart it
+        from scratch — same path as a fresh turn.
+        """
         if self._typing.task is not None and not self._typing.task.done():
             self._typing.chats.update(new_chats)
         else:
@@ -424,7 +434,8 @@ class Engine(TypingIndicatorMixin):
                     log.warning("dropped-text delivery to %s failed: %s", chat_id, exc)
             log.info(
                 "delivered dropped text to chat %s (%d chunk(s))",
-                chat_id, len(chunks),
+                chat_id,
+                len(chunks),
             )
 
     # ------------------------------------------------------------------
@@ -624,7 +635,9 @@ class Engine(TypingIndicatorMixin):
         action = result.control.action if result.control else None
         log.info(
             "turn done (action=%s, dropped_text=%s, text_blocks=%d)",
-            action, result.dropped_text, len(result.text_blocks),
+            action,
+            result.dropped_text,
+            len(result.text_blocks),
         )
 
         # Best-effort classification: if stderr tells us the failure mode
@@ -633,9 +646,7 @@ class Engine(TypingIndicatorMixin):
         # rate-limited AND dropped_text, but we only notify once per turn.
         stderr_classification = classify_cc_failure(result.stderr_tail)
         if stderr_classification is not None:
-            await self._notify_error_to_chats(
-                stderr_classification.user_message
-            )
+            await self._notify_error_to_chats(stderr_classification.user_message)
 
         if result.dropped_text:
             await self._handle_dropped_text(result)
@@ -643,7 +654,9 @@ class Engine(TypingIndicatorMixin):
 
         await self._finish_clean_turn(result, action)
 
-    async def _finish_clean_turn(self, result: "TurnResult", action: str | None) -> None:
+    async def _finish_clean_turn(
+        self, result: "TurnResult", action: str | None
+    ) -> None:
         """Wrap up a successful turn: commit its messages as trusted, fire
         callbacks, honour a ``sleep`` action, and kick any messages that
         queued up while the turn was running.

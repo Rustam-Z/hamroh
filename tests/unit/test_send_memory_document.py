@@ -37,9 +37,7 @@ async def test_happy_path_sends_document(store: MemoryStore) -> None:
     bot = _mock_bot(message_id=42)
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(
-        SendMemoryDocumentArgs(chat_id=123, path="notes/report.md")
-    )
+    result = await tool.run(SendMemoryDocumentArgs(chat_id=123, path="notes/report.md"))
 
     assert result.is_error is False
     assert "message_id=42" in result.content
@@ -80,9 +78,7 @@ async def test_path_traversal_rejected(store: MemoryStore) -> None:
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(
-        SendMemoryDocumentArgs(chat_id=1, path="../etc/passwd")
-    )
+    result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="../etc/passwd"))
 
     assert result.is_error is True
     assert "MemoryPathError" in result.content
@@ -94,9 +90,7 @@ async def test_absolute_path_rejected(store: MemoryStore) -> None:
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(
-        SendMemoryDocumentArgs(chat_id=1, path="/etc/passwd")
-    )
+    result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="/etc/passwd"))
 
     assert result.is_error is True
     bot.send_document.assert_not_awaited()
@@ -107,9 +101,7 @@ async def test_missing_file_returns_error_without_upload(store: MemoryStore) -> 
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(
-        SendMemoryDocumentArgs(chat_id=1, path="does/not/exist.md")
-    )
+    result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="does/not/exist.md"))
 
     assert result.is_error is True
     assert "not found" in result.content

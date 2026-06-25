@@ -21,7 +21,9 @@ from pyclaudir.cc_worker import CcSpawnSpec, CcWorker
 from pyclaudir.config import Config
 
 
-def _spec(tmp_path: Path, *, with_logs: bool, session_id: str | None = None) -> CcSpawnSpec:
+def _spec(
+    tmp_path: Path, *, with_logs: bool, session_id: str | None = None
+) -> CcSpawnSpec:
     sp = tmp_path / "system.md"
     sp.write_text("system")
     mcp = tmp_path / "mcp.json"
@@ -63,11 +65,13 @@ def test_capture_pending_then_renamed_on_init(tmp_path: Path) -> None:
     worker._capture.write_stderr("warming up")
 
     # System init event arrives → triggers rename
-    worker._handle_event({
-        "type": "system",
-        "subtype": "init",
-        "session_id": "abc-123-xyz",
-    })
+    worker._handle_event(
+        {
+            "type": "system",
+            "subtype": "init",
+            "session_id": "abc-123-xyz",
+        }
+    )
 
     assert worker._capture.stream_path is not None
     assert worker._capture.stream_path.name == "abc-123-xyz.stream.jsonl"
@@ -152,15 +156,21 @@ def test_capture_survives_rename_failure(
         raise OSError("rename refused")
 
     monkeypatch.setattr(Path, "rename", boom)
-    worker._handle_event({
-        "type": "system",
-        "subtype": "init",
-        "session_id": "doomed-sid",
-    })
+    worker._handle_event(
+        {
+            "type": "system",
+            "subtype": "init",
+            "session_id": "doomed-sid",
+        }
+    )
 
     # Capture is still alive under the pending name.
-    assert worker._capture.stream_log is not None, "stream capture was disabled by rename failure"
-    assert worker._capture.stderr_log is not None, "stderr capture was disabled by rename failure"
+    assert worker._capture.stream_log is not None, (
+        "stream capture was disabled by rename failure"
+    )
+    assert worker._capture.stderr_log is not None, (
+        "stderr capture was disabled by rename failure"
+    )
     worker._capture.write_stream(b'{"after":true}\n')
     worker._capture.close()
     text = pending_stream.read_text()

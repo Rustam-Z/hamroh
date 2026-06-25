@@ -32,6 +32,7 @@ _KATEX_VERSION = "0.16.9"
 _WIDTH = 900
 _HEIGHT = 400
 
+
 def _build_html(latex: str, title: str | None) -> str:
     """Assemble the rendered HTML page.
 
@@ -82,7 +83,7 @@ class RenderLatexArgs(BaseModel):
     )
 
 
-class RenderLatexTool(BaseTool):
+class RenderLatexTool(BaseTool[RenderLatexArgs]):
     name = "render_latex"
     description = (
         "Render a LaTeX expression to a PNG via KaTeX. Use for math formulas, "

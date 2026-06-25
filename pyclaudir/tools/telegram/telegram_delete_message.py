@@ -19,7 +19,7 @@ class DeleteMessageArgs(BaseModel):
     message_id: int = Field(description="Numeric id of the message to delete.")
 
 
-class TelegramDeleteMessageTool(BaseTool):
+class TelegramDeleteMessageTool(BaseTool[DeleteMessageArgs]):
     name = "telegram_delete_message"
     description = (
         "Permanently delete a message by id. IRREVERSIBLE — the message is "
@@ -32,7 +32,9 @@ class TelegramDeleteMessageTool(BaseTool):
     async def run(self, args: DeleteMessageArgs) -> ToolResult:
         if self.ctx.bot is None:
             return ToolResult(content="bot not configured", is_error=True)
-        await self.ctx.bot.delete_message(chat_id=args.chat_id, message_id=args.message_id)
+        await self.ctx.bot.delete_message(
+            chat_id=args.chat_id, message_id=args.message_id
+        )
         log_delete(
             chat_id=args.chat_id,
             chat_titles=self.ctx.chat_titles,

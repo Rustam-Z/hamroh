@@ -9,10 +9,39 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Iterable
 
 from .database import Database
 from ..models import ChatMessage
+
+
+@dataclass(frozen=True)
+class MessageKey:
+    """Identifies one message. Telegram ids are only unique within a chat,
+    so both halves are always needed together."""
+
+    chat_id: int
+    message_id: int
+
+
+@dataclass(frozen=True)
+class ReactionChange:
+    """One user's reaction transition from a ``MessageReactionUpdated`` event."""
+
+    user_id: int
+    old_emoji: Iterable[str]
+    new_emoji: Iterable[str]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One MCP tool invocation to persist in the ``tool_calls`` audit table."""
+
+    tool_name: str
+    args_json: str
+    result_json: str | None
+    error: str | None
+    duration_ms: int
 
 
 def _iso(dt: datetime) -> str:
@@ -240,26 +269,18 @@ async def upsert_user(db: Database, msg: ChatMessage) -> None:
         )
 
 
-async def insert_tool_call(
-    db: Database,
-    *,
-    tool_name: str,
-    args_json: str,
-    result_json: str | None,
-    error: str | None,
-    duration_ms: int,
-) -> None:
+async def insert_tool_call(db: Database, call: ToolCall) -> None:
     await db.execute(
         """
         INSERT INTO tool_calls(tool_name, args_json, result_json, error, duration_ms, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
-            tool_name,
-            args_json,
-            result_json,
-            error,
-            duration_ms,
+            call.tool_name,
+            call.args_json,
+            call.result_json,
+            call.error,
+            call.duration_ms,
             _iso(datetime.now(timezone.utc)),
         ),
     )
@@ -301,28 +322,29 @@ async def fetch_reply_chain(
         )
         if row is None:
             break
-        chain.append(
-            {
-                "message_id": row["message_id"],
-                "user_id": row["user_id"],
-                "username": row["username"],
-                "first_name": row["first_name"],
-                "direction": row["direction"],
-                "timestamp": row["timestamp"],
-                "text": row["text"],
-            }
-        )
+        chain.append(_reply_chain_entry(row))
         cursor_id = row["reply_to_id"]
     chain.reverse()  # oldest-first
     return chain
 
 
-async def _load_reactions(
-    db: Database, chat_id: int, message_id: int
-) -> dict[str, list[int]]:
+def _reply_chain_entry(row: Any) -> dict:
+    """Project one ``messages`` row into the reply-chain dict shape."""
+    return {
+        "message_id": row["message_id"],
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "first_name": row["first_name"],
+        "direction": row["direction"],
+        "timestamp": row["timestamp"],
+        "text": row["text"],
+    }
+
+
+async def _load_reactions(db: Database, key: MessageKey) -> dict[str, list[int]]:
     row = await db.fetch_one(
         "SELECT reactions FROM messages WHERE chat_id=? AND message_id=?",
-        (chat_id, message_id),
+        (key.chat_id, key.message_id),
     )
     if row is None or row["reactions"] is None:
         return {}
@@ -336,61 +358,50 @@ async def _load_reactions(
 
 
 async def _store_reactions(
-    db: Database, chat_id: int, message_id: int, reactions: dict[str, list[int]]
+    db: Database, key: MessageKey, reactions: dict[str, list[int]]
 ) -> None:
     cleaned = {k: v for k, v in reactions.items() if v}
     payload = json.dumps(cleaned, ensure_ascii=False) if cleaned else None
     await db.execute(
         "UPDATE messages SET reactions=? WHERE chat_id=? AND message_id=?",
-        (payload, chat_id, message_id),
+        (payload, key.chat_id, key.message_id),
     )
 
 
 async def apply_user_reaction(
-    db: Database,
-    *,
-    chat_id: int,
-    message_id: int,
-    user_id: int,
-    old_emoji: Iterable[str],
-    new_emoji: Iterable[str],
+    db: Database, key: MessageKey, change: ReactionChange
 ) -> None:
     """Reflect a Telegram ``MessageReactionUpdated`` event in the messages row.
 
-    Removes ``user_id`` from every emoji in ``old_emoji`` and adds it to
-    every emoji in ``new_emoji``. No-op if the message row doesn't exist.
+    Removes the user from every emoji in ``change.old_emoji`` and adds them to
+    every emoji in ``change.new_emoji``. No-op if the message row doesn't exist.
     """
-    reactions = await _load_reactions(db, chat_id, message_id)
-    for emoji in old_emoji:
+    reactions = await _load_reactions(db, key)
+    for emoji in change.old_emoji:
         users = reactions.get(emoji)
-        if users and user_id in users:
-            users.remove(user_id)
+        if users and change.user_id in users:
+            users.remove(change.user_id)
             if not users:
                 reactions.pop(emoji, None)
-    for emoji in new_emoji:
+    for emoji in change.new_emoji:
         users = reactions.setdefault(emoji, [])
-        if user_id not in users:
-            users.append(user_id)
-    await _store_reactions(db, chat_id, message_id, reactions)
+        if change.user_id not in users:
+            users.append(change.user_id)
+    await _store_reactions(db, key, reactions)
 
 
 async def add_bot_reaction(
-    db: Database,
-    *,
-    chat_id: int,
-    message_id: int,
-    bot_user_id: int,
-    emoji: str,
+    db: Database, key: MessageKey, bot_user_id: int, emoji: str
 ) -> None:
     """Record a bot-sent reaction on the target message's row.
 
     Bots can only have one active reaction per message, so this replaces any
     prior bot reaction on the message (identified by ``bot_user_id``).
     """
-    reactions = await _load_reactions(db, chat_id, message_id)
+    reactions = await _load_reactions(db, key)
     for users in reactions.values():
         if bot_user_id in users:
             users.remove(bot_user_id)
     reactions = {k: v for k, v in reactions.items() if v}
     reactions.setdefault(emoji, []).append(bot_user_id)
-    await _store_reactions(db, chat_id, message_id, reactions)
+    await _store_reactions(db, key, reactions)

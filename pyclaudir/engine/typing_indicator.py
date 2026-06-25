@@ -38,6 +38,7 @@ MIN_TYPING_VISIBLE_SECONDS = 1
 #: ``send_chat_action`` to that chat. Engine doesn't import telegram.
 TypingAction = Callable[[int], Awaitable[None]]
 
+
 @dataclass
 class TypingState:
     """All typing-indicator state for one engine instance.
@@ -61,8 +62,16 @@ class TypingState:
     #: fires before the minimum visible duration has elapsed.
     deferred_stop: asyncio.Task[None] | None = None
 
+
 class TypingIndicatorMixin:
-    """Typing-indicator methods mixed into ``Engine``."""
+    """Typing-indicator methods mixed into ``Engine``.
+
+    The attributes below are declared (not assigned) so mypy can type the
+    mixin's reads; ``Engine.__init__`` is what actually sets them.
+    """
+
+    _typing: TypingState
+    _typing_action: TypingAction | None
 
     def prime_typing(self, chat_id: int) -> None:
         """Early typing fire from the dispatcher, before debounce + submit.
@@ -116,9 +125,9 @@ class TypingIndicatorMixin:
             "start_typing called: chats=%s action_set=%s task_state=%s",
             chat_ids,
             self._typing_action is not None,
-            "None" if self._typing.task is None else (
-                "done" if self._typing.task.done() else "running"
-            ),
+            "None"
+            if self._typing.task is None
+            else ("done" if self._typing.task.done() else "running"),
         )
         if self._typing_action is None or not chat_ids:
             return
@@ -166,7 +175,6 @@ class TypingIndicatorMixin:
         if chat_id not in self._typing.chats:
             return
 
-
         elapsed = time.monotonic() - self._typing.started_at
         remaining = MIN_TYPING_VISIBLE_SECONDS - elapsed
 
@@ -179,16 +187,25 @@ class TypingIndicatorMixin:
         # Too fast — defer the discard so the indicator is visible for
         # at least MIN_TYPING_VISIBLE_SECONDS from when it started.
         # During the deferral the typing loop keeps refreshing.
+        self._schedule_deferred_discard(chat_id, remaining)
+
+    def _schedule_deferred_discard(self, chat_id: int, delay: float) -> None:
+        """Discard ``chat_id`` after ``delay`` seconds via a background task.
+
+        Keeps the typing indicator visible for at least
+        :data:`MIN_TYPING_VISIBLE_SECONDS`. Fire-and-forget: we don't await
+        the task so :meth:`notify_chat_replied` returns immediately and the
+        ``telegram_send_message`` tool isn't blocked.
+        """
+
         async def _deferred_discard() -> None:
             try:
-                await asyncio.sleep(remaining)
+                await asyncio.sleep(delay)
             except asyncio.CancelledError:
                 return
             self._typing.chats.discard(chat_id)
             self._typing.wake.set()
 
-        # Schedule it; we don't await — notify_chat_replied returns
-        # immediately so the telegram_send_message tool isn't blocked.
         self._typing.deferred_stop = asyncio.create_task(
             _deferred_discard(), name="pyclaudir-typing-deferred-stop"
         )
@@ -198,7 +215,10 @@ class TypingIndicatorMixin:
         self._typing.wake.set()
         # Cancel any pending deferred discard so it doesn't fire after we
         # already stopped.
-        if self._typing.deferred_stop is not None and not self._typing.deferred_stop.done():
+        if (
+            self._typing.deferred_stop is not None
+            and not self._typing.deferred_stop.done()
+        ):
             self._typing.deferred_stop.cancel()
             try:
                 await self._typing.deferred_stop

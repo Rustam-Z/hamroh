@@ -23,7 +23,7 @@ class ListSkillsArgs(BaseModel):
     pass
 
 
-class ListSkillsTool(BaseTool):
+class ListSkillsTool(BaseTool[ListSkillsArgs]):
     name = "list_skills"
     description = (
         "List available agent skills (playbooks) under the project's "
@@ -32,7 +32,7 @@ class ListSkillsTool(BaseTool):
         "name and its frontmatter description — enough to decide which "
         "skill is relevant without loading the full body. Fetch the "
         "body via read_skill only when you're ready to execute. Skills "
-        "are typically invoked via `<skill name=\"X\">run</skill>` "
+        'are typically invoked via `<skill name="X">run</skill>` '
         "inside a `<reminder>` envelope."
     )
     args_model = ListSkillsArgs
@@ -49,8 +49,7 @@ class ListSkillsTool(BaseTool):
             content="\n".join(lines),
             data={
                 "skills": [
-                    {"name": f.name, "description": f.description}
-                    for f in files
+                    {"name": f.name, "description": f.description} for f in files
                 ],
             },
         )
@@ -62,13 +61,13 @@ class ReadSkillArgs(BaseModel):
     )
 
 
-class ReadSkillTool(BaseTool):
+class ReadSkillTool(BaseTool[ReadSkillArgs]):
     name = "read_skill"
     description = (
         "Read the playbook (SKILL.md) for a given agent skill. "
         "Returns the full markdown content. Call list_skills first if "
         "you're not sure what's available. Call this when a `<reminder>` "
-        "envelope contains `<skill name=\"X\">run</skill>`."
+        'envelope contains `<skill name="X">run</skill>`.'
     )
     args_model = ReadSkillArgs
 

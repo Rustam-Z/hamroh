@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ...db.messages import add_bot_reaction
+from ...db.messages import MessageKey, add_bot_reaction
 from ...transcript import log_reaction
 from ..base import BaseTool, ToolResult, bot_identity
 
@@ -13,14 +13,79 @@ from ..base import BaseTool, ToolResult, bot_identity
 # https://core.telegram.org/bots/api#reactiontypeemoji
 SUPPORTED_REACTIONS: frozenset[str] = frozenset(
     [
-        "👍", "👎", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱",
-        "🤬", "😢", "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊", "🤡",
-        "🥱", "🥴", "😍", "🐳", "❤‍🔥", "🌚", "🌭", "💯", "🤣", "⚡",
-        "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾", "💋", "🖕", "😈",
-        "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈", "😇", "😨",
-        "🤝", "✍", "🤗", "🫡", "🎅", "🎄", "☃", "💅", "🤪", "🗿",
-        "🆒", "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾",
-        "🤷‍♂", "🤷", "🤷‍♀", "😡",
+        "👍",
+        "👎",
+        "❤",
+        "🔥",
+        "🥰",
+        "👏",
+        "😁",
+        "🤔",
+        "🤯",
+        "😱",
+        "🤬",
+        "😢",
+        "🎉",
+        "🤩",
+        "🤮",
+        "💩",
+        "🙏",
+        "👌",
+        "🕊",
+        "🤡",
+        "🥱",
+        "🥴",
+        "😍",
+        "🐳",
+        "❤‍🔥",
+        "🌚",
+        "🌭",
+        "💯",
+        "🤣",
+        "⚡",
+        "🍌",
+        "🏆",
+        "💔",
+        "🤨",
+        "😐",
+        "🍓",
+        "🍾",
+        "💋",
+        "🖕",
+        "😈",
+        "😴",
+        "😭",
+        "🤓",
+        "👻",
+        "👨‍💻",
+        "👀",
+        "🎃",
+        "🙈",
+        "😇",
+        "😨",
+        "🤝",
+        "✍",
+        "🤗",
+        "🫡",
+        "🎅",
+        "🎄",
+        "☃",
+        "💅",
+        "🤪",
+        "🗿",
+        "🆒",
+        "💘",
+        "🙉",
+        "🦄",
+        "😘",
+        "💊",
+        "🙊",
+        "😎",
+        "👾",
+        "🤷‍♂",
+        "🤷",
+        "🤷‍♀",
+        "😡",
     ]
 )
 
@@ -40,7 +105,7 @@ class AddReactionArgs(BaseModel):
     )
 
 
-class TelegramAddReactionTool(BaseTool):
+class TelegramAddReactionTool(BaseTool[AddReactionArgs]):
     name = "telegram_add_reaction"
     description = (
         "React to a Telegram message with a single emoji from Telegram's fixed "
@@ -80,9 +145,8 @@ class TelegramAddReactionTool(BaseTool):
             bot_id, _, _ = await bot_identity(self.ctx.bot)
             await add_bot_reaction(
                 self.ctx.database,
-                chat_id=args.chat_id,
-                message_id=args.message_id,
-                bot_user_id=bot_id,
-                emoji=emoji,
+                MessageKey(args.chat_id, args.message_id),
+                bot_id,
+                emoji,
             )
         return ToolResult(content=f"reacted {emoji} to {args.message_id}")

@@ -13,11 +13,38 @@ the chat's display name instead of just its numeric id.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 log = logging.getLogger("pyclaudir.tx")
 
 #: Maximum body length we render inline before truncating.
 MAX_BODY = 200
+
+
+@dataclass(frozen=True)
+class ChatRef:
+    """The chat a transcript line belongs to, for label rendering."""
+
+    chat_id: int
+    chat_titles: dict[int, str] | None = None
+    chat_type: str | None = None
+
+
+@dataclass(frozen=True)
+class UserRef:
+    """The author of a message, for label rendering."""
+
+    user_id: int | None
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class MsgRef:
+    """A message's identity + body for a transcript line."""
+
+    message_id: int | None
+    text: str | None
+    reply_to_id: int | None = None
 
 
 def _truncate(text: str | None) -> str:
@@ -38,7 +65,7 @@ def _chat_label(
     title = (chat_titles or {}).get(chat_id)
     if chat_type == "private" or chat_id > 0:
         if title:
-            return f'DM {title}[{chat_id}]'
+            return f"DM {title}[{chat_id}]"
         return f"DM [{chat_id}]"
     if title:
         return f'G "{title}"[{chat_id}]'
@@ -53,53 +80,42 @@ def _user_label(user_id: int | None, name: str | None) -> str:
     return f"[{user_id}]"
 
 
-def log_inbound(
-    *,
-    chat_id: int,
-    chat_type: str | None,
-    chat_titles: dict[int, str] | None,
-    user_id: int,
-    user_name: str | None,
-    message_id: int,
-    reply_to_id: int | None,
-    text: str | None,
-    allowed: bool,
-) -> None:
-    chat = _chat_label(chat_id, chat_titles, chat_type)
-    user = _user_label(user_id, user_name)
-    reply = f" →m{reply_to_id}" if reply_to_id else ""
-    body = _truncate(text)
+def log_inbound(chat: ChatRef, user: UserRef, msg: MsgRef, *, allowed: bool) -> None:
+    chat_label = _chat_label(chat.chat_id, chat.chat_titles, chat.chat_type)
+    user_label = _user_label(user.user_id, user.name)
+    reply = f" →m{msg.reply_to_id}" if msg.reply_to_id else ""
+    body = _truncate(msg.text)
     prefix = "[RX]" if allowed else "[DROP]"
     suffix = "" if allowed else " (chat not allowed)"
-    log.info("%s %s %s m%d%s%s | %s", prefix, chat, user, message_id, reply, suffix, body)
+    log.info(
+        "%s %s %s m%d%s%s | %s",
+        prefix,
+        chat_label,
+        user_label,
+        msg.message_id,
+        reply,
+        suffix,
+        body,
+    )
 
 
-def log_inbound_edit(
-    *,
-    chat_id: int,
-    chat_titles: dict[int, str] | None,
-    user_id: int | None,
-    user_name: str | None,
-    message_id: int,
-    text: str | None,
-) -> None:
-    chat = _chat_label(chat_id, chat_titles)
-    user = _user_label(user_id, user_name)
-    log.info("[RX↺] %s %s m%d (edited) | %s", chat, user, message_id, _truncate(text))
+def log_inbound_edit(chat: ChatRef, user: UserRef, msg: MsgRef) -> None:
+    chat_label = _chat_label(chat.chat_id, chat.chat_titles)
+    user_label = _user_label(user.user_id, user.name)
+    log.info(
+        "[RX↺] %s %s m%d (edited) | %s",
+        chat_label,
+        user_label,
+        msg.message_id,
+        _truncate(msg.text),
+    )
 
 
-def log_outbound(
-    *,
-    chat_id: int,
-    chat_titles: dict[int, str] | None,
-    message_id: int | None,
-    reply_to_id: int | None,
-    text: str | None,
-) -> None:
-    chat = _chat_label(chat_id, chat_titles)
-    reply = f" →m{reply_to_id}" if reply_to_id else ""
-    mid = f" m{message_id}" if message_id else ""
-    log.info("[TX] %s%s%s | %s", chat, mid, reply, _truncate(text))
+def log_outbound(chat: ChatRef, msg: MsgRef) -> None:
+    chat_label = _chat_label(chat.chat_id, chat.chat_titles)
+    reply = f" →m{msg.reply_to_id}" if msg.reply_to_id else ""
+    mid = f" m{msg.message_id}" if msg.message_id else ""
+    log.info("[TX] %s%s%s | %s", chat_label, mid, reply, _truncate(msg.text))
 
 
 def log_edit(

@@ -65,7 +65,7 @@ def _render_row(row: dict) -> str:
     return "\t".join(cells)
 
 
-class DatabaseGetRecentMessagesTool(BaseTool):
+class DatabaseGetRecentMessagesTool(BaseTool[DatabaseGetRecentMessagesArgs]):
     name = "database_get_recent_messages"
     description = (
         "Return the most recent messages (both directions), oldest-first, as "

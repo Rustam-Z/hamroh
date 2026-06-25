@@ -16,6 +16,7 @@ import pytest
 from pyclaudir.config import Config
 from pyclaudir.db.database import Database
 from pyclaudir.db.reminders import (
+    NewReminder,
     advance_recurring_reminder,
     claim_reminder,
     fetch_due_reminders,
@@ -39,11 +40,13 @@ async def _open(tmp_path: Path) -> Database:
 async def _insert_due(db: Database, *, cron_expr: str | None = None) -> int:
     return await insert_reminder(
         db,
-        chat_id=-100,
-        user_id=42,
-        text="ping",
-        trigger_at=_PAST,
-        cron_expr=cron_expr,
+        NewReminder(
+            chat_id=-100,
+            user_id=42,
+            text="ping",
+            trigger_at=_PAST,
+            cron_expr=cron_expr,
+        ),
     )
 
 

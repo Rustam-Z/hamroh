@@ -18,7 +18,9 @@ def _make_store(tmp_path: Path) -> InstructionsStore:
     project_md = tmp_path / "prompts" / "project.md"
     project_md.parent.mkdir(parents=True)
     project_md.write_text("PROJECT v1\n")
-    store = InstructionsStore(project_md_path=project_md, backup_dir=tmp_path / "backups")
+    store = InstructionsStore(
+        project_md_path=project_md, backup_dir=tmp_path / "backups"
+    )
     store.ensure_dirs()
     return store
 

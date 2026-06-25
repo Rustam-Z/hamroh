@@ -33,6 +33,7 @@ async def _assert_readout(
 
 # --- /health -------------------------------------------------------------
 
+
 @pytest.mark.smoke
 async def test_health_command_dm(
     tester_client: TelegramClient, dm: Conversation

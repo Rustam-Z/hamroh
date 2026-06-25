@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ...storage.memory import MemoryStore
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +53,7 @@ class SendMemoryDocumentArgs(BaseModel):
     )
 
 
-class TelegramSendMemoryDocumentTool(BaseTool):
+class TelegramSendMemoryDocumentTool(BaseTool[SendMemoryDocumentArgs]):
     name = "telegram_send_memory_document"
     description = (
         "Send a memory file (from data/memories/) to a chat as a downloadable "
@@ -66,15 +72,9 @@ class TelegramSendMemoryDocumentTool(BaseTool):
         if store is None:
             return ToolResult(content="memory store unavailable", is_error=True)
 
-        try:
-            resolved = await asyncio.to_thread(store.resolve_path, args.path)
-        except Exception as exc:
-            return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
-
-        if not resolved.exists() or not resolved.is_file():
-            return ToolResult(
-                content=f"memory file not found: {args.path}", is_error=True,
-            )
+        resolved = await _resolve_memory(store, args.path)
+        if isinstance(resolved, ToolResult):
+            return resolved
 
         sent = await self.ctx.bot.send_document(
             chat_id=args.chat_id,
@@ -86,25 +86,55 @@ class TelegramSendMemoryDocumentTool(BaseTool):
         message_id = sent.message_id
         log.info(
             "hot-path stage=delivered chat=%s msg=%s document=%s",
-            args.chat_id, message_id, args.path,
+            args.chat_id,
+            message_id,
+            args.path,
         )
 
-        transcript_text = f"[document] {args.path}"
-        if args.caption:
-            transcript_text += f" — {args.caption}"
-        await deliver_bookkeeping(self.ctx, OutboundDelivery(
-            chat_id=args.chat_id,
-            message_id=message_id,
-            reply_to_id=args.reply_to_message_id,
-            transcript_text=transcript_text,
-        ))
-
-        return ToolResult(
-            content=f"sent document message_id={message_id} ({resolved.name})",
-            data={
-                "message_id": message_id,
-                "chat_id": args.chat_id,
-                "filename": resolved.name,
-                "path": args.path,
-            },
+        await deliver_bookkeeping(
+            self.ctx,
+            OutboundDelivery(
+                chat_id=args.chat_id,
+                message_id=message_id,
+                reply_to_id=args.reply_to_message_id,
+                transcript_text=_transcript_text(args.path, args.caption),
+            ),
         )
+        return _build_result(args, message_id, resolved.name)
+
+
+def _build_result(
+    args: SendMemoryDocumentArgs, message_id: int, filename: str
+) -> ToolResult:
+    """Assemble the success result for a delivered document."""
+    return ToolResult(
+        content=f"sent document message_id={message_id} ({filename})",
+        data={
+            "message_id": message_id,
+            "chat_id": args.chat_id,
+            "filename": filename,
+            "path": args.path,
+        },
+    )
+
+
+async def _resolve_memory(store: MemoryStore, path: str) -> Path | ToolResult:
+    """Resolve ``path`` under the memories root.
+
+    Returns the resolved path on success, or an error ``ToolResult`` when the
+    path is rejected by the store's safety checks or points at a missing file.
+    """
+    try:
+        resolved = await asyncio.to_thread(store.resolve_path, path)
+    except Exception as exc:
+        return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
+    if not resolved.exists() or not resolved.is_file():
+        return ToolResult(content=f"memory file not found: {path}", is_error=True)
+    return resolved
+
+
+def _transcript_text(path: str, caption: str | None) -> str:
+    """Render the transcript line for a delivered document, with optional caption."""
+    if caption:
+        return f"[document] {path} — {caption}"
+    return f"[document] {path}"

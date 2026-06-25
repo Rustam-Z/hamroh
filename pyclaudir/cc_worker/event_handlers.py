@@ -12,9 +12,10 @@ the tool-error breaker hooks (``_record_tool_error``,
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..models import ControlAction
 from ..transcript import (
@@ -26,6 +27,7 @@ from ..transcript import (
 
 if TYPE_CHECKING:
     from .events import TurnResult
+    from .raw_capture import RawCapture
 # Pinned to the parent package name so log captures keyed on
 # ``"pyclaudir.cc_worker"`` keep matching after the module split.
 log = logging.getLogger("pyclaudir.cc_worker")
@@ -38,17 +40,19 @@ log = logging.getLogger("pyclaudir.cc_worker")
 #: a real response, so its narration must NOT be treated as dropped text.
 #: Add a tool here when the user can perceive its effect (test_tool_discovery
 #: pins every entry to a real tool so a rename can't silently break this).
-USER_VISIBLE_TOOLS: frozenset[str] = frozenset({
-    "mcp__pyclaudir__telegram_send_message",
-    "mcp__pyclaudir__telegram_reply_to_message",
-    "mcp__pyclaudir__telegram_send_photo",
-    "mcp__pyclaudir__telegram_send_memory_document",
-    "mcp__pyclaudir__telegram_create_poll",
-    "mcp__pyclaudir__telegram_add_reaction",
-    "mcp__pyclaudir__telegram_edit_message",
-    "mcp__pyclaudir__telegram_delete_message",
-    "mcp__pyclaudir__telegram_stop_poll",
-})
+USER_VISIBLE_TOOLS: frozenset[str] = frozenset(
+    {
+        "mcp__pyclaudir__telegram_send_message",
+        "mcp__pyclaudir__telegram_reply_to_message",
+        "mcp__pyclaudir__telegram_send_photo",
+        "mcp__pyclaudir__telegram_send_memory_document",
+        "mcp__pyclaudir__telegram_create_poll",
+        "mcp__pyclaudir__telegram_add_reaction",
+        "mcp__pyclaudir__telegram_edit_message",
+        "mcp__pyclaudir__telegram_delete_message",
+        "mcp__pyclaudir__telegram_stop_poll",
+    }
+)
 
 #: Stripped from tool names for the status heartbeat's "last action" line.
 _MCP_PREFIX = "mcp__pyclaudir__"
@@ -67,6 +71,17 @@ class CcEventHandlerMixin:
     #: Most recent tool the agent called this turn (prefix-stripped); written
     #: here, read by the status heartbeat. Defined in ``CcWorker.__init__``.
     _last_tool_action: str | None
+    #: Raw stream capture, turn-result channel, and recent stderr — all set in
+    #: ``CcWorker.__init__``; annotated here so the mixin's reads type-check.
+    _capture: RawCapture
+    _result_queue: asyncio.Queue[TurnResult]
+    _stderr_tail: list[str]
+    #: Resumed/active CC session id; ``None`` until the first ``system/init``.
+    _session_id: str | None
+    #: Tool-error breaker + heartbeat hooks, defined as methods on ``CcWorker``.
+    _record_tool_error: Callable[[], None]
+    _cancel_tool_error_watchdog: Callable[[], None]
+    _cancel_status_heartbeat: Callable[[], None]
 
     def _handle_event(self, event: dict[str, Any]) -> None:
         """Parse one stream-json event from the CC subprocess.
@@ -106,7 +121,9 @@ class CcEventHandlerMixin:
             self._on_result_event(event)
 
     def _relay_top_level_error(
-        self, event: dict[str, Any], etype: str | None,
+        self,
+        event: dict[str, Any],
+        etype: str | None,
     ) -> None:
         """Generic relay of any error-shaped top-level field.
 
@@ -126,7 +143,9 @@ class CcEventHandlerMixin:
         if err_bits:
             log.error(
                 "cc reported error in %s/%s event: %s",
-                etype, event.get("subtype") or "-", ", ".join(err_bits),
+                etype,
+                event.get("subtype") or "-",
+                ", ".join(err_bits),
             )
 
     def _on_system_init(self, event: dict[str, Any]) -> None:
@@ -148,7 +167,8 @@ class CcEventHandlerMixin:
                 log.error(
                     "mcp server %s did not connect (status=%s) — its "
                     "tools won't be available this session",
-                    server.get("name", "?"), status,
+                    server.get("name", "?"),
+                    status,
                 )
 
     def _on_assistant_event(self, event: dict[str, Any]) -> None:
@@ -214,8 +234,7 @@ class CcEventHandlerMixin:
         if isinstance(raw, list):
             # Sometimes a list of {"type":"text","text":...}
             text = " ".join(
-                (b.get("text", "") if isinstance(b, dict) else str(b))
-                for b in raw
+                (b.get("text", "") if isinstance(b, dict) else str(b)) for b in raw
             )
         else:
             text = "" if raw is None else str(raw)
@@ -275,7 +294,11 @@ class CcEventHandlerMixin:
         payload = (
             event.get("result")
             or event.get("output")
-            or (self._current_turn.text_blocks[-1] if self._current_turn.text_blocks else None)
+            or (
+                self._current_turn.text_blocks[-1]
+                if self._current_turn.text_blocks
+                else None
+            )
         )
         if isinstance(payload, str):
             try:

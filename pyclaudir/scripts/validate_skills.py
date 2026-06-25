@@ -52,7 +52,8 @@ def _validate_one(skill_dir: Path) -> tuple[bool, str]:
     return True, f"{skill_dir.name}: OK ({len(desc)} char description)"
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> Path:
+    """Parse the CLI args and return the skills root to validate."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--skills",
@@ -61,20 +62,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Root of the skills/ directory to validate (default: project root's skills/)",
     )
     args = parser.parse_args(argv)
-
     root: Path = args.skills
-    if not root.exists():
-        print(f"skills root does not exist: {root}", file=sys.stderr)
-        return 2
-    if not root.is_dir():
-        print(f"skills root is not a directory: {root}", file=sys.stderr)
-        return 2
+    return root
 
-    entries = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
-    if not entries:
-        print("(no skills found — nothing to validate)")
-        return 0
 
+def _validate_all(entries: list[Path]) -> int:
+    """Validate each skill directory, printing a line per skill.
+
+    Returns the number of skills that failed validation.
+    """
     failed = 0
     for entry in entries:
         ok, msg = _validate_one(entry)
@@ -82,7 +78,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{prefix} {msg}")
         if not ok:
             failed += 1
+    return failed
 
+
+def main(argv: list[str] | None = None) -> int:
+    root = _parse_args(argv)
+    if not root.exists():
+        print(f"skills root does not exist: {root}", file=sys.stderr)
+        return 2
+    if not root.is_dir():
+        print(f"skills root is not a directory: {root}", file=sys.stderr)
+        return 2
+
+    entries = sorted(
+        p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
+    )
+    if not entries:
+        print("(no skills found — nothing to validate)")
+        return 0
+
+    failed = _validate_all(entries)
     if failed:
         print(f"\n{failed} skill(s) failed validation", file=sys.stderr)
         return 1

@@ -12,8 +12,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Literal, Protocol
 
 from telegram import Update
 from telegram.ext import (
@@ -26,10 +27,12 @@ from telegram.ext import (
     filters,
 )
 
-from ..access import gate, load_access
+from ..access import Principal, gate, load_access
 from ..config import Config
 from ..db.database import Database
 from ..db.messages import (
+    MessageKey,
+    ReactionChange,
     apply_user_reaction,
     insert_message,
     mark_edited,
@@ -40,7 +43,7 @@ from ..input_normalizer import normalize_inbound
 from ..models import ChatMessage
 from ..rate_limiter import RateLimitExceeded, RateLimiter
 from ..secrets_scrubber import contains_secret, scrub
-from ..transcript import log_inbound, log_inbound_edit
+from ..transcript import ChatRef, MsgRef, UserRef, log_inbound, log_inbound_edit
 from .attachments import _process_attachments
 from .commands import OwnerCommandsMixin
 
@@ -53,6 +56,8 @@ class EnginePort(Protocol):
     async def submit(self, msg: ChatMessage) -> None: ...
 
     async def reset_session(self) -> None: ...
+
+    async def stash_restore_context(self, reason: str) -> None: ...
 
     def prime_typing(self, chat_id: int) -> None: ...
 
@@ -91,7 +96,9 @@ def _scrubbed_raw_update(update: Update) -> str:
     return scrub(raw) if contains_secret(raw) else raw
 
 
-def _to_chat_message(update: Update, direction: str = "in") -> ChatMessage | None:
+def _to_chat_message(
+    update: Update, direction: Literal["in", "out"] = "in"
+) -> ChatMessage | None:
     msg = update.effective_message
     if msg is None or msg.from_user is None:
         return None
@@ -113,34 +120,36 @@ def _to_chat_message(update: Update, direction: str = "in") -> ChatMessage | Non
     )
 
 
+@dataclass(frozen=True)
+class DispatcherDeps:
+    """Optional collaborators for :class:`TelegramDispatcher`.
+
+    ``engine`` may be ``None`` at construction to break the dispatcher↔engine
+    circular dependency (the dispatcher owns the bot the engine needs for the
+    typing indicator); it must be set before :meth:`TelegramDispatcher.start`.
+    ``chat_titles`` is shared with ``ToolContext`` so outbound logs can render
+    a chat's display name.
+    """
+
+    engine: EnginePort | None = None
+    chat_titles: dict[int, str] | None = None
+    rate_limiter: RateLimiter | None = None
+
+
 class TelegramDispatcher(OwnerCommandsMixin):
     def __init__(
-        self,
-        config: Config,
-        db: Database,
-        engine: EnginePort | None = None,
-        *,
-        chat_titles: dict[int, str] | None = None,
-        rate_limiter: RateLimiter | None = None,
+        self, config: Config, db: Database, deps: DispatcherDeps = DispatcherDeps()
     ) -> None:
         self.config = config
         self.db = db
-        self.rate_limiter = rate_limiter
-        #: May be ``None`` at construction time so callers can break the
-        #: circular dep between dispatcher (owns the bot) and engine
-        #: (needs the bot for the typing indicator). Must be set before
-        #: :meth:`start` is called, otherwise inbound messages will crash
-        #: when the handler tries to forward them.
-        self.engine: EnginePort | None = engine
+        self.rate_limiter = deps.rate_limiter
+        self.engine: EnginePort | None = deps.engine
         #: Owner /pause toggle. While True, inbound user messages from ALL
         #: chats are dropped (not persisted, not forwarded). In-memory only:
-        #: a restart starts un-paused. Flipped by /pause and /resume
-        #: (see OwnerCommandsMixin).
+        #: a restart starts un-paused. Flipped by /pause and /resume.
         self._paused: bool = False
-        #: Shared with ToolContext.chat_titles so outbound logs can render
-        #: the chat's display name. We populate it from every inbound message.
         self.chat_titles: dict[int, str] = (
-            chat_titles if chat_titles is not None else {}
+            deps.chat_titles if deps.chat_titles is not None else {}
         )
         # AIORateLimiter queues outbound calls under Telegram's flood
         # limits and honours 429 retry_after, so a long multi-chunk reply
@@ -213,7 +222,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
         if self._paused:
             log.info("paused — dropping chat=%s msg=%s", cm.chat_id, cm.message_id)
             return
-        log.info("hot-path stage=receipt chat=%s msg=%s t_ms=0", cm.chat_id, cm.message_id)
+        log.info(
+            "hot-path stage=receipt chat=%s msg=%s t_ms=0", cm.chat_id, cm.message_id
+        )
 
         self._remember_chat_title(update)
         chat_type = update.effective_chat.type if update.effective_chat else None
@@ -225,13 +236,16 @@ class TelegramDispatcher(OwnerCommandsMixin):
 
         await self._attach_attachment_markers(update, cm)
         await self._persist_inbound(cm)
+        await self._forward_to_engine(cm, received_at)
 
+    async def _forward_to_engine(self, cm: ChatMessage, received_at: float) -> None:
+        """Prime the typing indicator, log the hot-path latency, and hand the
+        message to the engine. No-op (with an error log) if no engine is wired."""
         if self.engine is None:
             log.error("dispatcher received message before engine was attached")
             return
-
-        # Fire typing indicator NOW — before debounce + XML format + worker.send.
-        # Without this, the user waits silently for the whole hot path before
+        # Fire typing indicator NOW — before debounce + XML format + worker.send,
+        # so the user doesn't wait silently through the whole hot path before
         # Telegram renders "typing...". Fire-and-forget inside prime_typing.
         self.engine.prime_typing(cm.chat_id)
         log.info(
@@ -275,11 +289,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
         """
         access = load_access(self.config.access_path)
         return gate(
-            access=access,
-            owner_id=self.config.owner_id,
-            chat_id=chat_id,
-            user_id=user_id,
-            chat_type=chat_type,
+            access,
+            self.config.owner_id,
+            Principal(chat_id=chat_id, user_id=user_id, chat_type=chat_type),
         )
 
     def _check_access(self, cm: ChatMessage, chat_type: str | None) -> bool:
@@ -290,14 +302,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
         to forward."""
         allowed = self._is_allowed(cm.chat_id, cm.user_id, chat_type)
         log_inbound(
-            chat_id=cm.chat_id,
-            chat_type=chat_type,
-            chat_titles=self.chat_titles,
-            user_id=cm.user_id,
-            user_name=cm.first_name or cm.username,
-            message_id=cm.message_id,
-            reply_to_id=cm.reply_to_id,
-            text=cm.text,
+            ChatRef(cm.chat_id, self.chat_titles, chat_type),
+            UserRef(cm.user_id, cm.first_name or cm.username),
+            MsgRef(cm.message_id, cm.text, cm.reply_to_id),
             allowed=allowed,
         )
         return allowed
@@ -389,11 +396,12 @@ class TelegramDispatcher(OwnerCommandsMixin):
 
         await apply_user_reaction(
             self.db,
-            chat_id=evt.chat.id,
-            message_id=evt.message_id,
-            user_id=evt.user.id,
-            old_emoji=_emojis(evt.old_reaction),
-            new_emoji=_emojis(evt.new_reaction),
+            MessageKey(evt.chat.id, evt.message_id),
+            ReactionChange(
+                user_id=evt.user.id,
+                old_emoji=_emojis(evt.old_reaction),
+                new_emoji=_emojis(evt.new_reaction),
+            ),
         )
 
     async def _on_edited(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -406,15 +414,14 @@ class TelegramDispatcher(OwnerCommandsMixin):
         if not self._is_allowed(msg.chat_id, user_id, chat_type):
             return
         await mark_edited(self.db, msg.chat_id, msg.message_id, msg.text or "")
+        author = msg.from_user
         log_inbound_edit(
-            chat_id=msg.chat_id,
-            chat_titles=self.chat_titles,
-            user_id=msg.from_user.id if msg.from_user else None,
-            user_name=(msg.from_user.first_name or msg.from_user.username)
-            if msg.from_user
-            else None,
-            message_id=msg.message_id,
-            text=msg.text or "",
+            ChatRef(msg.chat_id, self.chat_titles),
+            UserRef(
+                author.id if author else None,
+                (author.first_name or author.username) if author else None,
+            ),
+            MsgRef(msg.message_id, msg.text or ""),
         )
 
     # ------------------------------------------------------------------
@@ -430,6 +437,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
         await self.application.initialize()
         await self._register_owner_commands()
         await self.application.start()
+        # The default Application builder always wires an updater; assert so
+        # the type checker drops the ``Updater | None``.
+        assert self.application.updater is not None
         await self.application.updater.start_polling(
             # Discard the Telegram-side backlog left by a previous run (e.g. a
             # SIGKILL'd instance that never ack'd its offset). Restart continuity
@@ -448,6 +458,7 @@ class TelegramDispatcher(OwnerCommandsMixin):
 
     async def stop(self) -> None:
         try:
+            assert self.application.updater is not None
             await self.application.updater.stop()
         except Exception:  # pragma: no cover
             log.exception("updater stop failed")

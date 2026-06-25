@@ -16,7 +16,7 @@ class BrowserBackArgs(BaseModel):
     pass
 
 
-class BrowserBackTool(BrowserSessionTool):
+class BrowserBackTool(BrowserSessionTool[BrowserBackArgs]):
     name = "browser_back"
     description = (
         "Go back one entry in the browser history on the current page (call "

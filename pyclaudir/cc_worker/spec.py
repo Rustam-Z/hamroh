@@ -67,7 +67,13 @@ BASH_TOOLS: tuple[str, ...] = ("Bash", "PowerShell", "Monitor")
 
 #: Tools unlocked when ``enable_code`` is True.
 CODE_TOOLS: tuple[str, ...] = (
-    "Edit", "Write", "Read", "NotebookEdit", "Glob", "Grep", "LSP",
+    "Edit",
+    "Write",
+    "Read",
+    "NotebookEdit",
+    "Glob",
+    "Grep",
+    "LSP",
 )
 
 #: Forbidden flag — never pass this. ``build_argv`` enforces it at build
@@ -138,7 +144,10 @@ def _compose_system_prompt(spec: CcSpawnSpec) -> str:
         system_prompt += "\n\n" + spec.project_prompt_path.read_text(encoding="utf-8")
     system_prompt += "\n\n" + runtime_block
     if spec.enable_subagents:
-        if spec.subagents_prompt_path is None or not spec.subagents_prompt_path.exists():
+        if (
+            spec.subagents_prompt_path is None
+            or not spec.subagents_prompt_path.exists()
+        ):
             raise FileNotFoundError(
                 "enable_subagents=True but subagents_prompt_path is missing: "
                 f"{spec.subagents_prompt_path!r}"
@@ -174,11 +183,19 @@ def _tool_lists(spec: CcSpawnSpec) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return BASE_ALLOWED_TOOLS + tuple(allowed_extras), tuple(disallowed_extras)
 
 
-def build_argv(spec: CcSpawnSpec) -> list[str]:
-    """Construct the exact argv we hand to ``asyncio.create_subprocess_exec``.
+@dataclass(frozen=True)
+class _ArgvParts:
+    """Pre-computed pieces of the argv, assembled once and handed to
+    :func:`_assemble_argv`."""
 
-    Pinned by ``tests/test_security_invariants.py``.
-    """
+    system_prompt: str
+    json_schema: str
+    allowed_tools: tuple[str, ...]
+    disallowed_tools: tuple[str, ...]
+
+
+def _require_input_files(spec: CcSpawnSpec) -> None:
+    """Raise :class:`FileNotFoundError` if any required input file is missing."""
     if not spec.system_prompt_path.exists():
         raise FileNotFoundError(spec.system_prompt_path)
     if not spec.mcp_config_path.exists():
@@ -186,28 +203,57 @@ def build_argv(spec: CcSpawnSpec) -> list[str]:
     if not spec.json_schema_path.exists():
         raise FileNotFoundError(spec.json_schema_path)
 
-    system_prompt = _compose_system_prompt(spec)
+
+def _assemble_argv(spec: CcSpawnSpec, parts: _ArgvParts) -> list[str]:
+    """Build the flat argv list from the pre-computed prompt, schema, and
+    tool lists. ``--resume`` is appended only when a session id is set."""
+    argv: list[str] = [
+        spec.binary,
+        "--print",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        spec.model,
+        "--effort",
+        spec.effort,
+        "--system-prompt",
+        parts.system_prompt,
+        "--mcp-config",
+        str(spec.mcp_config_path),
+        "--strict-mcp-config",
+        "--allowedTools",
+        ",".join(parts.allowed_tools),
+        "--disallowedTools",
+        ",".join(parts.disallowed_tools),
+        "--json-schema",
+        parts.json_schema,
+    ]
+    if spec.session_id:
+        argv += ["--resume", spec.session_id]
+    return argv
+
+
+def build_argv(spec: CcSpawnSpec) -> list[str]:
+    """Construct the exact argv we hand to ``asyncio.create_subprocess_exec``.
+
+    Pinned by ``tests/test_security_invariants.py``.
+    """
+    _require_input_files(spec)
+
     json_schema = spec.json_schema_path.read_text(encoding="utf-8")
     json.loads(json_schema)  # sanity check
     allowed_tools, disallowed_tools = _tool_lists(spec)
 
-    argv: list[str] = [
-        spec.binary,
-        "--print",
-        "--input-format", "stream-json",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--model", spec.model,
-        "--effort", spec.effort,
-        "--system-prompt", system_prompt,
-        "--mcp-config", str(spec.mcp_config_path),
-        "--strict-mcp-config",
-        "--allowedTools", ",".join(allowed_tools),
-        "--disallowedTools", ",".join(disallowed_tools),
-        "--json-schema", json_schema,
-    ]
-    if spec.session_id:
-        argv += ["--resume", spec.session_id]
+    parts = _ArgvParts(
+        system_prompt=_compose_system_prompt(spec),
+        json_schema=json_schema,
+        allowed_tools=allowed_tools,
+        disallowed_tools=disallowed_tools,
+    )
+    argv = _assemble_argv(spec, parts)
 
     if FORBIDDEN_FLAG in argv:
         raise RuntimeError(

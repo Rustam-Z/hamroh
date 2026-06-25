@@ -14,7 +14,10 @@ from pyclaudir.storage.render import RenderPathError, RenderStore
 from pyclaudir.tools import render_html as render_html_mod
 from pyclaudir.tools.base import ToolContext
 from pyclaudir.tools.render_html import RenderHtmlArgs, RenderHtmlTool
-from pyclaudir.tools.telegram.telegram_send_photo import SendPhotoArgs, TelegramSendPhotoTool
+from pyclaudir.tools.telegram.telegram_send_photo import (
+    SendPhotoArgs,
+    TelegramSendPhotoTool,
+)
 
 
 @pytest.fixture()
@@ -71,12 +74,12 @@ async def test_render_html_happy_path_mocked(
 ) -> None:
     captured: dict = {}
 
-    async def _fake_render(html: str, width: int, height: int, out_path: Path, **_kw) -> None:
-        captured["html"] = html
-        captured["width"] = width
-        captured["height"] = height
-        captured["out_path"] = out_path
-        out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 200)
+    async def _fake_render(req) -> None:
+        captured["html"] = req.html
+        captured["width"] = req.width
+        captured["height"] = req.height
+        captured["out_path"] = req.out_path
+        req.out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 200)
 
     monkeypatch.setattr(render_html_mod, "_render_to_png", _fake_render)
     tool = RenderHtmlTool(ToolContext(render_store=store))
@@ -102,10 +105,10 @@ async def test_render_html_passes_through_dimensions(
 ) -> None:
     seen: dict = {}
 
-    async def _fake(html, width, height, out_path, **_kw):
-        seen["width"] = width
-        seen["height"] = height
-        out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"y" * 50)
+    async def _fake(req):
+        seen["width"] = req.width
+        seen["height"] = req.height
+        req.out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"y" * 50)
 
     monkeypatch.setattr(render_html_mod, "_render_to_png", _fake)
     tool = RenderHtmlTool(ToolContext(render_store=store))
@@ -143,8 +146,8 @@ async def test_render_html_handles_render_failure(
 async def test_render_html_handles_empty_output(
     store: RenderStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def _empty(html, width, height, out_path, **_kw):
-        out_path.write_bytes(b"")  # zero-byte file
+    async def _empty(req):
+        req.out_path.write_bytes(b"")  # zero-byte file
 
     monkeypatch.setattr(render_html_mod, "_render_to_png", _empty)
     tool = RenderHtmlTool(ToolContext(render_store=store))
@@ -265,7 +268,9 @@ async def test_render_to_png_wall_clock_enforces_budget(
     monkeypatch.setattr(m, "_WALL_CLOCK_S", 0.1)
 
     with pytest.raises(TimeoutError, match="wall-clock budget"):
-        await m._render_to_png("<p>x</p>", 800, 600, tmp_path / "x.png")
+        await m._render_to_png(
+            m.RenderRequest("<p>x</p>", 800, 600, tmp_path / "x.png")
+        )
 
 
 # ---------------------------------------------------------------------------

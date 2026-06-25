@@ -78,27 +78,47 @@ class CreatePollArgs(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> "CreatePollArgs":
+        self._check_option_lengths()
+        self._check_quiz_rules()
+        self._check_correct_option_range()
+        self._check_close_timing()
+        return self
+
+    def _check_option_lengths(self) -> None:
+        """Each answer option must be 1-100 chars."""
         for i, opt in enumerate(self.options):
             if not (1 <= len(opt) <= 100):
                 raise ValueError(f"option {i} must be 1-100 chars")
+
+    def _check_quiz_rules(self) -> None:
+        """Quiz-only and regular-only fields must match the poll type."""
         if self.type == "quiz":
             if self.correct_option_id is None:
                 raise ValueError("correct_option_id is required when type='quiz'")
             if self.allows_multiple_answers:
-                raise ValueError("allows_multiple_answers is only valid for regular polls")
-        else:
-            if self.correct_option_id is not None:
-                raise ValueError("correct_option_id is only valid when type='quiz'")
-            if self.explanation is not None:
-                raise ValueError("explanation is only valid when type='quiz'")
-        if self.correct_option_id is not None and self.correct_option_id >= len(self.options):
+                raise ValueError(
+                    "allows_multiple_answers is only valid for regular polls"
+                )
+            return
+        if self.correct_option_id is not None:
+            raise ValueError("correct_option_id is only valid when type='quiz'")
+        if self.explanation is not None:
+            raise ValueError("explanation is only valid when type='quiz'")
+
+    def _check_correct_option_range(self) -> None:
+        """correct_option_id must point at an existing option."""
+        if self.correct_option_id is not None and self.correct_option_id >= len(
+            self.options
+        ):
             raise ValueError("correct_option_id is out of range")
+
+    def _check_close_timing(self) -> None:
+        """open_period and close_date cannot both be set."""
         if self.open_period is not None and self.close_date is not None:
             raise ValueError("open_period and close_date are mutually exclusive")
-        return self
 
 
-class TelegramCreatePollTool(BaseTool):
+class TelegramCreatePollTool(BaseTool[CreatePollArgs]):
     name = "telegram_create_poll"
     description = (
         "Send a Telegram poll — a regular vote or a quiz with one correct "
@@ -133,20 +153,12 @@ class TelegramCreatePollTool(BaseTool):
         poll_id = sent.poll.id if sent.poll is not None else None
         log.info(
             "hot-path stage=delivered chat=%s msg=%s poll=%s",
-            args.chat_id, message_id, poll_id,
+            args.chat_id,
+            message_id,
+            poll_id,
         )
 
-        transcript_text = f"[poll] {args.question}"
-        stored_text = transcript_text + "\n" + "\n".join(
-            f"- {opt}" for opt in args.options
-        )
-        await deliver_bookkeeping(self.ctx, OutboundDelivery(
-            chat_id=args.chat_id,
-            message_id=message_id,
-            reply_to_id=args.reply_to_message_id,
-            transcript_text=transcript_text,
-            db_text=stored_text,
-        ))
+        await self._record_delivery(args, message_id)
 
         return ToolResult(
             content=f"poll sent message_id={message_id} poll_id={poll_id}",
@@ -155,4 +167,21 @@ class TelegramCreatePollTool(BaseTool):
                 "poll_id": poll_id,
                 "chat_id": args.chat_id,
             },
+        )
+
+    async def _record_delivery(self, args: CreatePollArgs, message_id: int) -> None:
+        """Persist the sent poll to the transcript and database."""
+        transcript_text = f"[poll] {args.question}"
+        stored_text = (
+            transcript_text + "\n" + "\n".join(f"- {opt}" for opt in args.options)
+        )
+        await deliver_bookkeeping(
+            self.ctx,
+            OutboundDelivery(
+                chat_id=args.chat_id,
+                message_id=message_id,
+                reply_to_id=args.reply_to_message_id,
+                transcript_text=transcript_text,
+                db_text=stored_text,
+            ),
         )

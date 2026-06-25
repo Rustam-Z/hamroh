@@ -99,7 +99,9 @@ class MemoryStore:
                 rel = path.relative_to(self._root)
             except ValueError:  # pragma: no cover - rglob shouldn't escape
                 continue
-            out.append(MemoryFile(relative_path=str(rel), size_bytes=path.stat().st_size))
+            out.append(
+                MemoryFile(relative_path=str(rel), size_bytes=path.stat().st_size)
+            )
         return out
 
     def read(self, relative: str, max_bytes: int = MAX_MEMORY_BYTES) -> str:

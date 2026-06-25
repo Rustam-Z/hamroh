@@ -20,10 +20,12 @@ class BrowserFillArgs(BaseModel):
         min_length=1,
         description="CSS selector of the input or textarea to fill.",
     )
-    value: str = Field(description="Text to type into the field (replaces any existing value).")
+    value: str = Field(
+        description="Text to type into the field (replaces any existing value)."
+    )
 
 
-class BrowserFillTool(BrowserSessionTool):
+class BrowserFillTool(BrowserSessionTool[BrowserFillArgs]):
     name = "browser_fill"
     description = (
         "Type a value into an input/textarea on the current browser page (call "

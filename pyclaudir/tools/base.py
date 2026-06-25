@@ -17,13 +17,13 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel
 
 from ..db.messages import insert_message
 from ..models import ChatMessage
-from ..transcript import log_outbound
+from ..transcript import ChatRef, MsgRef, log_outbound
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..storage.attachments import AttachmentStore
@@ -82,7 +82,9 @@ class ToolContext:
     #: typing-indicator set so "typing..." vanishes as soon as the user has
     #: the message in their hand — not when the entire CC turn officially
     #: ends, which can be 5-10 seconds later.
-    on_chat_replied: Any = None  # Callable[[int], None] | None — kept untyped to avoid an import
+    on_chat_replied: Any = (
+        None  # Callable[[int], None] | None — kept untyped to avoid an import
+    )
 
 
 @dataclass
@@ -103,10 +105,18 @@ class ToolResult:
     content: str
     data: dict[str, Any] | None = None
     is_error: bool = False
-    image_path: Any = None  # pathlib.Path | None — left untyped to keep this module import-light
+    image_path: Any = (
+        None  # pathlib.Path | None — left untyped to keep this module import-light
+    )
 
 
-class BaseTool(ABC):
+#: The Pydantic args model a concrete tool's ``run`` accepts. Parametrising
+#: ``BaseTool`` on it lets subclasses narrow ``run``'s argument type without
+#: tripping Liskov — ``BaseTool[FooArgs].run`` accepts exactly ``FooArgs``.
+ArgsT = TypeVar("ArgsT", bound=BaseModel)
+
+
+class BaseTool(ABC, Generic[ArgsT]):
     """Subclass me, drop the file in ``pyclaudir/tools/``, and you're done."""
 
     #: MCP tool name. The MCP server prefixes this with ``mcp__pyclaudir__``
@@ -123,7 +133,7 @@ class BaseTool(ABC):
         self.ctx = ctx
 
     @abstractmethod
-    async def run(self, args: BaseModel) -> ToolResult:  # pragma: no cover - abstract
+    async def run(self, args: ArgsT) -> ToolResult:  # pragma: no cover - abstract
         ...
 
 
@@ -150,23 +160,28 @@ class OutboundDelivery:
     db_text: str | None = None
 
 
+@dataclass(frozen=True)
+class OutboundRecord:
+    """One delivered message to persist; the bot's identity is filled in by
+    :func:`record_outbound`."""
+
+    chat_id: int
+    message_id: int
+    text: str
+    reply_to_id: int | None = None
+
+
 async def deliver_bookkeeping(ctx: ToolContext, sent: OutboundDelivery) -> None:
     """Post-send tail shared by the outbound tools: stop the typing
     indicator, write the transcript line, persist the message row."""
     notify_chat_replied(ctx, sent.chat_id)
     log_outbound(
-        chat_id=sent.chat_id,
-        chat_titles=ctx.chat_titles,
-        message_id=sent.message_id,
-        reply_to_id=sent.reply_to_id,
-        text=sent.transcript_text,
+        ChatRef(sent.chat_id, ctx.chat_titles),
+        MsgRef(sent.message_id, sent.transcript_text, sent.reply_to_id),
     )
+    db_text = sent.db_text if sent.db_text is not None else sent.transcript_text
     await record_outbound(
-        ctx,
-        chat_id=sent.chat_id,
-        message_id=sent.message_id,
-        text=sent.db_text if sent.db_text is not None else sent.transcript_text,
-        reply_to_id=sent.reply_to_id,
+        ctx, OutboundRecord(sent.chat_id, sent.message_id, db_text, sent.reply_to_id)
     )
 
 
@@ -183,14 +198,7 @@ async def bot_identity(bot: Any) -> tuple[int, str | None, str]:
         return 0, None, "bot"
 
 
-async def record_outbound(
-    ctx: ToolContext,
-    *,
-    chat_id: int,
-    message_id: int,
-    text: str,
-    reply_to_id: int | None,
-) -> None:
+async def record_outbound(ctx: ToolContext, record: OutboundRecord) -> None:
     """Persist one outbound message row with the bot's identity.
 
     Used by ``telegram_send_message``, ``telegram_send_photo``, ``telegram_send_memory_document``,
@@ -203,14 +211,14 @@ async def record_outbound(
     await insert_message(
         ctx.database,
         ChatMessage(
-            chat_id=chat_id,
-            message_id=message_id,
+            chat_id=record.chat_id,
+            message_id=record.message_id,
             user_id=bot_user_id,
             username=bot_username,
             first_name=bot_first_name,
             direction="out",
             timestamp=datetime.now(timezone.utc),
-            text=text,
-            reply_to_id=reply_to_id,
+            text=record.text,
+            reply_to_id=record.reply_to_id,
         ),
     )

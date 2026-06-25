@@ -16,7 +16,7 @@ class BrowserResetArgs(BaseModel):
     pass
 
 
-class BrowserResetTool(BaseTool):
+class BrowserResetTool(BaseTool[BrowserResetArgs]):
     name = "browser_reset"
     description = (
         "Close the current browser page and clear its cookies/state. The next "

@@ -23,7 +23,7 @@ class BrowserClickArgs(BaseModel):
     )
 
 
-class BrowserClickTool(BrowserSessionTool):
+class BrowserClickTool(BrowserSessionTool[BrowserClickArgs]):
     name = "browser_click"
     description = (
         "Click an element on the current browser page (call browser_navigate "

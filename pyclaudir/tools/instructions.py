@@ -18,7 +18,7 @@ class ReadInstructionsArgs(BaseModel):
     pass
 
 
-class ReadInstructionsTool(BaseTool):
+class ReadInstructionsTool(BaseTool[ReadInstructionsArgs]):
     name = "read_instructions"
     description = (
         "Read the current contents of project.md (your project-specific "
@@ -45,7 +45,7 @@ class AppendInstructionsArgs(BaseModel):
     )
 
 
-class AppendInstructionsTool(BaseTool):
+class AppendInstructionsTool(BaseTool[AppendInstructionsArgs]):
     name = "append_instructions"
     description = (
         "Append text to project.md, your project-specific behaviour "

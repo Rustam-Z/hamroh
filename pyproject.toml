@@ -60,3 +60,11 @@ markers = [
     "slow: tests that sleep/wait for a while, e.g. to wait for a session reset or subprocess restart",
     "smoke: fast critical-path subset proving the bot is alive (basic reply, DM + group)",
 ]
+
+[tool.mypy]
+# croniter ships no type stubs and PyYAML's are an optional extra package;
+# silence the missing-stub errors for just those imports rather than adding
+# stub-only dev deps.
+[[tool.mypy.overrides]]
+module = ["croniter", "yaml"]
+ignore_missing_imports = true

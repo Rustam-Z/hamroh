@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from ..db.reminders import (
+    NewReminder,
     cancel_reminder,
     fetch_reminder_by_id,
     insert_reminder,
@@ -18,6 +19,56 @@ from .base import BaseTool, ToolResult
 # ---------------------------------------------------------------------------
 # set_reminder
 # ---------------------------------------------------------------------------
+
+
+def _parse_trigger_at(trigger_at: str) -> datetime | ToolResult:
+    """Parse ``trigger_at`` to a future UTC datetime, or return an error result.
+
+    Validates that the value is ISO-8601 parseable, carries a timezone offset,
+    and lies in the future. On success returns the normalized UTC datetime.
+    """
+    try:
+        trigger_dt = datetime.fromisoformat(trigger_at.replace("Z", "+00:00"))
+    except ValueError:
+        return ToolResult(
+            content=f"invalid trigger_at format: {trigger_at!r}",
+            is_error=True,
+        )
+
+    if trigger_dt.tzinfo is None:
+        return ToolResult(
+            content="trigger_at must include a timezone offset (use UTC, e.g. '...Z')",
+            is_error=True,
+        )
+
+    trigger_dt = trigger_dt.astimezone(timezone.utc)
+    if trigger_dt <= datetime.now(timezone.utc):
+        return ToolResult(content="trigger_at must be in the future", is_error=True)
+    return trigger_dt
+
+
+def _validate_cron_expr(cron_expr: str | None) -> ToolResult | None:
+    """Validate an optional cron expression; return an error result or ``None``.
+
+    ``None`` means the expression is absent or valid. A ``ToolResult`` is
+    returned when the expression is malformed or croniter is unavailable.
+    """
+    if cron_expr is None:
+        return None
+    try:
+        from croniter import croniter
+    except ImportError:
+        return ToolResult(
+            content="croniter is not installed — recurring reminders unavailable",
+            is_error=True,
+        )
+    if not croniter.is_valid(cron_expr):
+        return ToolResult(
+            content=f"invalid cron expression: {cron_expr!r}",
+            is_error=True,
+        )
+    return None
+
 
 class SetReminderArgs(BaseModel):
     chat_id: int = Field(
@@ -44,7 +95,7 @@ class SetReminderArgs(BaseModel):
     )
 
 
-class SetReminderTool(BaseTool):
+class SetReminderTool(BaseTool[SetReminderArgs]):
     name = "set_reminder"
     description = (
         "Schedule a reminder to fire later — one-shot (trigger_at only) or "
@@ -64,53 +115,24 @@ class SetReminderTool(BaseTool):
         # ``"%Y-%m-%d %H:%M:%S"`` UTC string used by the auto-seed and
         # cron-advance paths, so the SQL string-comparison in
         # ``fetch_due_reminders`` works correctly across all sources.
-        try:
-            trigger_dt = datetime.fromisoformat(args.trigger_at.replace("Z", "+00:00"))
-        except ValueError:
-            return ToolResult(
-                content=f"invalid trigger_at format: {args.trigger_at!r}",
-                is_error=True,
-            )
-
-        if trigger_dt.tzinfo is None:
-            return ToolResult(
-                content="trigger_at must include a timezone offset (use UTC, e.g. '...Z')",
-                is_error=True,
-            )
-        trigger_dt = trigger_dt.astimezone(timezone.utc)
-
-        now = datetime.now(timezone.utc)
-        if trigger_dt <= now:
-            return ToolResult(
-                content="trigger_at must be in the future",
-                is_error=True,
-            )
-
+        trigger_dt = _parse_trigger_at(args.trigger_at)
+        if isinstance(trigger_dt, ToolResult):
+            return trigger_dt
         trigger_at_canonical = trigger_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Validate cron expression if provided.
-        if args.cron_expr is not None:
-            try:
-                from croniter import croniter
-
-                if not croniter.is_valid(args.cron_expr):
-                    return ToolResult(
-                        content=f"invalid cron expression: {args.cron_expr!r}",
-                        is_error=True,
-                    )
-            except ImportError:
-                return ToolResult(
-                    content="croniter is not installed — recurring reminders unavailable",
-                    is_error=True,
-                )
+        cron_error = _validate_cron_expr(args.cron_expr)
+        if cron_error is not None:
+            return cron_error
 
         reminder_id = await insert_reminder(
             self.ctx.database,
-            chat_id=args.chat_id,
-            user_id=args.user_id,
-            text=args.text,
-            trigger_at=trigger_at_canonical,
-            cron_expr=args.cron_expr,
+            NewReminder(
+                chat_id=args.chat_id,
+                user_id=args.user_id,
+                text=args.text,
+                trigger_at=trigger_at_canonical,
+                cron_expr=args.cron_expr,
+            ),
         )
 
         kind = "recurring" if args.cron_expr else "one-shot"
@@ -124,11 +146,12 @@ class SetReminderTool(BaseTool):
 # list_reminders
 # ---------------------------------------------------------------------------
 
+
 class ListRemindersArgs(BaseModel):
     chat_id: int = Field(description="Numeric Telegram chat id to list reminders for.")
 
 
-class ListRemindersTool(BaseTool):
+class ListRemindersTool(BaseTool[ListRemindersArgs]):
     name = "list_reminders"
     description = (
         "List all pending reminders for a chat, ordered by trigger time. Use "
@@ -147,7 +170,7 @@ class ListRemindersTool(BaseTool):
         lines = ["id\ttrigger_at\tcron\ttext"]
         for r in rows:
             cron = r["cron_expr"] or "-"
-            lines.append(f'{r["id"]}\t{r["trigger_at"]}\t{cron}\t{r["text"]}')
+            lines.append(f"{r['id']}\t{r['trigger_at']}\t{cron}\t{r['text']}")
         return ToolResult(
             content="\n".join(lines),
             data={"count": len(rows)},
@@ -158,6 +181,7 @@ class ListRemindersTool(BaseTool):
 # cancel_reminder
 # ---------------------------------------------------------------------------
 
+
 class CancelReminderArgs(BaseModel):
     reminder_id: int = Field(
         description=(
@@ -166,7 +190,7 @@ class CancelReminderArgs(BaseModel):
     )
 
 
-class CancelReminderTool(BaseTool):
+class CancelReminderTool(BaseTool[CancelReminderArgs]):
     name = "cancel_reminder"
     description = (
         "Cancel a pending reminder by id (get ids from list_reminders). "

@@ -37,9 +37,27 @@ MAX_TEXT_BYTES = 64 * 1024
 
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
 _TEXT_EXTS = {
-    "md", "txt", "log", "csv", "json", "yaml", "yml", "toml",
-    "ini", "conf", "py", "js", "ts", "tsx", "jsx", "html", "css",
-    "sh", "sql", "xml", "rst",
+    "md",
+    "txt",
+    "log",
+    "csv",
+    "json",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "conf",
+    "py",
+    "js",
+    "ts",
+    "tsx",
+    "jsx",
+    "html",
+    "css",
+    "sh",
+    "sql",
+    "xml",
+    "rst",
 }
 _IMAGE_MIME = {
     "jpg": "image/jpeg",
@@ -86,6 +104,23 @@ def _ensure_decrypted(reader: "PdfReader", relative: str) -> None:
         raise AttachmentPathError(
             f"PDF {relative} is password-protected; cannot read"
         ) from exc
+
+
+def _truncate_pdf_text(
+    joined: str, max_bytes: int, page_count: int
+) -> tuple[str, bool]:
+    """Cap extracted PDF text at ``max_bytes`` UTF-8 bytes.
+
+    Returns the (possibly truncated) text plus a flag. When truncated, a
+    marker noting the byte budget and total page count is appended so the
+    model can tell the output is incomplete.
+    """
+    encoded = joined.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return joined, False
+    clipped = encoded[:max_bytes].decode("utf-8", errors="ignore")
+    clipped += f"\n\n[truncated to {max_bytes} bytes; PDF has {page_count} pages total]"
+    return clipped, True
 
 
 def _extract_pages(reader: "PdfReader") -> str:
@@ -139,7 +174,9 @@ class AttachmentStore:
             return "pdf"
         return "unsupported"
 
-    def read_text(self, relative: str, max_bytes: int = MAX_TEXT_BYTES) -> TextAttachment:
+    def read_text(
+        self, relative: str, max_bytes: int = MAX_TEXT_BYTES
+    ) -> TextAttachment:
         """Read a text-like attachment as UTF-8.
 
         Files larger than ``max_bytes`` are truncated; the caller may surface
@@ -164,7 +201,9 @@ class AttachmentStore:
             text += f"\n\n[truncated to {max_bytes} bytes of {size} total]"
         return TextAttachment(text=text, truncated=truncated, size_bytes=size)
 
-    def read_pdf(self, relative: str, max_bytes: int = MAX_TEXT_BYTES) -> TextAttachment:
+    def read_pdf(
+        self, relative: str, max_bytes: int = MAX_TEXT_BYTES
+    ) -> TextAttachment:
         """Extract text from a PDF attachment via ``pypdf``.
 
         Pages are joined with ``--- page N ---`` markers so the model can
@@ -196,12 +235,7 @@ class AttachmentStore:
             raise AttachmentPathError(f"could not parse PDF {relative}: {exc}") from exc
         _ensure_decrypted(reader, relative)
         joined = _extract_pages(reader)
-        encoded = joined.encode("utf-8")
-        truncated = False
-        if len(encoded) > max_bytes:
-            joined = encoded[:max_bytes].decode("utf-8", errors="ignore")
-            joined += f"\n\n[truncated to {max_bytes} bytes; PDF has {len(reader.pages)} pages total]"
-            truncated = True
+        joined, truncated = _truncate_pdf_text(joined, max_bytes, len(reader.pages))
         return TextAttachment(text=joined, truncated=truncated, size_bytes=size)
 
     def open_image(self, relative: str) -> ImageAttachment:

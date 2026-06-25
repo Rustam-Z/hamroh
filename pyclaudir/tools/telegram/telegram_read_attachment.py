@@ -12,10 +12,14 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, ToolResult
+
+if TYPE_CHECKING:
+    from ...storage.attachments import AttachmentStore
 
 
 class ReadAttachmentArgs(BaseModel):
@@ -29,7 +33,7 @@ class ReadAttachmentArgs(BaseModel):
     )
 
 
-class TelegramReadAttachmentTool(BaseTool):
+class TelegramReadAttachmentTool(BaseTool[ReadAttachmentArgs]):
     name = "telegram_read_attachment"
     description = (
         "Read a Telegram attachment that the user sent. Inbound photos and "
@@ -48,19 +52,10 @@ class TelegramReadAttachmentTool(BaseTool):
         if store is None:
             return ToolResult(content="attachment store unavailable", is_error=True)
 
-        # Accept absolute paths that fall under the store root by stripping
-        # the root prefix. Anything outside the root is rejected by
-        # ``resolve_path`` regardless.
-        raw = args.path
-        try:
-            p = Path(raw)
-            if p.is_absolute():
-                relative = str(p.resolve().relative_to(store.root))
-            else:
-                relative = raw
-        except ValueError:
+        relative = _to_relative(args.path, store.root)
+        if relative is None:
             return ToolResult(
-                content=f"path is not under attachments root: {raw}",
+                content=f"path is not under attachments root: {args.path}",
                 is_error=True,
             )
 
@@ -71,46 +66,75 @@ class TelegramReadAttachmentTool(BaseTool):
 
         kind = store.kind(resolved)
         if kind == "image":
-            try:
-                img = await asyncio.to_thread(store.open_image, relative)
-            except Exception as exc:
-                return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
-            return ToolResult(
-                content=f"image attachment {relative} ({img.mime}, {img.size_bytes} bytes)",
-                data={"path": str(img.path), "mime": img.mime, "size_bytes": img.size_bytes},
-                image_path=img.path,
-            )
-
+            return await self._read_image(store, relative)
         if kind == "text":
-            try:
-                txt = await asyncio.to_thread(store.read_text, relative)
-            except Exception as exc:
-                return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
-            return ToolResult(
-                content=txt.text,
-                data={
-                    "path": relative,
-                    "size_bytes": txt.size_bytes,
-                    "truncated": txt.truncated,
-                },
-            )
-
+            return await self._read_text(store, relative)
         if kind == "pdf":
-            try:
-                txt = await asyncio.to_thread(store.read_pdf, relative)
-            except Exception as exc:
-                return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
-            return ToolResult(
-                content=txt.text,
-                data={
-                    "path": relative,
-                    "size_bytes": txt.size_bytes,
-                    "truncated": txt.truncated,
-                    "kind": "pdf",
-                },
-            )
-
+            return await self._read_pdf(store, relative)
         return ToolResult(
             content=f"attachment {relative} has unsupported kind for reading",
             is_error=True,
         )
+
+    async def _read_image(self, store: "AttachmentStore", relative: str) -> ToolResult:
+        """Return an image attachment as an image content block."""
+        try:
+            img = await asyncio.to_thread(store.open_image, relative)
+        except Exception as exc:
+            return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
+        return ToolResult(
+            content=f"image attachment {relative} ({img.mime}, {img.size_bytes} bytes)",
+            data={
+                "path": str(img.path),
+                "mime": img.mime,
+                "size_bytes": img.size_bytes,
+            },
+            image_path=img.path,
+        )
+
+    async def _read_text(self, store: "AttachmentStore", relative: str) -> ToolResult:
+        """Return a text-like attachment as UTF-8 text."""
+        try:
+            txt = await asyncio.to_thread(store.read_text, relative)
+        except Exception as exc:
+            return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
+        return ToolResult(
+            content=txt.text,
+            data={
+                "path": relative,
+                "size_bytes": txt.size_bytes,
+                "truncated": txt.truncated,
+            },
+        )
+
+    async def _read_pdf(self, store: "AttachmentStore", relative: str) -> ToolResult:
+        """Return a PDF attachment as extracted text with page markers."""
+        try:
+            txt = await asyncio.to_thread(store.read_pdf, relative)
+        except Exception as exc:
+            return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
+        return ToolResult(
+            content=txt.text,
+            data={
+                "path": relative,
+                "size_bytes": txt.size_bytes,
+                "truncated": txt.truncated,
+                "kind": "pdf",
+            },
+        )
+
+
+def _to_relative(raw: str, root: Path) -> str | None:
+    """Normalise an inbound path to one relative to the attachments root.
+
+    Absolute paths under ``root`` are stripped to their tail; relative paths
+    pass through unchanged. Returns ``None`` when an absolute path lies
+    outside ``root`` (``resolve_path`` rejects anything that slips past).
+    """
+    p = Path(raw)
+    if not p.is_absolute():
+        return raw
+    try:
+        return str(p.resolve().relative_to(root))
+    except ValueError:
+        return None

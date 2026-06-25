@@ -25,7 +25,7 @@ from pyclaudir.db.messages import (
     mark_messages_consumed,
     mark_messages_processed,
 )
-from pyclaudir.engine import Engine
+from pyclaudir.engine import Engine, EngineOptions
 from pyclaudir.engine.engine import TurnCallbacks
 from pyclaudir.models import ChatMessage
 
@@ -66,8 +66,12 @@ def test_error_result_event_sets_api_error(tmp_path: Path) -> None:
     # When the error result event arrives (observed shape: subtype is
     # still "success" but is_error is set)
     worker._handle_event(
-        {"type": "result", "subtype": "success", "is_error": True,
-         "result": POLICY_ERROR}
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "result": POLICY_ERROR,
+        }
     )
 
     # Then the queued TurnResult carries the error for the engine
@@ -104,7 +108,11 @@ def _engine(
     async def notify(chat_id: int, text: str) -> None:
         sent.append((chat_id, text))
 
-    engine = Engine(worker, Config.for_test(tmp_path), db=db, error_notify=notify)
+    engine = Engine(
+        worker,
+        Config.for_test(tmp_path),
+        EngineOptions(db=db, error_notify=notify),
+    )
     engine._is_processing.set()
     engine._turn.active_chats = {-100}
     return engine, worker, sent

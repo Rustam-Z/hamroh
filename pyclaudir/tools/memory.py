@@ -26,7 +26,7 @@ class ListMemoriesArgs(BaseModel):
     pass
 
 
-class ListMemoriesTool(BaseTool):
+class ListMemoriesTool(BaseTool[ListMemoriesArgs]):
     name = "list_memories"
     description = (
         "List every memory file the operator has placed under data/memories/. "
@@ -55,7 +55,7 @@ class ReadMemoryArgs(BaseModel):
     )
 
 
-class ReadMemoryTool(BaseTool):
+class ReadMemoryTool(BaseTool[ReadMemoryArgs]):
     name = "read_memory"
     description = (
         "Read a memory file by relative path under data/memories/. UTF-8. "
@@ -87,7 +87,7 @@ class WriteMemoryArgs(BaseModel):
     )
 
 
-class WriteMemoryTool(BaseTool):
+class WriteMemoryTool(BaseTool[WriteMemoryArgs]):
     name = "write_memory"
     description = (
         "Create or fully overwrite a memory file. Max 64 KiB. "
@@ -123,7 +123,7 @@ class AppendMemoryArgs(BaseModel):
     )
 
 
-class AppendMemoryTool(BaseTool):
+class AppendMemoryTool(BaseTool[AppendMemoryArgs]):
     name = "append_memory"
     description = (
         "Append text to a memory file. New total must stay under 64 KiB. "

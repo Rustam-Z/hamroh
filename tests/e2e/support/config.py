@@ -69,9 +69,15 @@ MAX_MEMORY_REPLY_S = 30.0  # a turn that writes/reads a memory file
 MAX_SKILL_REPLY_S = 30.0  # a turn that reads a skill first
 MAX_REMINDER_REPLY_S = 30.0  # scheduling a reminder (reads the reminder-format skill)
 MAX_RENDER_REPLY_S = 60.0  # a turn that renders an image
-MAX_BROWSER_REPLY_S = 120.0  # a multi-step browser flow may emit progress msgs; wait ≤2min for the photo
-MAX_STATUS_PING_S = STATUS_SUT_INTERVAL_S + 5  # first heartbeat: fires AT the 10s interval, so it lands just after it
-MAX_STATUS_TURN_S = 60.0  # a turn parked in one short browser wait, then its done-marker
+MAX_BROWSER_REPLY_S = (
+    120.0  # a multi-step browser flow may emit progress msgs; wait ≤2min for the photo
+)
+MAX_STATUS_PING_S = (
+    STATUS_SUT_INTERVAL_S + 5
+)  # first heartbeat: fires AT the 10s interval, so it lands just after it
+MAX_STATUS_TURN_S = (
+    60.0  # a turn parked in one short browser wait, then its done-marker
+)
 MAX_REMINDER_FIRE_S = 60.0  # a scheduled reminder actually fires (delayed)
 MAX_COMMAND_REPLY_S = 10.0  # an owner control command (/pause, /resume) acks
 MAX_USAGE_REPLY_S = 10.0  # /usage shells out to a short-lived `claude --print`

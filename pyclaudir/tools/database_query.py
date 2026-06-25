@@ -92,7 +92,7 @@ class DatabaseQueryArgs(BaseModel):
     )
 
 
-class DatabaseQueryTool(BaseTool):
+class DatabaseQueryTool(BaseTool[DatabaseQueryArgs]):
     name = "database_query"
     description = (
         "Run a single read-only SELECT against the agent's local SQLite. "

@@ -16,7 +16,7 @@ class BrowserReloadArgs(BaseModel):
     pass
 
 
-class BrowserReloadTool(BrowserSessionTool):
+class BrowserReloadTool(BrowserSessionTool[BrowserReloadArgs]):
     name = "browser_reload"
     description = (
         "Reload the current browser page (call browser_navigate first). Use when "

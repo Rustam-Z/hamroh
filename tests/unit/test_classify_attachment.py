@@ -19,18 +19,24 @@ def test_known_image_extension_classifies_as_image(ext: str) -> None:
 def test_image_mime_alone_classifies_as_image() -> None:
     # Given a file with an unknown extension but an image/* MIME type
     kind = _classify_attachment("heic", "image/heic")
-    assert kind == "image", "image/* MIME should classify as image even with unknown extension"
+    assert kind == "image", (
+        "image/* MIME should classify as image even with unknown extension"
+    )
 
 
 def test_pdf_by_extension_or_mime() -> None:
-    assert _classify_attachment("pdf", None) == "pdf", "pdf extension should classify as pdf"
+    assert _classify_attachment("pdf", None) == "pdf", (
+        "pdf extension should classify as pdf"
+    )
     assert _classify_attachment("bin", "application/pdf") == "pdf", (
         "application/pdf MIME should classify as pdf even with unknown extension"
     )
 
 
 def test_text_extension_classifies_as_text() -> None:
-    assert _classify_attachment("md", None) == "text", "md extension should classify as text"
+    assert _classify_attachment("md", None) == "text", (
+        "md extension should classify as text"
+    )
 
 
 def test_unknown_extension_and_mime_rejected() -> None:

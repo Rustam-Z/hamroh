@@ -87,19 +87,16 @@ async def test_render_latex_passes_allow_list_and_networkidle(
 ) -> None:
     captured: dict = {}
 
-    async def _fake(html, width, height, out_path, *, allowed_hosts=None,
-                    wait_until="domcontentloaded", manager=None):
-        captured["html"] = html
-        captured["allowed_hosts"] = allowed_hosts
-        captured["wait_until"] = wait_until
-        out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 200)
+    async def _fake(req):
+        captured["html"] = req.html
+        captured["allowed_hosts"] = req.allowed_hosts
+        captured["wait_until"] = req.wait_until
+        req.out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 200)
 
     monkeypatch.setattr(render_html_mod, "_render_to_png", _fake)
     tool = RenderLatexTool(ToolContext(render_store=store))
 
-    result = await tool.run(
-        RenderLatexArgs(latex=r"E = mc^2", title="famous")
-    )
+    result = await tool.run(RenderLatexArgs(latex=r"E = mc^2", title="famous"))
 
     assert result.is_error is False
     assert captured["allowed_hosts"] == ("cdn.jsdelivr.net",)
@@ -129,14 +126,14 @@ async def test_render_html_does_not_pass_allow_list(
     """Plain render_html must NOT relax the network policy."""
     captured: dict = {}
 
-    async def _fake(html, width, height, out_path, *, allowed_hosts=None,
-                    wait_until="domcontentloaded", manager=None):
-        captured["allowed_hosts"] = allowed_hosts
-        captured["wait_until"] = wait_until
-        out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 50)
+    async def _fake(req):
+        captured["allowed_hosts"] = req.allowed_hosts
+        captured["wait_until"] = req.wait_until
+        req.out_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 50)
 
     monkeypatch.setattr(render_html_mod, "_render_to_png", _fake)
     from pyclaudir.tools.render_html import RenderHtmlArgs, RenderHtmlTool
+
     tool = RenderHtmlTool(ToolContext(render_store=store))
     await tool.run(RenderHtmlArgs(html="<p>x</p>"))
 

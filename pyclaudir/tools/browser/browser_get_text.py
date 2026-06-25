@@ -29,7 +29,7 @@ class BrowserGetTextArgs(BaseModel):
     )
 
 
-class BrowserGetTextTool(BrowserSessionTool):
+class BrowserGetTextTool(BrowserSessionTool[BrowserGetTextArgs]):
     name = "browser_get_text"
     description = (
         "Return the visible text of the current browser page (call "
@@ -46,5 +46,7 @@ class BrowserGetTextTool(BrowserSessionTool):
         if not ok:
             return self._miss("get_text", args.selector)
         body = text[:_TEXT_LIMIT]
-        note = f"\n\n[truncated at {_TEXT_LIMIT} chars]" if len(text) > _TEXT_LIMIT else ""
+        note = (
+            f"\n\n[truncated at {_TEXT_LIMIT} chars]" if len(text) > _TEXT_LIMIT else ""
+        )
         return ToolResult(content=f"{body}{note}", data={"chars": len(text)})

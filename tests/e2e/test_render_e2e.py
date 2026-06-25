@@ -52,7 +52,9 @@ async def _assert_renders(
     )
     log.info(
         "render: time-to-photo=%.2fs render_html=%sms msgs=%d",
-        reply.t_complete_s, render_ms, len(reply.chunks),
+        reply.t_complete_s,
+        render_ms,
+        len(reply.chunks),
     )
 
     assert reply.media_kind == "photo", (

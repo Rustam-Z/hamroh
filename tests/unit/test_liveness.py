@@ -23,7 +23,7 @@ def _spec(tmp_path: Path) -> CcSpawnSpec:
     mcp = tmp_path / "mcp.json"
     mcp.write_text('{"mcpServers": {}}')
     schema = tmp_path / "schema.json"
-    schema.write_text('{}')
+    schema.write_text("{}")
     return CcSpawnSpec(
         binary="/bin/true",  # we never actually spawn
         model="claude-opus-4-6",

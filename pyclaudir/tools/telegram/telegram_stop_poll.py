@@ -18,7 +18,7 @@ class StopPollArgs(BaseModel):
     message_id: int = Field(description="Numeric message_id of the poll to close.")
 
 
-class TelegramStopPollTool(BaseTool):
+class TelegramStopPollTool(BaseTool[StopPollArgs]):
     name = "telegram_stop_poll"
     description = (
         "Close an open Telegram poll early and return the final vote tallies. "
@@ -37,7 +37,9 @@ class TelegramStopPollTool(BaseTool):
         )
         log.info(
             "poll closed chat=%s msg=%s votes=%d",
-            args.chat_id, args.message_id, poll.total_voter_count,
+            args.chat_id,
+            args.message_id,
+            poll.total_voter_count,
         )
 
         options_data = [

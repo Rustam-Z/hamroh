@@ -261,13 +261,14 @@ def test_http_mcp_headers_unresolved_skips(tmp_path: Path) -> None:
 
 def test_http_mcp_url_var_substitution(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_http_mcp(url="${REMOTE_BASE}/mcp")]
-    }))
-    plugins = load_plugins(p, env={
-        "REMOTE_BASE": "https://api.example.com",
-        "REMOTE_TOKEN": "abc",
-    })
+    p.write_text(json.dumps({"mcps": [_http_mcp(url="${REMOTE_BASE}/mcp")]}))
+    plugins = load_plugins(
+        p,
+        env={
+            "REMOTE_BASE": "https://api.example.com",
+            "REMOTE_TOKEN": "abc",
+        },
+    )
     assert plugins.mcps[0].url == "https://api.example.com/mcp"
 
 
@@ -278,16 +279,22 @@ def test_http_mcp_url_var_substitution(tmp_path: Path) -> None:
 
 def test_sse_mcp_loads(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({"mcps": [
-        {
-            "name": "live",
-            "type": "sse",
-            "url": "https://events.example.com/sse",
-            "headers": {"X-API-Key": "${LIVE_KEY}"},
-            "allowed_tools": ["mcp__live"],
-            "enabled": True,
-        }
-    ]}))
+    p.write_text(
+        json.dumps(
+            {
+                "mcps": [
+                    {
+                        "name": "live",
+                        "type": "sse",
+                        "url": "https://events.example.com/sse",
+                        "headers": {"X-API-Key": "${LIVE_KEY}"},
+                        "allowed_tools": ["mcp__live"],
+                        "enabled": True,
+                    }
+                ]
+            }
+        )
+    )
     plugins = load_plugins(p, env={"LIVE_KEY": "secret"})
     assert plugins.mcps[0].type == "sse"
     assert plugins.mcps[0].headers == {"X-API-Key": "secret"}
@@ -296,15 +303,21 @@ def test_sse_mcp_loads(tmp_path: Path) -> None:
 def test_sse_mcp_no_headers_works(tmp_path: Path) -> None:
     """A public SSE endpoint with no auth headers should just work."""
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({"mcps": [
-        {
-            "name": "public",
-            "type": "sse",
-            "url": "https://public.example.com/sse",
-            "allowed_tools": ["mcp__public"],
-            "enabled": True,
-        }
-    ]}))
+    p.write_text(
+        json.dumps(
+            {
+                "mcps": [
+                    {
+                        "name": "public",
+                        "type": "sse",
+                        "url": "https://public.example.com/sse",
+                        "allowed_tools": ["mcp__public"],
+                        "enabled": True,
+                    }
+                ]
+            }
+        )
+    )
     plugins = load_plugins(p, env={})
     assert len(plugins.mcps) == 1
     assert plugins.mcps[0].headers == {}
@@ -317,9 +330,7 @@ def test_sse_mcp_no_headers_works(tmp_path: Path) -> None:
 
 def test_var_substitution_in_env(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(env={"TOKEN": "${MY_TOKEN}"})]
-    }))
+    p.write_text(json.dumps({"mcps": [_mcp(env={"TOKEN": "${MY_TOKEN}"})]}))
     plugins = load_plugins(p, env={"MY_TOKEN": "abc123"})
     assert plugins.mcps[0].env == {"TOKEN": "abc123"}
 
@@ -328,9 +339,7 @@ def test_var_substitution_concatenated(tmp_path: Path) -> None:
     """``${BASE}/api/v4`` must concatenate cleanly — matches the
     GitLab default's ``${GITLAB_URL}/api/v4`` pattern."""
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(env={"URL": "${BASE}/api/v4"})]
-    }))
+    p.write_text(json.dumps({"mcps": [_mcp(env={"URL": "${BASE}/api/v4"})]}))
     plugins = load_plugins(p, env={"BASE": "https://gitlab.example.com"})
     assert plugins.mcps[0].env == {"URL": "https://gitlab.example.com/api/v4"}
 
@@ -340,9 +349,7 @@ def test_unresolved_var_skips_mcp(tmp_path: Path) -> None:
     preserves today's "credentials missing → MCP not spawned"
     semantics."""
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(env={"TOKEN": "${MISSING}"})]
-    }))
+    p.write_text(json.dumps({"mcps": [_mcp(env={"TOKEN": "${MISSING}"})]}))
     plugins = load_plugins(p, env={})
     assert plugins.mcps == ()
 
@@ -353,9 +360,9 @@ def test_unresolved_var_skip_logs_at_error(tmp_path: Path, caplog) -> None:
     A configured MCP that fails to load is a broken capability, so it
     deserves the same level as CC-reported MCP connection failures."""
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(name="needs-cred", env={"TOKEN": "${MISSING}"})]
-    }))
+    p.write_text(
+        json.dumps({"mcps": [_mcp(name="needs-cred", env={"TOKEN": "${MISSING}"})]})
+    )
     with caplog.at_level(logging.WARNING, logger="pyclaudir.plugins"):
         load_plugins(p, env={})
     assert any(
@@ -368,30 +375,30 @@ def test_unresolved_var_skip_logs_at_error(tmp_path: Path, caplog) -> None:
 
 def test_var_substitution_in_args(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(args=["--config", "${CFG_PATH}"])]
-    }))
+    p.write_text(json.dumps({"mcps": [_mcp(args=["--config", "${CFG_PATH}"])]}))
     plugins = load_plugins(p, env={"CFG_PATH": "/etc/x.toml"})
     assert plugins.mcps[0].args == ("--config", "/etc/x.toml")
 
 
 def test_unresolved_var_in_args_skips_mcp(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [_mcp(args=["--token", "${ABSENT}"])]
-    }))
+    p.write_text(json.dumps({"mcps": [_mcp(args=["--token", "${ABSENT}"])]}))
     plugins = load_plugins(p, env={})
     assert plugins.mcps == ()
 
 
 def test_one_mcp_skipped_others_still_load(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({
-        "mcps": [
-            _mcp(name="needs-cred", env={"T": "${MISSING}"}),
-            _mcp(name="no-cred"),
-        ],
-    }))
+    p.write_text(
+        json.dumps(
+            {
+                "mcps": [
+                    _mcp(name="needs-cred", env={"T": "${MISSING}"}),
+                    _mcp(name="no-cred"),
+                ],
+            }
+        )
+    )
     plugins = load_plugins(p, env={})
     assert len(plugins.mcps) == 1
     assert plugins.mcps[0].name == "no-cred"
@@ -424,17 +431,19 @@ def test_skills_disabled_filters_skills_store(tmp_path: Path) -> None:
     listed = SkillsStore(skills_root).list()
     assert {s.name for s in listed} == {"alpha", "beta"}
 
-    listed_filtered = SkillsStore(
-        skills_root, disabled=frozenset({"beta"})
-    ).list()
+    listed_filtered = SkillsStore(skills_root, disabled=frozenset({"beta"})).list()
     assert {s.name for s in listed_filtered} == {"alpha"}
 
 
 def test_builtin_tools_disabled_parsed(tmp_path: Path) -> None:
     p = tmp_path / "plugins.json"
-    p.write_text(json.dumps({"builtin_tools_disabled": ["telegram_create_poll", "render_html"]}))
+    p.write_text(
+        json.dumps({"builtin_tools_disabled": ["telegram_create_poll", "render_html"]})
+    )
     plugins = load_plugins(p)
-    assert plugins.builtin_tools_disabled == frozenset({"telegram_create_poll", "render_html"})
+    assert plugins.builtin_tools_disabled == frozenset(
+        {"telegram_create_poll", "render_html"}
+    )
 
 
 def test_builtin_tools_disabled_non_string_crashes(tmp_path: Path) -> None:
@@ -452,8 +461,13 @@ def test_builtin_tools_disabled_filters_mcp_server(tmp_path: Path) -> None:
     from pyclaudir.tools.base import ToolContext
 
     ctx = ToolContext(
-        bot=None, database=None, memory_store=None, instructions_store=None,
-        skills_store=None, attachment_store=None, render_store=None,
+        bot=None,
+        database=None,
+        memory_store=None,
+        instructions_store=None,
+        skills_store=None,
+        attachment_store=None,
+        render_store=None,
         chat_titles={},
     )
 
@@ -465,7 +479,8 @@ def test_builtin_tools_disabled_filters_mcp_server(tmp_path: Path) -> None:
     assert "telegram_create_poll" in full_names
 
     _mcp_filtered, instances_filtered = build_fastmcp(
-        ctx, disabled=frozenset({"telegram_create_poll", "telegram_stop_poll"}),
+        ctx,
+        disabled=frozenset({"telegram_create_poll", "telegram_stop_poll"}),
     )
     filtered_names = {i.name for i in instances_filtered}
     assert "telegram_create_poll" not in filtered_names
@@ -482,8 +497,13 @@ def test_builtin_tools_disabled_unknown_name_crashes(tmp_path: Path) -> None:
     from pyclaudir.tools.base import ToolContext
 
     ctx = ToolContext(
-        bot=None, database=None, memory_store=None, instructions_store=None,
-        skills_store=None, attachment_store=None, render_store=None,
+        bot=None,
+        database=None,
+        memory_store=None,
+        instructions_store=None,
+        skills_store=None,
+        attachment_store=None,
+        render_store=None,
         chat_titles={},
     )
     with pytest.raises(ValueError, match="unknown name"):
@@ -535,6 +555,7 @@ def test_missing_file_with_example_present_logs_hint(tmp_path: Path, caplog) -> 
     operators at the next step instead of leaving them to wonder why
     no MCPs spawned."""
     import logging
+
     example = tmp_path / "plugins.json.example"
     example.write_text("{}")
     target = tmp_path / "plugins.json"
@@ -542,4 +563,7 @@ def test_missing_file_with_example_present_logs_hint(tmp_path: Path, caplog) -> 
     with caplog.at_level(logging.WARNING, logger="pyclaudir.plugins"):
         plugins = load_plugins(target)
     assert plugins == Plugins()
-    assert any("cp" in r.message and "plugins.json.example" in r.message for r in caplog.records)
+    assert any(
+        "cp" in r.message and "plugins.json.example" in r.message
+        for r in caplog.records
+    )

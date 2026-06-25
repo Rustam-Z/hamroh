@@ -13,11 +13,13 @@ FastMCP.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -34,22 +36,14 @@ log = logging.getLogger(__name__)
 MCP_SERVER_NAME = "pyclaudir"
 
 
-def _make_wrapper(tool: BaseTool, db_logger):
-    """Build a flat-parameter callable FastMCP can introspect.
+def _build_params(args_model: Any) -> list[inspect.Parameter]:
+    """Build keyword-only parameters mirroring the tool's Pydantic fields.
 
-    FastMCP reads ``inspect.signature`` (not Pydantic) to build the tool's
-    input schema, so each parameter's annotation is wrapped as
-    ``Annotated[type, FieldInfo]`` — reusing the model's own ``FieldInfo``.
-    That carries the per-field description and constraints (min/max length,
-    ge/le, enums) through into the schema the model sees; without it only the
-    bare type and default would survive. The wrapper validates with the
-    model, runs the tool, beats the heartbeat, and audit-logs the call.
+    Each parameter's annotation is ``Annotated[type, FieldInfo]`` so FastMCP
+    carries the per-field description and constraints into its input schema.
     """
-    args_model = tool.args_model
-    fields = args_model.model_fields
-
-    params = []
-    for fname, finfo in fields.items():
+    params: list[inspect.Parameter] = []
+    for fname, finfo in args_model.model_fields.items():
         default = inspect.Parameter.empty if finfo.is_required() else finfo.default
         params.append(
             inspect.Parameter(
@@ -59,6 +53,80 @@ def _make_wrapper(tool: BaseTool, db_logger):
                 annotation=Annotated[finfo.annotation, finfo],
             )
         )
+    return params
+
+
+async def _run_tool(
+    tool: BaseTool, kwargs: dict[str, Any]
+) -> tuple[ToolResult, str | None]:
+    """Validate ``kwargs`` against the tool's model and run it.
+
+    Returns the result plus an error string (``None`` on success). Tool
+    exceptions are caught and turned into an error ``ToolResult``.
+    """
+    try:
+        args = tool.args_model(**kwargs)
+        return await tool.run(args), None
+    except Exception as exc:  # surfaced to Claude as a tool error string
+        err = f"{type(exc).__name__}: {exc}"
+        log.exception("tool %s failed", tool.name)
+        return ToolResult(content=err, is_error=True), err
+
+
+@dataclass(frozen=True)
+class _CallRecord:
+    """The outcome of one tool invocation, for the audit log."""
+
+    tool: BaseTool
+    kwargs: dict[str, Any]
+    result: ToolResult | None
+    err: str | None
+    duration_ms: int
+
+
+async def _audit(db_logger: Any, record: _CallRecord) -> None:
+    """Write a best-effort audit log entry; never raises into the caller."""
+    if db_logger is None:
+        return
+    result_json = None
+    if not record.err:
+        result = record.result
+        payload = {"content": result.content, "data": result.data} if result else {}
+        result_json = json.dumps(payload, default=str)
+    try:
+        await db_logger(
+            tool_name=record.tool.name,
+            args_json=json.dumps(record.kwargs, default=str),
+            result_json=result_json,
+            error=record.err,
+            duration_ms=record.duration_ms,
+        )
+    except Exception:  # pragma: no cover - audit must never crash a tool
+        log.exception("audit log failed for tool %s", record.tool.name)
+
+
+def _to_return_value(result: ToolResult | None) -> Any:
+    """Translate a tool result into FastMCP's return value.
+
+    Errors are re-raised so FastMCP reports them to Claude; image results
+    become a FastMCP ``Image``; otherwise the textual content is returned.
+    """
+    if result and result.is_error:
+        raise RuntimeError(result.content)
+    if result and result.image_path is not None:
+        return Image(path=str(result.image_path))
+    return result.content if result else ""
+
+
+def _make_wrapper(tool: BaseTool, db_logger):
+    """Build a flat-parameter callable FastMCP can introspect.
+
+    FastMCP reads ``inspect.signature`` (not Pydantic) to build the tool's
+    input schema, so each parameter is annotated via :func:`_build_params`.
+    The wrapper validates with the model, runs the tool, beats the
+    heartbeat, and audit-logs the call.
+    """
+    params = _build_params(tool.args_model)
     # No fixed return annotation — most tools return str, but telegram_read_attachment
     # returns a FastMCP ``Image`` object for photos. Leaving this off lets
     # FastMCP introspect the actual return value at call time.
@@ -66,39 +134,16 @@ def _make_wrapper(tool: BaseTool, db_logger):
 
     async def wrapper(**kwargs: Any) -> Any:
         start = time.perf_counter()
-        err: str | None = None
         result: ToolResult | None = None
+        err: str | None = None
         try:
-            args = args_model(**kwargs)
-            result = await tool.run(args)
-        except Exception as exc:  # surfaced to Claude as a tool error string
-            err = f"{type(exc).__name__}: {exc}"
-            log.exception("tool %s failed", tool.name)
-            result = ToolResult(content=err, is_error=True)
+            result, err = await _run_tool(tool, kwargs)
         finally:
             tool.ctx.heartbeat.beat()
             duration_ms = int((time.perf_counter() - start) * 1000)
-            if db_logger is not None:
-                try:
-                    await db_logger(
-                        tool_name=tool.name,
-                        args_json=json.dumps(kwargs, default=str),
-                        result_json=None if err else json.dumps(
-                            {"content": result.content, "data": result.data} if result else {},
-                            default=str,
-                        ),
-                        error=err,
-                        duration_ms=duration_ms,
-                    )
-                except Exception:  # pragma: no cover - audit must never crash a tool
-                    log.exception("audit log failed for tool %s", tool.name)
-        if result and result.is_error:
-            # Raising here makes FastMCP report it as a tool error, which
-            # Claude can see and react to.
-            raise RuntimeError(result.content)
-        if result and result.image_path is not None:
-            return Image(path=str(result.image_path))
-        return result.content if result else ""
+            record = _CallRecord(tool, kwargs, result, err, duration_ms)
+            await _audit(db_logger, record)
+        return _to_return_value(result)
 
     wrapper.__name__ = tool.name
     wrapper.__doc__ = tool.description
@@ -157,10 +202,12 @@ class McpServer:
         self._ctx = ctx
         self._db_logger = db_logger
         self.mcp, self.tools = build_fastmcp(
-            ctx, db_logger=db_logger, disabled=disabled,
+            ctx,
+            db_logger=db_logger,
+            disabled=disabled,
         )
         self._server: uvicorn.Server | None = None
-        self._task = None
+        self._task: asyncio.Task[None] | None = None
         self.port: int | None = None
 
     @property
@@ -206,7 +253,6 @@ class McpServer:
         return path
 
     async def start(self) -> None:
-        import asyncio
 
         app = self.mcp.streamable_http_app()
         config = uvicorn.Config(

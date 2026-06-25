@@ -69,7 +69,9 @@ async def _assert_drives_browser(
     tools = [r["tool_name"] for r in tool_calls_since(sut.db_path, since)]
     log.info(
         "browser flow: time-to-photo=%.1fs msgs=%d tools=%s",
-        reply.t_complete_s, len(reply.chunks), tools,
+        reply.t_complete_s,
+        len(reply.chunks),
+        tools,
     )
 
     # Assert: an image came back (within the wait budget; else media_kind is None).
@@ -105,7 +107,10 @@ async def test_bot_google_images_screenshot_dm(
            lands in data/renders/, and the turn completes within MAX_BROWSER_REPLY_S.
     """
     await _assert_drives_browser(
-        pyclaudir_sut, tester_client, dm, _GOOGLE_REQUEST,
+        pyclaudir_sut,
+        tester_client,
+        dm,
+        _GOOGLE_REQUEST,
         require_tools=("browser_navigate", "browser_screenshot"),
     )
 
@@ -122,7 +127,10 @@ async def test_bot_google_images_screenshot_group(
            lands in data/renders/, and the turn completes within MAX_BROWSER_REPLY_S.
     """
     await _assert_drives_browser(
-        pyclaudir_sut, tester_client, group, _GOOGLE_REQUEST,
+        pyclaudir_sut,
+        tester_client,
+        group,
+        _GOOGLE_REQUEST,
         require_tools=("browser_navigate", "browser_screenshot"),
     )
 
@@ -145,7 +153,10 @@ async def test_bot_clicks_link_and_screenshots_dm(
            ran, a PNG lands in data/renders/, and the turn stays in budget.
     """
     await _assert_drives_browser(
-        pyclaudir_sut, tester_client, dm, _WIKI_REQUEST,
+        pyclaudir_sut,
+        tester_client,
+        dm,
+        _WIKI_REQUEST,
         require_tools=("browser_navigate", "browser_click", "browser_screenshot"),
     )
 
@@ -162,6 +173,9 @@ async def test_bot_clicks_link_and_screenshots_group(
            ran, a PNG lands in data/renders/, and the turn stays in budget.
     """
     await _assert_drives_browser(
-        pyclaudir_sut, tester_client, group, _WIKI_REQUEST,
+        pyclaudir_sut,
+        tester_client,
+        group,
+        _WIKI_REQUEST,
         require_tools=("browser_navigate", "browser_click", "browser_screenshot"),
     )

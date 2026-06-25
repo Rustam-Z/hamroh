@@ -473,24 +473,19 @@ def test_invariant_6_no_subprocess_in_tools() -> None:
 def test_invariant_7_owner_check_via_gate() -> None:
     """The ``gate()`` function is the access decision point. The owner is
     always allowed; strangers are blocked under ``owner_only`` policy."""
-    from pyclaudir.access import AccessConfig, gate
+    from pyclaudir.access import AccessConfig, Principal, gate
 
     access = AccessConfig(policy="owner_only", allowed_users=[], allowed_chats=[])
     assert (
-        gate(access=access, owner_id=42, chat_id=42, user_id=42, chat_type="private")
-        is True
+        gate(access, 42, Principal(chat_id=42, user_id=42, chat_type="private")) is True
     )
     assert (
-        gate(access=access, owner_id=42, chat_id=999, user_id=999, chat_type="private")
+        gate(access, 42, Principal(chat_id=999, user_id=999, chat_type="private"))
         is False
     )
     assert (
         gate(
-            access=access,
-            owner_id=42,
-            chat_id=-100123,
-            user_id=999,
-            chat_type="supergroup",
+            access, 42, Principal(chat_id=-100123, user_id=999, chat_type="supergroup")
         )
         is False
     )

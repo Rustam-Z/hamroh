@@ -25,7 +25,7 @@ class BrowserSelectOptionArgs(BaseModel):
     )
 
 
-class BrowserSelectOptionTool(BrowserSessionTool):
+class BrowserSelectOptionTool(BrowserSessionTool[BrowserSelectOptionArgs]):
     name = "browser_select_option"
     description = (
         "Choose an option in a <select> dropdown on the current page (call "

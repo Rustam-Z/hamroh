@@ -45,13 +45,32 @@ class _AttachmentDescriptor:
     mime: str | None
     size: int | None
 
+
 #: Image extensions Read can render natively.
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
 #: Text-like extensions safe to read as plain text. Scrubbed before saving.
 _TEXT_EXTS = {
-    "md", "txt", "log", "csv", "json", "yaml", "yml", "toml",
-    "ini", "conf", "py", "js", "ts", "tsx", "jsx", "html", "css",
-    "sh", "sql", "xml", "rst",
+    "md",
+    "txt",
+    "log",
+    "csv",
+    "json",
+    "yaml",
+    "yml",
+    "toml",
+    "ini",
+    "conf",
+    "py",
+    "js",
+    "ts",
+    "tsx",
+    "jsx",
+    "html",
+    "css",
+    "sh",
+    "sql",
+    "xml",
+    "rst",
 }
 
 
@@ -105,20 +124,24 @@ def _descriptors_for(msg: Message) -> list[_AttachmentDescriptor]:
     if msg.photo:
         # Photos arrive as a list of resolutions; pick the largest.
         largest = msg.photo[-1]
-        descriptors.append(_AttachmentDescriptor(
-            file_id=largest.file_id,
-            filename=f"photo_{msg.message_id}.jpg",
-            mime="image/jpeg",
-            size=largest.file_size,
-        ))
+        descriptors.append(
+            _AttachmentDescriptor(
+                file_id=largest.file_id,
+                filename=f"photo_{msg.message_id}.jpg",
+                mime="image/jpeg",
+                size=largest.file_size,
+            )
+        )
     if msg.document is not None:
         doc = msg.document
-        descriptors.append(_AttachmentDescriptor(
-            file_id=doc.file_id,
-            filename=doc.file_name or f"document_{msg.message_id}",
-            mime=doc.mime_type,
-            size=doc.file_size,
-        ))
+        descriptors.append(
+            _AttachmentDescriptor(
+                file_id=doc.file_id,
+                filename=doc.file_name or f"document_{msg.message_id}",
+                mime=doc.mime_type,
+                size=doc.file_size,
+            )
+        )
     return descriptors
 
 
@@ -146,7 +169,9 @@ def _scrub_text_attachment(dest: Path) -> None:
 
 
 def _pre_download_reject(
-    d: _AttachmentDescriptor, msg: Message, max_bytes: int,
+    d: _AttachmentDescriptor,
+    msg: Message,
+    max_bytes: int,
 ) -> tuple[str | None, str | None]:
     """Classify the descriptor and apply the size cap. Returns
     ``(kind, None)`` when accepted, or ``(None, marker)`` when rejected."""
@@ -155,15 +180,27 @@ def _pre_download_reject(
     if kind is None:
         log.info(
             "attachment rejected chat=%s msg=%s filename=%s mime=%s reason=unsupported_type",
-            msg.chat_id, msg.message_id, d.filename, d.mime,
+            msg.chat_id,
+            msg.message_id,
+            d.filename,
+            d.mime,
         )
-        return None, f"[attachment rejected: filename={d.filename} reason=unsupported_type]"
+        return (
+            None,
+            f"[attachment rejected: filename={d.filename} reason=unsupported_type]",
+        )
     if d.size is not None and d.size > max_bytes:
         log.info(
             "attachment rejected chat=%s msg=%s filename=%s size=%d reason=too_large",
-            msg.chat_id, msg.message_id, d.filename, d.size,
+            msg.chat_id,
+            msg.message_id,
+            d.filename,
+            d.size,
         )
-        return None, f"[attachment rejected: filename={d.filename} reason=too_large size={_human_size(d.size)}]"
+        return (
+            None,
+            f"[attachment rejected: filename={d.filename} reason=too_large size={_human_size(d.size)}]",
+        )
     return kind, None
 
 
@@ -178,6 +215,7 @@ async def _process_one_descriptor(
     kind, reject_marker = _pre_download_reject(d, msg, config.attachment_max_bytes)
     if reject_marker is not None:
         return reject_marker
+    assert kind is not None  # no reject marker ⇒ the descriptor was classified
 
     safe_name = _safe_filename(d.filename, fallback=f"file_{msg.message_id}")
     dest = config.attachments_dir / str(msg.chat_id) / f"{msg.message_id}_{safe_name}"
@@ -185,18 +223,37 @@ async def _process_one_descriptor(
     if download_err is not None:
         log.warning(
             "attachment download failed chat=%s msg=%s filename=%s err=%s",
-            msg.chat_id, msg.message_id, d.filename, download_err,
+            msg.chat_id,
+            msg.message_id,
+            d.filename,
+            download_err,
         )
-        return f"[attachment download failed: filename={d.filename} reason={download_err}]"
+        return (
+            f"[attachment download failed: filename={d.filename} reason={download_err}]"
+        )
 
     if kind == "text":
         _scrub_text_attachment(dest)
 
+    return _saved_marker(d, msg, dest, kind)
+
+
+def _saved_marker(
+    d: _AttachmentDescriptor,
+    msg: Message,
+    dest: Path,
+    kind: str,
+) -> str:
+    """Log the successful save and build the ``[attachment: …]`` marker."""
     actual_size = dest.stat().st_size if dest.exists() else (d.size or 0)
     type_str = d.mime or _DEFAULT_MIME[kind]
     log.info(
         "attachment saved chat=%s msg=%s path=%s size=%d kind=%s",
-        msg.chat_id, msg.message_id, dest, actual_size, kind,
+        msg.chat_id,
+        msg.message_id,
+        dest,
+        actual_size,
+        kind,
     )
     return f"[attachment: {dest} type={type_str} size={_human_size(actual_size)} filename={d.filename}]"
 
@@ -218,7 +275,4 @@ async def _process_attachments(
         return []
     chat_dir: Path = config.attachments_dir / str(msg.chat_id)
     chat_dir.mkdir(parents=True, exist_ok=True)
-    return [
-        await _process_one_descriptor(bot, msg, d, config)
-        for d in descriptors
-    ]
+    return [await _process_one_descriptor(bot, msg, d, config) for d in descriptors]

@@ -108,33 +108,35 @@ def save_access(path: Path, config: AccessConfig) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def gate(
-    *,
-    access: AccessConfig,
-    owner_id: int,
-    chat_id: int,
-    user_id: int,
-    chat_type: str | None,
-) -> bool:
+@dataclass(frozen=True)
+class Principal:
+    """The originator of an inbound message, for the access decision."""
+
+    chat_id: int
+    user_id: int
+    chat_type: str | None
+
+
+def gate(access: AccessConfig, owner_id: int, principal: Principal) -> bool:
     """Decide whether an inbound message should be accepted.
 
     Returns ``True`` (accept — persist and forward to the engine) or
     ``False`` (drop completely — no DB write, no memory write, no engine
     submit). The dispatcher enforces this at the message boundary.
     """
-    is_group = chat_type in ("group", "supergroup", "channel")
+    is_group = principal.chat_type in ("group", "supergroup", "channel")
 
     if access.policy == "owner_only":
         # Owner DMs only. Groups are always denied.
-        return not is_group and user_id == owner_id
+        return not is_group and principal.user_id == owner_id
 
     if access.policy == "open":
         return True
 
     # "allowlist"
     if is_group:
-        return chat_id in access.allowed_chats
-    return user_id == owner_id or user_id in access.allowed_users
+        return principal.chat_id in access.allowed_chats
+    return principal.user_id == owner_id or principal.user_id in access.allowed_users
 
 
 def _is_int(v) -> bool:

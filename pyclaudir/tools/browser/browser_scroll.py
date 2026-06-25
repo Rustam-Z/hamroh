@@ -27,7 +27,7 @@ class BrowserScrollArgs(BaseModel):
     )
 
 
-class BrowserScrollTool(BrowserSessionTool):
+class BrowserScrollTool(BrowserSessionTool[BrowserScrollArgs]):
     name = "browser_scroll"
     description = (
         "Scroll the current page (call browser_navigate first) to reveal "

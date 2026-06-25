@@ -12,13 +12,19 @@ import asyncio
 import logging
 import os
 import signal
+from typing import TYPE_CHECKING, Any
 
 from telegram import BotCommand, BotCommandScopeChat, Update
-from telegram.ext import ContextTypes
+from telegram.ext import Application, ContextTypes
 
 from ..access import load_access, save_access
+from ..config import Config
+from ..db.database import Database
 from ..formatting import chunk_text
 from ..logging_setup import format_log_line, tail_log
+
+if TYPE_CHECKING:
+    from .dispatcher import EnginePort
 
 # Pinned to the parent package name so log captures keyed on
 # ``"pyclaudir.telegram_io"`` keep matching after the module split.
@@ -40,26 +46,33 @@ def _parse_log_count(args: list[str] | None) -> int:
     return max(1, min(count, _LOGS_MAX))
 
 
-def _parse_allow_args(
-    args: list[str] | None, *, verb: str
-) -> tuple[str, int, None] | tuple[None, None, str]:
-    """Parse ``/allow|/deny <user|group> <id>`` argv. Returns either
-    ``(kind, target_id, None)`` on success or ``(None, None, error_msg)``."""
+def _parse_allow_args(args: list[str] | None, *, verb: str) -> tuple[str, int] | str:
+    """Parse ``/allow|/deny <user|group> <id>`` argv. Returns ``(kind,
+    target_id)`` on success or an error message string."""
     usage = f"Usage: /{verb} <user|group> <id>"
     if not args or len(args) < 2:
-        return None, None, usage
+        return usage
     kind = args[0].lower()
     if kind not in ("user", "group"):
-        return None, None, usage
+        return usage
     try:
         target_id = int(args[1])
     except ValueError:
-        return None, None, "ID must be a number."
-    return kind, target_id, None
+        return "ID must be a number."
+    return kind, target_id
 
 
 class OwnerCommandsMixin:
-    """Owner-only command handlers mixed into ``TelegramDispatcher``."""
+    """Owner-only command handlers mixed into ``TelegramDispatcher``.
+
+    The attributes below are declared (not assigned) so mypy can type the
+    handlers' reads; ``TelegramDispatcher.__init__`` is what sets them.
+    """
+
+    config: Config
+    db: Database
+    engine: EnginePort | None
+    application: Application
 
     def _is_owner(self, update: Update) -> bool:
         return (
@@ -67,12 +80,23 @@ class OwnerCommandsMixin:
             and update.effective_user.id == self.config.owner_id
         )
 
+    async def _reply(self, update: Update, text: str, **kwargs: Any) -> None:
+        """Reply to the message that triggered a command, if one is present.
+
+        ``effective_message`` is ``Optional`` in python-telegram-bot, but a
+        command always carries one. Guarding here keeps every handler free of
+        the same ``is None`` check.
+        """
+        message = update.effective_message
+        if message is not None:
+            await message.reply_text(text, **kwargs)
+
     async def _cmd_kill(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_owner(update):
             return
         log.warning("/kill received from owner; shutting down")
         try:
-            await update.effective_message.reply_text("Shutting down…")
+            await self._reply(update, "Shutting down…")
         except Exception:
             pass
         os.kill(os.getpid(), signal.SIGTERM)
@@ -83,9 +107,7 @@ class OwnerCommandsMixin:
             return
         self._paused = True
         log.warning("/pause received from owner; dropping inbound messages")
-        await update.effective_message.reply_text(
-            "⏸ paused — messages dropped until /resume"
-        )
+        await self._reply(update, "⏸ paused — messages dropped until /resume")
 
     async def _cmd_resume(
         self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE
@@ -95,7 +117,7 @@ class OwnerCommandsMixin:
             return
         self._paused = False
         log.warning("/resume received from owner; forwarding inbound messages")
-        await update.effective_message.reply_text("▶ resumed")
+        await self._reply(update, "▶ resumed")
 
     async def _cmd_reset_session(
         self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE
@@ -109,14 +131,19 @@ class OwnerCommandsMixin:
         """
         if not self._is_owner(update):
             return
-        log.warning("/reset_session received from owner; respawning cc with a fresh session")
+        if self.engine is None:
+            return
+        log.warning(
+            "/reset_session received from owner; respawning cc with a fresh session"
+        )
         await self.engine.stash_restore_context("owner-reset")
         await self.engine.reset_session()
         try:
-            await update.effective_message.reply_text(
+            await self._reply(
+                update,
                 "Session cleared — Claude restarted with a fresh context. "
                 "Chat history and memories are preserved; a short recap of "
-                "recent messages will be carried into the next turn."
+                "recent messages will be carried into the next turn.",
             )
         except Exception:
             pass
@@ -153,9 +180,7 @@ class OwnerCommandsMixin:
         except Exception as exc:
             lines.append(f"- rate-limit notices: query error ({exc})")
         lines.extend(self._health_engine_lines())
-        await update.effective_message.reply_text(
-            "\n".join(lines), parse_mode="Markdown"
-        )
+        await self._reply(update, "\n".join(lines), parse_mode="Markdown")
 
     async def _health_reminder_lines(self) -> list[str]:
         """Health section: state of the self-reflection auto-seed reminder."""
@@ -198,9 +223,7 @@ class OwnerCommandsMixin:
         lines += await self._audit_tool_failures()
         lines += self._audit_prompt_backups()
         lines += self._audit_memory_footprint()
-        await update.effective_message.reply_text(
-            "\n".join(lines), parse_mode="Markdown"
-        )
+        await self._reply(update, "\n".join(lines), parse_mode="Markdown")
 
     async def _audit_tool_failures(self) -> list[str]:
         """Audit section: the last 5 failed tool calls, newest first."""
@@ -257,11 +280,11 @@ class OwnerCommandsMixin:
         count = _parse_log_count(ctx.args)
         raw_lines = tail_log(self.config.log_dir / "pyclaudir.log", count)
         if not raw_lines:
-            await update.effective_message.reply_text("no logs yet")
+            await self._reply(update, "no logs yet")
             return
         body = "\n".join(format_log_line(line) for line in raw_lines)
         for chunk in chunk_text(body):
-            await update.effective_message.reply_text(chunk)
+            await self._reply(update, chunk)
 
     async def _cmd_usage(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Relay Claude Code's own ``/usage`` output verbatim — owner-only.
@@ -273,7 +296,7 @@ class OwnerCommandsMixin:
         if not self._is_owner(update):
             return
         output = await self._fetch_claude_usage()
-        await update.effective_message.reply_text(output)
+        await self._reply(update, output)
 
     async def _fetch_claude_usage(self) -> str:
         """Run ``claude --print /usage`` and return its text, or an error line."""
@@ -304,40 +327,36 @@ class OwnerCommandsMixin:
     async def _cmd_allow(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_owner(update):
             return
-        kind, target_id, error = _parse_allow_args(ctx.args, verb="allow")
-        if error is not None:
-            await update.effective_message.reply_text(error)
+        parsed = _parse_allow_args(ctx.args, verb="allow")
+        if isinstance(parsed, str):
+            await self._reply(update, parsed)
             return
+        kind, target_id = parsed
         access = load_access(self.config.access_path)
         bucket = access.allowed_users if kind == "user" else access.allowed_chats
         if target_id not in bucket:
             bucket.append(target_id)
             save_access(self.config.access_path, access)
         label = "User" if kind == "user" else "Group"
-        await update.effective_message.reply_text(
-            f"{label} {target_id} added to allowlist."
-        )
+        await self._reply(update, f"{label} {target_id} added to allowlist.")
 
     async def _cmd_deny(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_owner(update):
             return
-        kind, target_id, error = _parse_allow_args(ctx.args, verb="deny")
-        if error is not None:
-            await update.effective_message.reply_text(error)
+        parsed = _parse_allow_args(ctx.args, verb="deny")
+        if isinstance(parsed, str):
+            await self._reply(update, parsed)
             return
+        kind, target_id = parsed
         access = load_access(self.config.access_path)
         bucket = access.allowed_users if kind == "user" else access.allowed_chats
         label = "User" if kind == "user" else "Group"
         if target_id in bucket:
             bucket.remove(target_id)
             save_access(self.config.access_path, access)
-            await update.effective_message.reply_text(
-                f"{label} {target_id} removed from allowlist."
-            )
+            await self._reply(update, f"{label} {target_id} removed from allowlist.")
         else:
-            await update.effective_message.reply_text(
-                f"{label} {target_id} was not in the allowlist."
-            )
+            await self._reply(update, f"{label} {target_id} was not in the allowlist.")
 
     async def _cmd_policy(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_owner(update):
@@ -345,14 +364,12 @@ class OwnerCommandsMixin:
         args = ctx.args
         valid = ("owner_only", "allowlist", "open")
         if not args or args[0] not in valid:
-            await update.effective_message.reply_text(
-                f"Usage: /policy <{'|'.join(valid)}>"
-            )
+            await self._reply(update, f"Usage: /policy <{'|'.join(valid)}>")
             return
         access = load_access(self.config.access_path)
         access.policy = args[0]  # type: ignore[assignment]
         save_access(self.config.access_path, access)
-        await update.effective_message.reply_text(f"Policy set to: {args[0]}")
+        await self._reply(update, f"Policy set to: {args[0]}")
 
     async def _cmd_access(
         self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE
@@ -362,13 +379,13 @@ class OwnerCommandsMixin:
         access = load_access(self.config.access_path)
         users = ", ".join(str(u) for u in access.allowed_users) or "(none)"
         chats = ", ".join(str(c) for c in access.allowed_chats) or "(none)"
-        await update.effective_message.reply_text(
+        await self._reply(
+            update,
             f"Policy: {access.policy}\n"
             f"Allowed users: {users}\n"
             f"Allowed chats: {chats}\n"
-            f"Owner: {self.config.owner_id} (always allowed)"
+            f"Owner: {self.config.owner_id} (always allowed)",
         )
-
 
     async def _register_owner_commands(self) -> None:
         commands = [
@@ -392,4 +409,3 @@ class OwnerCommandsMixin:
             )
         except Exception:
             log.exception("failed to register owner-scoped bot commands")
-

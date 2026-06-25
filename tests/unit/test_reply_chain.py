@@ -102,7 +102,9 @@ async def test_fetch_reply_chain_stops_at_missing_parent(db: Database) -> None:
 @pytest.mark.asyncio
 async def test_fetch_reply_chain_handles_outbound_parent(db: Database) -> None:
     """User replies to a bot message — outbound rows must be reachable too."""
-    await insert_message(db, _msg(30, "I think the answer is 42", user_id=99, direction="out"))
+    await insert_message(
+        db, _msg(30, "I think the answer is 42", user_id=99, direction="out")
+    )
     await insert_message(db, _msg(31, "thanks!", reply_to_id=30))
     chain = await fetch_reply_chain(db, chat_id=-1001234567890, reply_to_id=30)
     assert len(chain) == 1
@@ -159,7 +161,8 @@ async def test_format_with_context_falls_back_to_inline(db: Database) -> None:
     """Bot is new to the group; user replies to a message we never saw.
     Telegram inlines a snippet — we should use that as a fallback."""
     new = _msg(
-        80, "what about that?",
+        80,
+        "what about that?",
         reply_to_id=999,
         reply_to_text="the original message the bot never observed",
     )

@@ -13,7 +13,7 @@ class NowArgs(BaseModel):
     pass
 
 
-class NowTool(BaseTool):
+class NowTool(BaseTool[NowArgs]):
     name = "now"
     description = (
         "Return the current time as ISO8601 in both UTC and the host's local "

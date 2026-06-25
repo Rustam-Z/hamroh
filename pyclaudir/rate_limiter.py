@@ -40,18 +40,24 @@ class RateLimitExceeded(Exception):
         )
 
 
+@dataclass(frozen=True)
+class RateLimitConfig:
+    """Tuning for :class:`RateLimiter`: per-bucket cap, bucket size, and the
+    owner id that is exempt from limiting."""
+
+    limit: int = 20
+    window_seconds: int = 60
+    owner_id: int | None = None
+
+
 class RateLimiter:
     def __init__(
-        self,
-        db: Database,
-        limit: int = 20,
-        window_seconds: int = 60,
-        owner_id: int | None = None,
+        self, db: Database, config: RateLimitConfig = RateLimitConfig()
     ) -> None:
         self.db = db
-        self.limit = limit
-        self.window = window_seconds
-        self.owner_id = owner_id
+        self.limit = config.limit
+        self.window = config.window_seconds
+        self.owner_id = config.owner_id
 
     def _bucket(self, now: float | None = None) -> int:
         t = int(now if now is not None else time.time())
@@ -87,24 +93,30 @@ class RateLimiter:
         count = int(row["count"])
 
         if count > self.limit:
-            # One-shot notice: only the call that flips the flag notifies.
-            flipped = await self.db.execute_returning(
-                "UPDATE rate_limits SET notice_sent=1 "
-                "WHERE user_id=? AND bucket_start=? AND notice_sent=0 "
-                "RETURNING 1",
-                (user_id, bucket),
-            )
-            notify = flipped is not None
-            retry_after = max(1, bucket + self.window - now)
+            raise await self._over_limit(user_id, bucket, now)
 
-            await self.db.execute(
-                "DELETE FROM rate_limits WHERE bucket_start < ?",
-                (bucket - 2 * self.window,),
-            )
+    async def _over_limit(
+        self, user_id: int, bucket: int, now: int
+    ) -> RateLimitExceeded:
+        """Build the :class:`RateLimitExceeded` for an over-budget user.
 
-            raise RateLimitExceeded(
-                user_id=user_id,
-                limit=self.limit,
-                retry_after_s=retry_after,
-                notify=notify,
-            )
+        Flips the one-shot notice flag (so only the first over-limit call in
+        this bucket notifies) and prunes buckets older than two windows.
+        """
+        # One-shot notice: only the call that flips the flag notifies.
+        flipped = await self.db.execute_returning(
+            "UPDATE rate_limits SET notice_sent=1 "
+            "WHERE user_id=? AND bucket_start=? AND notice_sent=0 "
+            "RETURNING 1",
+            (user_id, bucket),
+        )
+        await self.db.execute(
+            "DELETE FROM rate_limits WHERE bucket_start < ?",
+            (bucket - 2 * self.window,),
+        )
+        return RateLimitExceeded(
+            user_id=user_id,
+            limit=self.limit,
+            retry_after_s=max(1, bucket + self.window - now),
+            notify=flipped is not None,
+        )

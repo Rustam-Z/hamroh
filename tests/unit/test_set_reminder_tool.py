@@ -38,9 +38,14 @@ async def test_iso_trigger_at_is_stored_canonical(tmp_path: Path) -> None:
         tool = SetReminderTool(ToolContext(database=db))
         future = datetime.now(timezone.utc) + timedelta(minutes=2)
         iso_with_z = future.strftime("%Y-%m-%dT%H:%M:%SZ")
-        result = await tool.run(SetReminderArgs(
-            chat_id=42, user_id=42, text="hi", trigger_at=iso_with_z,
-        ))
+        result = await tool.run(
+            SetReminderArgs(
+                chat_id=42,
+                user_id=42,
+                text="hi",
+                trigger_at=iso_with_z,
+            )
+        )
         assert not result.is_error, result.content
         row = await db.fetch_one("SELECT trigger_at FROM reminders WHERE chat_id = 42")
         assert row is not None
@@ -60,10 +65,14 @@ async def test_due_reminder_is_picked_up_by_loop_query(tmp_path: Path) -> None:
     try:
         tool = SetReminderTool(ToolContext(database=db))
         future = datetime.now(timezone.utc) + timedelta(seconds=1)
-        await tool.run(SetReminderArgs(
-            chat_id=42, user_id=42, text="hi",
-            trigger_at=future.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        ))
+        await tool.run(
+            SetReminderArgs(
+                chat_id=42,
+                user_id=42,
+                text="hi",
+                trigger_at=future.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            )
+        )
         # Pretend we polled 5 minutes after the trigger.
         later = future + timedelta(minutes=5)
         due = await fetch_due_reminders(db, later.strftime("%Y-%m-%d %H:%M:%S"))
@@ -80,12 +89,17 @@ async def test_naive_trigger_at_is_rejected(tmp_path: Path) -> None:
     db = await _open(tmp_path)
     try:
         tool = SetReminderTool(ToolContext(database=db))
-        future_naive = (
-            datetime.now(timezone.utc) + timedelta(minutes=5)
-        ).strftime("%Y-%m-%dT%H:%M:%S")  # no Z, no offset
-        result = await tool.run(SetReminderArgs(
-            chat_id=42, user_id=42, text="hi", trigger_at=future_naive,
-        ))
+        future_naive = (datetime.now(timezone.utc) + timedelta(minutes=5)).strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )  # no Z, no offset
+        result = await tool.run(
+            SetReminderArgs(
+                chat_id=42,
+                user_id=42,
+                text="hi",
+                trigger_at=future_naive,
+            )
+        )
         assert result.is_error
         assert "timezone" in result.content.lower()
     finally:
@@ -102,9 +116,14 @@ async def test_offset_trigger_at_is_normalized_to_utc(tmp_path: Path) -> None:
         tool = SetReminderTool(ToolContext(database=db))
         # Construct: 2099-01-01 12:00 in +02:00 = 2099-01-01 10:00 UTC
         iso_offset = "2099-01-01T12:00:00+02:00"
-        result = await tool.run(SetReminderArgs(
-            chat_id=42, user_id=42, text="hi", trigger_at=iso_offset,
-        ))
+        result = await tool.run(
+            SetReminderArgs(
+                chat_id=42,
+                user_id=42,
+                text="hi",
+                trigger_at=iso_offset,
+            )
+        )
         assert not result.is_error, result.content
         row = await db.fetch_one("SELECT trigger_at FROM reminders WHERE chat_id = 42")
         assert row is not None

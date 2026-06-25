@@ -19,6 +19,7 @@ from pyclaudir.cc_worker import (
     CcWorker,
     FORBIDDEN_FLAG,
     TurnResult,
+    WorkerHooks,
     build_argv,
 )
 from pyclaudir.config import Config
@@ -119,10 +120,12 @@ def test_control_action_requires_reason_only_on_stop() -> None:
 def test_event_parser_handles_assistant_text(spec: CcSpawnSpec, cfg: Config) -> None:
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "hello"}]},
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "hello"}]},
+        }
+    )
     assert worker._current_turn.text_blocks == ["hello"]
 
 
@@ -132,13 +135,17 @@ def test_event_parser_captures_session_id(spec: CcSpawnSpec, cfg: Config) -> Non
     assert worker.session_id == "sid-1"
 
 
-def test_event_parser_completes_turn_with_control(spec: CcSpawnSpec, cfg: Config) -> None:
+def test_event_parser_completes_turn_with_control(
+    spec: CcSpawnSpec, cfg: Config
+) -> None:
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "result",
-        "result": {"action": "stop", "reason": "done"},
-    })
+    worker._handle_event(
+        {
+            "type": "result",
+            "result": {"action": "stop", "reason": "done"},
+        }
+    )
     # The completed turn was queued
     queued = worker._result_queue.get_nowait()
     assert queued.control is not None
@@ -149,10 +156,12 @@ def test_event_parser_completes_turn_with_control(spec: CcSpawnSpec, cfg: Config
 def test_event_parser_detects_dropped_text(spec: CcSpawnSpec, cfg: Config) -> None:
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "I would say hi"}]},
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "I would say hi"}]},
+        }
+    )
     worker._handle_event({"type": "result"})  # no control payload
     queued = worker._result_queue.get_nowait()
     assert queued.dropped_text is True
@@ -165,19 +174,21 @@ def test_event_parser_logs_tool_use(spec: CcSpawnSpec, cfg: Config, caplog) -> N
     caplog.set_level(logging.INFO, logger="pyclaudir.cc")
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": "telegram_send_message",
-                    "id": "toolu_abcdef1234",
-                    "input": {"chat_id": 12345, "text": "hello!"},
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "telegram_send_message",
+                        "id": "toolu_abcdef1234",
+                        "input": {"chat_id": 12345, "text": "hello!"},
+                    }
+                ]
+            },
+        }
+    )
     msgs = [r.getMessage() for r in caplog.records if r.name == "pyclaudir.cc"]
     assert any("[CC.tool→]" in m and "telegram_send_message" in m for m in msgs)
 
@@ -188,33 +199,39 @@ def test_event_parser_logs_tool_result(spec: CcSpawnSpec, cfg: Config, caplog) -
     caplog.set_level(logging.INFO, logger="pyclaudir.cc")
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "user",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_abcdef1234",
-                    "content": [{"type": "text", "text": "sent message_id=99"}],
-                    "is_error": False,
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_abcdef1234",
+                        "content": [{"type": "text", "text": "sent message_id=99"}],
+                        "is_error": False,
+                    }
+                ]
+            },
+        }
+    )
     msgs = [r.getMessage() for r in caplog.records if r.name == "pyclaudir.cc"]
     assert any("[CC.tool✓]" in m and "sent message_id=99" in m for m in msgs)
 
 
-def test_event_parser_logs_done_with_action(spec: CcSpawnSpec, cfg: Config, caplog) -> None:
+def test_event_parser_logs_done_with_action(
+    spec: CcSpawnSpec, cfg: Config, caplog
+) -> None:
     import logging
 
     caplog.set_level(logging.INFO, logger="pyclaudir.cc")
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "result",
-        "result": {"action": "stop", "reason": "replied to user"},
-    })
+    worker._handle_event(
+        {
+            "type": "result",
+            "result": {"action": "stop", "reason": "replied to user"},
+        }
+    )
     msgs = [r.getMessage() for r in caplog.records if r.name == "pyclaudir.cc"]
     assert any("[CC.done]" in m and "action=stop" in m for m in msgs)
 
@@ -228,41 +245,50 @@ def test_structured_output_parsed_from_tool_use(spec: CcSpawnSpec, cfg: Config) 
     worker._current_turn = TurnResult()
 
     # Step 1: the model calls StructuredOutput as a tool_use
-    worker._handle_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": "StructuredOutput",
-                    "id": "toolu_structured_001",
-                    "input": {
-                        "action": "stop",
-                        "reason": "Greeted the user.",
-                    },
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "StructuredOutput",
+                        "id": "toolu_structured_001",
+                        "input": {
+                            "action": "stop",
+                            "reason": "Greeted the user.",
+                        },
+                    }
+                ]
+            },
+        }
+    )
     # Control action should be parsed BEFORE the result event
     assert worker._current_turn.control is not None
     assert worker._current_turn.control.action == "stop"
     assert worker._current_turn.control.reason == "Greeted the user."
 
     # Step 2: the tool_result comes back
-    worker._handle_event({
-        "type": "user",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_structured_001",
-                    "content": [{"type": "text", "text": "Structured output provided successfully"}],
-                    "is_error": False,
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_structured_001",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Structured output provided successfully",
+                            }
+                        ],
+                        "is_error": False,
+                    }
+                ]
+            },
+        }
+    )
 
     # Step 3: the result event finalises the turn
     worker._handle_event({"type": "result"})
@@ -278,29 +304,33 @@ def test_structured_output_parsed_from_tool_use(spec: CcSpawnSpec, cfg: Config) 
 def test_structured_output_sleep_action(spec: CcSpawnSpec, cfg: Config) -> None:
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": "StructuredOutput",
-                    "id": "toolu_sleep_001",
-                    "input": {
-                        "action": "sleep",
-                        "reason": "Nothing to do for a while.",
-                        "sleep_ms": 30000,
-                    },
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "StructuredOutput",
+                        "id": "toolu_sleep_001",
+                        "input": {
+                            "action": "sleep",
+                            "reason": "Nothing to do for a while.",
+                            "sleep_ms": 30000,
+                        },
+                    }
+                ]
+            },
+        }
+    )
     assert worker._current_turn.control is not None
     assert worker._current_turn.control.action == "sleep"
     assert worker._current_turn.control.sleep_ms == 30000
 
 
-def test_on_giveup_fires_before_crashloop_raises(spec: CcSpawnSpec, cfg: Config) -> None:
+def test_on_giveup_fires_before_crashloop_raises(
+    spec: CcSpawnSpec, cfg: Config
+) -> None:
     """When the crash budget is exhausted the worker must fire
     ``on_giveup`` *before* raising :class:`CrashLoop`. Tests the contract
     directly by simulating the giveup branch of ``_supervise_loop``
@@ -316,7 +346,7 @@ def test_on_giveup_fires_before_crashloop_raises(spec: CcSpawnSpec, cfg: Config)
     async def record_giveup(count: int) -> None:
         calls.append(count)
 
-    worker = CcWorker(spec, cfg, on_giveup=record_giveup)
+    worker = CcWorker(spec, cfg, WorkerHooks(on_giveup=record_giveup))
     # Seed `crash_limit` entries so the very next exit trips the ceiling.
     now = time.monotonic()
     worker._crash_times = [now - i for i in range(worker._crash_limit - 1)]
@@ -360,10 +390,12 @@ def test_text_without_delivery_tool_is_dropped_even_with_control(
     not proof of delivery.)"""
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "Yep, here I am."}]},
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "Yep, here I am."}]},
+        }
+    )
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
@@ -379,27 +411,33 @@ def test_text_with_delivery_tool_is_not_dropped(spec: CcSpawnSpec, cfg: Config) 
     user got the message, no nag needed."""
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "Sending now..."}]},
-    })
-    worker._handle_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": "mcp__pyclaudir__telegram_send_message",
-                    "id": "toolu_send",
-                    "input": {"chat_id": 587272213, "text": "Yep, here I am."},
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "Sending now..."}]},
+        }
+    )
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__pyclaudir__telegram_send_message",
+                        "id": "toolu_send",
+                        "input": {"chat_id": 587272213, "text": "Yep, here I am."},
+                    }
+                ]
+            },
+        }
+    )
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
-    assert queued.user_visible_action is True, "telegram_send_message call must be tracked"
+    assert queued.user_visible_action is True, (
+        "telegram_send_message call must be tracked"
+    )
     assert queued.dropped_text is False, "delivered text must not trigger the nag"
 
 
@@ -410,27 +448,39 @@ def test_text_with_reaction_is_not_dropped(spec: CcSpawnSpec, cfg: Config) -> No
     the engine nags the model into a loop on every greeting/ack."""
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
-    worker._handle_event({
-        "type": "assistant",
-        "message": {"content": [{"type": "text", "text": "Reacted instead of replying."}]},
-    })
-    worker._handle_event({
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": "mcp__pyclaudir__telegram_add_reaction",
-                    "id": "toolu_react",
-                    "input": {"chat_id": 587272213, "message_id": 444, "emoji": "👀"},
-                }
-            ]
-        },
-    })
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Reacted instead of replying."}]
+            },
+        }
+    )
+    worker._handle_event(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__pyclaudir__telegram_add_reaction",
+                        "id": "toolu_react",
+                        "input": {
+                            "chat_id": 587272213,
+                            "message_id": 444,
+                            "emoji": "👀",
+                        },
+                    }
+                ]
+            },
+        }
+    )
     worker._handle_event(_structured_output_event())
     worker._handle_event({"type": "result"})
     queued = worker._result_queue.get_nowait()
-    assert queued.user_visible_action is True, "telegram_add_reaction must count as a visible action"
+    assert queued.user_visible_action is True, (
+        "telegram_add_reaction must count as a visible action"
+    )
     assert queued.dropped_text is False, "a reaction is a response — no nag"
 
 
@@ -462,8 +512,8 @@ def test_stale_session_pattern_detection(spec: CcSpawnSpec, cfg: Config) -> None
     # Malformed-id wording (observed in the wild against claude 2.1.138
     # when the persisted id was corrupted on disk).
     worker._stderr_tail = [
-        'Error: --resume requires a valid session ID or session title '
-        'when used with --print. Usage: claude -p --resume '
+        "Error: --resume requires a valid session ID or session title "
+        "when used with --print. Usage: claude -p --resume "
         '<session-id|title>. Provided value "c649fda5-...19sd" is not '
         "a UUID and does not match any session title.",
     ]
@@ -484,7 +534,7 @@ def test_run_stale_recovery_drops_session_and_fires_callback(
     async def record(stale_id: str) -> None:
         seen.append(stale_id)
 
-    worker = CcWorker(spec_with_session, cfg, on_stale_session=record)
+    worker = CcWorker(spec_with_session, cfg, WorkerHooks(on_stale_session=record))
     # _run_stale_recovery awaits sleep + _terminate_proc + start; stub
     # the process-touching bits and zero the backoff so the test is fast.
     worker._crash_backoff_base = 0.0
@@ -515,9 +565,7 @@ def test_drain_readers_waits_for_pending_stderr_line(
 
     async def slow_reader() -> None:
         await asyncio.sleep(0.05)
-        worker._stderr_tail.append(
-            "No conversation found with session ID: abc-123"
-        )
+        worker._stderr_tail.append("No conversation found with session ID: abc-123")
 
     async def run() -> None:
         worker._stderr_task = asyncio.create_task(slow_reader())

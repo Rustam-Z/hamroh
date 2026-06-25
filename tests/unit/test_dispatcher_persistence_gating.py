@@ -19,7 +19,7 @@ from pyclaudir.config import Config
 from pyclaudir.db.database import Database
 from pyclaudir.db.messages import insert_message
 from pyclaudir.models import ChatMessage
-from pyclaudir.telegram_io import TelegramDispatcher
+from pyclaudir.telegram_io import DispatcherDeps, TelegramDispatcher
 
 
 OWNER = 42
@@ -129,7 +129,7 @@ def _reaction_update(
 
 
 def _dispatcher(cfg: Config, db: Database) -> TelegramDispatcher:
-    dispatcher = TelegramDispatcher(cfg, db, engine=None, chat_titles={})
+    dispatcher = TelegramDispatcher(cfg, db, DispatcherDeps(chat_titles={}))
     dispatcher.engine = MagicMock()
     dispatcher.engine.submit = AsyncMock()
     dispatcher.engine.prime_typing = MagicMock()

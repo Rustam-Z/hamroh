@@ -17,7 +17,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from ..base import BaseTool, ToolResult
+from ..base import ArgsT, BaseTool, ToolResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from playwright.async_api import (
@@ -186,9 +186,7 @@ class BrowserSession:
             live = self._live_page()
             if live is not None:
                 return live
-            self._context = await self._manager.open_context(
-                viewport=_SESSION_VIEWPORT
-            )
+            self._context = await self._manager.open_context(viewport=_SESSION_VIEWPORT)
             self._context.on("page", self._adopt)  # follow popups / new tabs
             self._page = await self._context.new_page()
             return self._page
@@ -229,7 +227,7 @@ class BrowserSession:
         return None
 
 
-class BrowserSessionTool(BaseTool):
+class BrowserSessionTool(BaseTool[ArgsT]):
     """Base for ``browser_*`` tools that act on an already-open page.
 
     Provides ``_require_page`` — fetch the shared session's live page or raise

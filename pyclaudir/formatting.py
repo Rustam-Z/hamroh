@@ -20,11 +20,34 @@ def markdown_to_telegram_html(text: str) -> str:
     (headings, lists, images, tables, horizontal rules) are simplified to
     plain text equivalents.
     """
+    # Step 1+2: stash code blocks/spans so their inner content isn't processed
+    text, code_blocks = _stash_code_blocks(text)
+    text, inline_codes = _stash_inline_codes(text)
 
-    # Step 1: extract fenced code blocks so inner content isn't processed
+    # Step 2.5: strip/convert markdown constructs Telegram can't render
+    text = _sanitize_unsupported_markdown(text)
+
+    # Step 3: HTML-escape the remaining text
+    text = escape(text)
+
+    # Steps 4-6.5: inline formatting, links, headings, blockquotes
+    text = _apply_inline_formatting(text)
+    text = _apply_links_and_headings(text)
+    text = _wrap_blockquotes(text)
+
+    # Step 7: restore stashed code blocks and inline codes
+    return _restore_stashed(text, code_blocks, inline_codes)
+
+
+def _stash_code_blocks(text: str) -> tuple[str, list[str]]:
+    """Replace fenced code blocks with placeholders, returning the HTML.
+
+    The returned list holds the rendered ``<pre>``/``<code>`` HTML, indexed
+    by the placeholder embedded in the text.
+    """
     code_blocks: list[str] = []
 
-    def _stash_code_block(m: re.Match) -> str:
+    def _stash(m: re.Match) -> str:
         lang = m.group(1) or ""
         code = escape(m.group(2).rstrip("\n"))
         idx = len(code_blocks)
@@ -36,25 +59,29 @@ def markdown_to_telegram_html(text: str) -> str:
             code_blocks.append(f"<pre>{code}</pre>")
         return f"\x00CODEBLOCK{idx}\x00"
 
-    text = re.sub(r"```(\w+)?\n?(.*?)```", _stash_code_block, text, flags=re.DOTALL)
+    text = re.sub(r"```(\w+)?\n?(.*?)```", _stash, text, flags=re.DOTALL)
+    return text, code_blocks
 
-    # Step 2: extract inline code spans
+
+def _stash_inline_codes(text: str) -> tuple[str, list[str]]:
+    """Replace inline code spans with placeholders, returning the HTML."""
     inline_codes: list[str] = []
 
-    def _stash_inline_code(m: re.Match) -> str:
+    def _stash(m: re.Match) -> str:
         idx = len(inline_codes)
         inline_codes.append(f"<code>{escape(m.group(1))}</code>")
         return f"\x00INLINECODE{idx}\x00"
 
-    text = re.sub(r"`([^`]+)`", _stash_inline_code, text)
+    text = re.sub(r"`([^`]+)`", _stash, text)
+    return text, inline_codes
 
-    # Step 2.5: strip/convert markdown constructs Telegram can't render
-    text = _sanitize_unsupported_markdown(text)
 
-    # Step 3: HTML-escape the remaining text
-    text = escape(text)
+def _apply_inline_formatting(text: str) -> str:
+    """Convert bold, italic, and strikethrough markdown to HTML tags.
 
-    # Step 4: inline formatting (order matters — bold+italic before each)
+    Order matters: bold+italic is handled before bold, which is handled
+    before italic, so the greedier markers win.
+    """
     # Bold+italic ***text*** or ___text___
     text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>", text)
     # Bold **text** or __text__
@@ -64,39 +91,45 @@ def markdown_to_telegram_html(text: str) -> str:
     text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
     text = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"<i>\1</i>", text)
     # Strikethrough ~~text~~
-    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
+    return re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
 
-    # Step 5: links [text](url)
+
+def _apply_links_and_headings(text: str) -> str:
+    """Convert ``[text](url)`` links to anchors and strip heading markers."""
     text = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
         r'<a href="\2">\1</a>',
         text,
     )
+    return re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    # Step 6: strip markdown headings (### Title → Title)
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    # Step 6.5: blockquotes — group consecutive `&gt; `-prefixed lines.
-    # Done post-escape so the wrapper emits real HTML (not escaped) and so
-    # `>` inside fenced code (stashed in Step 1) is left alone.
-    def _wrap_blockquote(m: re.Match) -> str:
+def _wrap_blockquotes(text: str) -> str:
+    """Wrap consecutive ``&gt; ``-prefixed lines in ``<blockquote>`` tags.
+
+    Done post-escape so the wrapper emits real HTML (not escaped) and so
+    ``>`` inside fenced code (already stashed) is left alone.
+    """
+
+    def _wrap(m: re.Match) -> str:
         block = m.group(0).rstrip("\n")
         inner = re.sub(r"^&gt;[ \t]?", "", block, flags=re.MULTILINE)
         return f"<blockquote>{inner}</blockquote>\n"
 
-    text = re.sub(
+    return re.sub(
         r"(?:^&gt;[ \t]?[^\n]*(?:\n|$))+",
-        _wrap_blockquote,
+        _wrap,
         text,
         flags=re.MULTILINE,
     )
 
-    # Step 7: restore stashed code blocks and inline codes
+
+def _restore_stashed(text: str, code_blocks: list[str], inline_codes: list[str]) -> str:
+    """Replace code-block/inline-code placeholders with their stashed HTML."""
     for idx, block in enumerate(code_blocks):
         text = text.replace(f"\x00CODEBLOCK{idx}\x00", block)
     for idx, code in enumerate(inline_codes):
         text = text.replace(f"\x00INLINECODE{idx}\x00", code)
-
     return text
 
 

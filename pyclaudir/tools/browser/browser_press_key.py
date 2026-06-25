@@ -26,7 +26,7 @@ class BrowserPressKeyArgs(BaseModel):
     )
 
 
-class BrowserPressKeyTool(BrowserSessionTool):
+class BrowserPressKeyTool(BrowserSessionTool[BrowserPressKeyArgs]):
     name = "browser_press_key"
     description = (
         "Press a keyboard key on the current page (call browser_navigate first). "

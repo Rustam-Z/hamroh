@@ -28,7 +28,7 @@ class BrowserWaitForArgs(BaseModel):
     )
 
 
-class BrowserWaitForTool(BrowserSessionTool):
+class BrowserWaitForTool(BrowserSessionTool[BrowserWaitForArgs]):
     name = "browser_wait_for"
     description = (
         "Wait for an element to appear on the current browser page (call "

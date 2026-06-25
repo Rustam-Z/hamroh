@@ -28,7 +28,7 @@ from pyclaudir.db.messages import (
     mark_messages_consumed,
     mark_messages_processed,
 )
-from pyclaudir.engine import Engine
+from pyclaudir.engine import Engine, EngineOptions
 from pyclaudir.engine.restore import build_restored_context, sanitize_for_cc
 from pyclaudir.models import ChatMessage
 from pyclaudir.startup import _App, _make_on_cc_stale_session
@@ -238,7 +238,7 @@ async def test_build_renders_reason_note_and_escaped_bodies(db: Database) -> Non
 
 def _engine(tmp_path: Path, db: Database) -> tuple[Engine, MagicMock]:
     worker = MagicMock(send=AsyncMock(), inject=AsyncMock(), reset_session=AsyncMock())
-    engine = Engine(worker, Config.for_test(tmp_path), db=db)
+    engine = Engine(worker, Config.for_test(tmp_path), EngineOptions(db=db))
     return engine, worker
 
 

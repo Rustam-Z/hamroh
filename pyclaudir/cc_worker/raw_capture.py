@@ -52,7 +52,8 @@ class RawCapture:
             self.stderr_log = self.stderr_path.open("a", encoding="utf-8")
             log.info(
                 "raw cc capture: stream=%s stderr=%s",
-                self.stream_path.name, self.stderr_path.name,
+                self.stream_path.name,
+                self.stderr_path.name,
             )
         except OSError:
             log.exception("failed to open cc raw-capture files; capture disabled")
@@ -72,54 +73,77 @@ class RawCapture:
 
     def maybe_rename(self, session_id: str | None) -> None:
         """Rename ``pending-*`` files to ``<session_id>.*`` once we learn it."""
-        if session_id is None:
+        if not self._should_rename(session_id):
             return
-        if self.stream_path is None or self.stderr_path is None:
-            return
-        if not self.stream_path.name.startswith("pending-"):
-            return
-        if self._dir is None:
-            return
+        assert self._dir is not None  # narrowed by _should_rename
         new_stream = self._dir / f"{session_id}.stream.jsonl"
         new_stderr = self._dir / f"{session_id}.stderr.log"
         try:
-            # Close, rename, reopen in append mode so the file handle
-            # continues to point at the renamed file. macOS would let us
-            # rename without closing, but we close to keep the code portable
-            # to platforms that lock open files.
-            for handle in (self.stream_log, self.stderr_log):
-                if handle is not None:
-                    handle.flush()
-                    handle.close()
-            # If a previous run already created files for this session id
-            # (resume case after a crash), we append to them by deleting
-            # the empty pending file and reopening the existing one.
-            if new_stream.exists():
-                self.stream_path.unlink(missing_ok=True)
-            else:
-                self.stream_path.rename(new_stream)
-            if new_stderr.exists():
-                self.stderr_path.unlink(missing_ok=True)
-            else:
-                self.stderr_path.rename(new_stderr)
-            self.stream_path = new_stream
-            self.stderr_path = new_stderr
-            self.stream_log = new_stream.open("a", encoding="utf-8")
-            self.stderr_log = new_stderr.open("a", encoding="utf-8")
+            self._rename_to(new_stream, new_stderr)
             log.info("raw cc capture renamed to %s", new_stream.name)
         except OSError:
-            log.exception("failed to rename raw cc capture files; keeping capture alive")
-            # A rename failure must not silently disable capture for the
-            # rest of the worker's lifetime. Reopen whichever name each
-            # file actually lives under (a partial failure may have
-            # renamed one of the two); a later init event retries the
-            # rename via the ``pending-`` guard above.
-            if not self.stream_path.exists() and new_stream.exists():
-                self.stream_path = new_stream
-            if not self.stderr_path.exists() and new_stderr.exists():
-                self.stderr_path = new_stderr
-            self.stream_log = self.stream_path.open("a", encoding="utf-8")
-            self.stderr_log = self.stderr_path.open("a", encoding="utf-8")
+            log.exception(
+                "failed to rename raw cc capture files; keeping capture alive"
+            )
+            self._recover_after_failed_rename(new_stream, new_stderr)
+
+    def _should_rename(self, session_id: str | None) -> bool:
+        """Return whether a pending capture exists that should be renamed."""
+        if session_id is None:
+            return False
+        if self.stream_path is None or self.stderr_path is None:
+            return False
+        if not self.stream_path.name.startswith("pending-"):
+            return False
+        return self._dir is not None
+
+    def _rename_to(self, new_stream: Path, new_stderr: Path) -> None:
+        """Close, rename pending files to the final names, and reopen them.
+
+        macOS would let us rename without closing, but we close to keep the
+        code portable to platforms that lock open files.
+        """
+        assert self.stream_path is not None and self.stderr_path is not None
+        self._close_handles()
+        # If a previous run already created files for this session id
+        # (resume case after a crash), we append to them by deleting
+        # the empty pending file and reopening the existing one.
+        self._move_or_drop(self.stream_path, new_stream)
+        self._move_or_drop(self.stderr_path, new_stderr)
+        self.stream_path = new_stream
+        self.stderr_path = new_stderr
+        self.stream_log = new_stream.open("a", encoding="utf-8")
+        self.stderr_log = new_stderr.open("a", encoding="utf-8")
+
+    def _close_handles(self) -> None:
+        """Flush and close both open capture handles before a rename."""
+        for handle in (self.stream_log, self.stderr_log):
+            if handle is not None:
+                handle.flush()
+                handle.close()
+
+    @staticmethod
+    def _move_or_drop(pending: Path, target: Path) -> None:
+        """Rename ``pending`` to ``target``, or drop ``pending`` if target exists."""
+        if target.exists():
+            pending.unlink(missing_ok=True)
+        else:
+            pending.rename(target)
+
+    def _recover_after_failed_rename(self, new_stream: Path, new_stderr: Path) -> None:
+        """Reopen capture under whichever name each file actually lives under.
+
+        A rename failure must not silently disable capture for the rest of the
+        worker's lifetime. A partial failure may have renamed one of the two
+        files; a later init event retries the rename via the ``pending-`` guard.
+        """
+        assert self.stream_path is not None and self.stderr_path is not None
+        if not self.stream_path.exists() and new_stream.exists():
+            self.stream_path = new_stream
+        if not self.stderr_path.exists() and new_stderr.exists():
+            self.stderr_path = new_stderr
+        self.stream_log = self.stream_path.open("a", encoding="utf-8")
+        self.stderr_log = self.stderr_path.open("a", encoding="utf-8")
 
     def write_stream(self, raw: bytes) -> None:
         if self.stream_log is None:

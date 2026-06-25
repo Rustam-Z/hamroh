@@ -60,7 +60,7 @@ class BrowserDownloadArgs(BaseModel):
     )
 
 
-class BrowserDownloadTool(BrowserSessionTool):
+class BrowserDownloadTool(BrowserSessionTool[BrowserDownloadArgs]):
     name = "browser_download"
     description = (
         "Download the original file at a URL (typically an image) through the "

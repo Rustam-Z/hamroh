@@ -21,7 +21,7 @@ import pytest
 
 from pyclaudir.cc_worker import TurnResult
 from pyclaudir.config import Config
-from pyclaudir.engine import Engine
+from pyclaudir.engine import Engine, EngineOptions
 from pyclaudir.models import ChatMessage, ControlAction
 
 _CFG = Config.for_test(Path("/tmp"))
@@ -79,7 +79,7 @@ async def test_on_success_fires_after_clean_turn_end() -> None:
     """Happy path: on_success runs once the turn ends with action=stop;
     on_failure is left untouched."""
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
     hooks = _Hooks()
 
     await eng.start()
@@ -110,7 +110,7 @@ async def test_worker_failure_fires_on_failure() -> None:
     reminder delivered. on_failure fires so the claim is reverted and the
     next reminder loop tick re-fires it."""
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
     hooks = _Hooks()
 
     await eng.start()
@@ -135,7 +135,7 @@ async def test_dropped_text_delivers_and_fires_on_success() -> None:
     it already produced and fires on_success, so a reminder that triggered
     the turn advances instead of re-firing. on_failure stays untouched."""
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
     hooks = _Hooks()
 
     await eng.start()

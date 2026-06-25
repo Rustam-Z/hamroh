@@ -51,7 +51,10 @@ async def test_insert_prunes_rows_older_than_retention(tmp_path: Path) -> None:
 
         # When a new unauthorized message is logged
         await insert_unauthorized_message(
-            db, cm=_cm(3), chat_type="private", refusal_sent=True,
+            db,
+            cm=_cm(3),
+            chat_type="private",
+            refusal_sent=True,
         )
 
         # Then the stale row is pruned and both others remain

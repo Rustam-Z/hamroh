@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from ..base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ...storage.render import RenderStore
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +52,7 @@ class SendPhotoArgs(BaseModel):
     )
 
 
-class TelegramSendPhotoTool(BaseTool):
+class TelegramSendPhotoTool(BaseTool[SendPhotoArgs]):
     name = "telegram_send_photo"
     description = (
         "Deliver a rendered image (from data/renders/, e.g. the path returned "
@@ -66,15 +72,9 @@ class TelegramSendPhotoTool(BaseTool):
         if store is None:
             return ToolResult(content="render store unavailable", is_error=True)
 
-        try:
-            resolved = await asyncio.to_thread(store.resolve_path, args.path)
-        except Exception as exc:
-            return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
-
-        if not resolved.exists() or not resolved.is_file():
-            return ToolResult(
-                content=f"render not found: {args.path}", is_error=True,
-            )
+        resolved = await _resolve_render(store, args.path)
+        if isinstance(resolved, ToolResult):
+            return resolved
 
         sent = await self.ctx.bot.send_photo(
             chat_id=args.chat_id,
@@ -85,25 +85,53 @@ class TelegramSendPhotoTool(BaseTool):
         message_id = sent.message_id
         log.info(
             "hot-path stage=delivered chat=%s msg=%s photo=%s",
-            args.chat_id, message_id, args.path,
+            args.chat_id,
+            message_id,
+            args.path,
         )
 
-        transcript_text = f"[photo] {args.path}"
-        if args.caption:
-            transcript_text += f" — {args.caption}"
-        await deliver_bookkeeping(self.ctx, OutboundDelivery(
-            chat_id=args.chat_id,
-            message_id=message_id,
-            reply_to_id=args.reply_to_message_id,
-            transcript_text=transcript_text,
-        ))
-
-        return ToolResult(
-            content=f"sent photo message_id={message_id} ({resolved.name})",
-            data={
-                "message_id": message_id,
-                "chat_id": args.chat_id,
-                "filename": resolved.name,
-                "path": args.path,
-            },
+        await deliver_bookkeeping(
+            self.ctx,
+            OutboundDelivery(
+                chat_id=args.chat_id,
+                message_id=message_id,
+                reply_to_id=args.reply_to_message_id,
+                transcript_text=_transcript_text(args.path, args.caption),
+            ),
         )
+        return _build_result(args, message_id, resolved.name)
+
+
+def _build_result(args: SendPhotoArgs, message_id: int, filename: str) -> ToolResult:
+    """Assemble the success result for a delivered photo."""
+    return ToolResult(
+        content=f"sent photo message_id={message_id} ({filename})",
+        data={
+            "message_id": message_id,
+            "chat_id": args.chat_id,
+            "filename": filename,
+            "path": args.path,
+        },
+    )
+
+
+async def _resolve_render(store: RenderStore, path: str) -> Path | ToolResult:
+    """Resolve ``path`` under the renders root.
+
+    Returns the resolved path on success, or an error ``ToolResult`` when the
+    path is rejected by the store's safety checks or points at a missing file.
+    """
+    try:
+        resolved = await asyncio.to_thread(store.resolve_path, path)
+    except Exception as exc:
+        return ToolResult(content=f"{type(exc).__name__}: {exc}", is_error=True)
+    if not resolved.exists() or not resolved.is_file():
+        return ToolResult(content=f"render not found: {path}", is_error=True)
+    return resolved
+
+
+def _transcript_text(path: str, caption: str | None) -> str:
+    """Render the transcript line for a delivered photo, with optional caption."""
+    if caption:
+        return f"[photo] {path} — {caption}"
+    return f"[photo] {path}"

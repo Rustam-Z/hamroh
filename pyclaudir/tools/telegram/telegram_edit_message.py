@@ -31,7 +31,7 @@ class EditMessageArgs(BaseModel):
     )
 
 
-class TelegramEditMessageTool(BaseTool):
+class TelegramEditMessageTool(BaseTool[EditMessageArgs]):
     name = "telegram_edit_message"
     description = (
         "Replace the text of a message THIS BOT already sent. Use for "
@@ -58,7 +58,9 @@ class TelegramEditMessageTool(BaseTool):
             text=args.text,
         )
         if self.ctx.database is not None:
-            await mark_edited(self.ctx.database, args.chat_id, args.message_id, args.text)
+            await mark_edited(
+                self.ctx.database, args.chat_id, args.message_id, args.text
+            )
         return ToolResult(
             content=f"edited message_id={args.message_id}",
             data={"message_id": args.message_id, "chat_id": args.chat_id},

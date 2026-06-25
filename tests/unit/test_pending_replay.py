@@ -21,7 +21,7 @@ from pyclaudir.db.messages import (
     insert_message,
     mark_messages_consumed,
 )
-from pyclaudir.engine import Engine
+from pyclaudir.engine import Engine, EngineOptions
 from pyclaudir.models import ChatMessage
 from pyclaudir.startup import _replay_unconsumed
 
@@ -91,7 +91,7 @@ async def test_turn_marks_batch_consumed(tmp_path: Path) -> None:
     is exactly 'buffered but never handed to CC'."""
     db = await _open(tmp_path)
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20, db=db)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, db=db))
     await eng.start()
     try:
         msg = _msg("persisted then buffered", 7)
@@ -115,7 +115,7 @@ async def test_boot_replay_resubmits_unconsumed(tmp_path: Path) -> None:
     after restart via the boot replay."""
     db = await _open(tmp_path)
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20, db=db)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, db=db))
     await eng.start()
     try:
         await insert_message(db, _msg("lost in the crash", 9))
@@ -125,9 +125,7 @@ async def test_boot_replay_resubmits_unconsumed(tmp_path: Path) -> None:
 
         joined = "\n".join(worker.sent)
         assert "lost in the crash" in joined, "replayed message must reach the worker"
-        row = await db.fetch_one(
-            "SELECT consumed FROM messages WHERE message_id=9"
-        )
+        row = await db.fetch_one("SELECT consumed FROM messages WHERE message_id=9")
         assert row["consumed"] == 1, "replayed message is consumed by its turn"
     finally:
         await eng.stop()
@@ -159,7 +157,7 @@ async def test_synthetic_reminders_skipped(tmp_path: Path) -> None:
     status — the consumed path must ignore them."""
     db = await _open(tmp_path)
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20, db=db)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, db=db))
     await eng.start()
     try:
         await eng.submit(_msg("<reminder>tick</reminder>", 0))

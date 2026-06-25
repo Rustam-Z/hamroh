@@ -53,7 +53,7 @@ async def test_list_skills_returns_names_and_descriptions(tmp_path: Path) -> Non
         {
             "name": "self-reflection",
             "description": "A test skill for tool-level unit testing. "
-                           "This is what list_skills surfaces.",
+            "This is what list_skills surfaces.",
         },
     ]
 

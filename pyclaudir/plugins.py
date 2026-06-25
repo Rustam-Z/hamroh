@@ -31,24 +31,34 @@ from typing import Any, Mapping
 log = logging.getLogger(__name__)
 
 #: Top-level keys allowed in ``plugins.json``. Any other key crashes boot.
-_TOP_LEVEL_KEYS = frozenset({
-    "tool_groups",
-    "mcps",
-    "skills_disabled",
-    "builtin_tools_disabled",
-})
+_TOP_LEVEL_KEYS = frozenset(
+    {
+        "tool_groups",
+        "mcps",
+        "skills_disabled",
+        "builtin_tools_disabled",
+    }
+)
 
 #: Per-MCP keys allowed in each entry of ``mcps``. Any other key crashes boot.
 #: ``type`` is optional and defaults to ``"stdio"`` for backward compatibility.
 #: ``command``/``args``/``env`` are valid only on stdio entries; ``url`` and
 #: ``headers`` only on ``http``/``sse``.
-_MCP_KEYS = frozenset({
-    "name", "type", "allowed_tools", "enabled",
-    # stdio
-    "command", "args", "env",
-    # http / sse
-    "url", "headers",
-})
+_MCP_KEYS = frozenset(
+    {
+        "name",
+        "type",
+        "allowed_tools",
+        "enabled",
+        # stdio
+        "command",
+        "args",
+        "env",
+        # http / sse
+        "url",
+        "headers",
+    }
+)
 
 #: Always-required per-MCP keys (regardless of transport).
 _MCP_REQUIRED = frozenset({"name", "allowed_tools", "enabled"})
@@ -145,7 +155,11 @@ def _interp_str(value: str, env: Mapping[str, str]) -> str | None:
 
 
 def _interp_str_dict(
-    raw: Mapping[str, Any], env: Mapping[str, str], *, owner: str, field_name: str,
+    raw: Mapping[str, Any],
+    env: Mapping[str, str],
+    *,
+    owner: str,
+    field_name: str,
 ) -> tuple[dict[str, str] | None, str | None]:
     """Interpolate every value in a ``{str: str}`` mapping.
 
@@ -166,7 +180,8 @@ def _interp_str_dict(
 
 
 def _interp_stdio_mcp(
-    raw: dict[str, Any], env: Mapping[str, str],
+    raw: dict[str, Any],
+    env: Mapping[str, str],
 ) -> tuple[McpPluginSpec | None, str | None]:
     """Interpolate the stdio branch. ``raw['command']`` is taken
     verbatim; ``args`` and ``env`` are ``${VAR}``-substituted."""
@@ -175,16 +190,17 @@ def _interp_stdio_mcp(
     args_out: list[str] = []
     for i, a in enumerate(args_raw):
         if not isinstance(a, str):
-            raise PluginsConfigError(
-                f"mcps[{name!r}].args[{i}] must be a string"
-            )
+            raise PluginsConfigError(f"mcps[{name!r}].args[{i}] must be a string")
         sub = _interp_str(a, env)
         if sub is None:
             return None, f"args[{i}]"
         args_out.append(sub)
 
     env_out, missing = _interp_str_dict(
-        raw.get("env", {}) or {}, env, owner=name, field_name="env",
+        raw.get("env", {}) or {},
+        env,
+        owner=name,
+        field_name="env",
     )
     if env_out is None:
         return None, missing
@@ -203,7 +219,9 @@ def _interp_stdio_mcp(
 
 
 def _interp_remote_mcp(
-    raw: dict[str, Any], env: Mapping[str, str], transport: str,
+    raw: dict[str, Any],
+    env: Mapping[str, str],
+    transport: str,
 ) -> tuple[McpPluginSpec | None, str | None]:
     """Interpolate the http/sse branch. ``url`` is required and
     ``${VAR}``-substituted; ``headers`` likewise."""
@@ -216,7 +234,10 @@ def _interp_remote_mcp(
         return None, "url"
 
     headers_out, missing = _interp_str_dict(
-        raw.get("headers", {}) or {}, env, owner=name, field_name="headers",
+        raw.get("headers", {}) or {},
+        env,
+        owner=name,
+        field_name="headers",
     )
     if headers_out is None:
         return None, missing
@@ -234,7 +255,8 @@ def _interp_remote_mcp(
 
 
 def _interp_mcp(
-    raw: dict[str, Any], env: Mapping[str, str],
+    raw: dict[str, Any],
+    env: Mapping[str, str],
 ) -> tuple[McpPluginSpec | None, str | None]:
     """Interpolate one MCP entry. Returns ``(spec, None)`` on success,
     or ``(None, reason)`` if an unresolved ``${VAR}`` was found.
@@ -293,14 +315,15 @@ def _check_mcp_keys(entry: dict[str, Any], i: int, path: Path) -> None:
 
 
 def _check_mcp_name(
-    entry: dict[str, Any], i: int, seen_names: set[str], path: Path,
+    entry: dict[str, Any],
+    i: int,
+    seen_names: set[str],
+    path: Path,
 ) -> str:
     """Validate name is a non-empty unique string. Returns the name."""
     name = entry["name"]
     if not isinstance(name, str) or not name:
-        raise PluginsConfigError(
-            f"{path}: mcps[{i}].name must be a non-empty string"
-        )
+        raise PluginsConfigError(f"{path}: mcps[{i}].name must be a non-empty string")
     if name in seen_names:
         raise PluginsConfigError(
             f"{path}: mcps has duplicate name {name!r}; names become the "
@@ -351,7 +374,10 @@ def _check_stdio_specifics(entry: dict[str, Any], name: str, path: Path) -> None
 
 
 def _check_remote_specifics(
-    entry: dict[str, Any], name: str, transport: str, path: Path,
+    entry: dict[str, Any],
+    name: str,
+    transport: str,
+    path: Path,
 ) -> None:
     if "url" not in entry:
         raise PluginsConfigError(
@@ -365,9 +391,7 @@ def _check_remote_specifics(
 
 def _check_mcp_enabled(entry: dict[str, Any], name: str, path: Path) -> None:
     if not isinstance(entry["enabled"], bool):
-        raise PluginsConfigError(
-            f"{path}: mcps[{name!r}].enabled must be true/false"
-        )
+        raise PluginsConfigError(f"{path}: mcps[{name!r}].enabled must be true/false")
 
 
 def _check_mcp_allowed_tools(entry: dict[str, Any], name: str, path: Path) -> None:
@@ -421,10 +445,64 @@ def _validate_string_list(raw: Any, path: Path, *, key: str) -> frozenset[str]:
         raise PluginsConfigError(f"{path}: {key} must be an array")
     for i, name in enumerate(raw):
         if not isinstance(name, str) or not name:
-            raise PluginsConfigError(
-                f"{path}: {key}[{i}] must be a non-empty string"
-            )
+            raise PluginsConfigError(f"{path}: {key}[{i}] must be a non-empty string")
     return frozenset(raw)
+
+
+def _log_missing_file(path: Path) -> None:
+    """Log the locked-down-defaults notice for a missing ``plugins.json``.
+
+    Points the operator at the shipped ``.example`` file when one exists.
+    """
+    example = path.with_suffix(path.suffix + ".example")
+    if example.exists():
+        log.error(
+            "no plugins.json at %s — using locked-down defaults (no "
+            "external MCPs, no tool groups). Copy the shipped example "
+            "to enable integrations: cp %s %s",
+            path,
+            example,
+            path,
+        )
+        return
+    log.info("no plugins.json at %s — using locked-down defaults", path)
+
+
+def _parse_json_file(path: Path) -> Any:
+    """Read and JSON-decode ``path``, mapping I/O and parse errors to
+    :class:`PluginsConfigError`."""
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise PluginsConfigError(f"could not read {path}: {exc}") from exc
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise PluginsConfigError(f"{path}: invalid JSON: {exc}") from exc
+
+
+def _build_mcp_specs(
+    mcps_raw: list[dict[str, Any]],
+    env: Mapping[str, str],
+) -> list[McpPluginSpec]:
+    """Interpolate each enabled MCP entry into a spec.
+
+    Disabled entries and entries with unresolved ``${VAR}`` refs are
+    logged and skipped — matching today's "credentials missing → MCP
+    not spawned" semantics.
+    """
+    mcps_out: list[McpPluginSpec] = []
+    for entry in mcps_raw:
+        name = entry["name"]
+        if not entry["enabled"]:
+            log.info("mcp %s skipped (disabled in plugins.json)", name)
+            continue
+        spec, missing = _interp_mcp(entry, env)
+        if spec is None:
+            log.error("mcp %s skipped (unresolved ${VAR} in %s)", name, missing)
+            continue
+        mcps_out.append(spec)
+    return mcps_out
 
 
 def load_plugins(path: Path, *, env: Mapping[str, str] | None = None) -> Plugins:
@@ -439,51 +517,23 @@ def load_plugins(path: Path, *, env: Mapping[str, str] | None = None) -> Plugins
         env = os.environ
 
     if not path.exists():
-        example = path.with_suffix(path.suffix + ".example")
-        if example.exists():
-            log.error(
-                "no plugins.json at %s — using locked-down defaults (no "
-                "external MCPs, no tool groups). Copy the shipped example "
-                "to enable integrations: cp %s %s",
-                path, example, path,
-            )
-        else:
-            log.info("no plugins.json at %s — using locked-down defaults", path)
+        _log_missing_file(path)
         return Plugins()
 
-    try:
-        raw_text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise PluginsConfigError(f"could not read {path}: {exc}") from exc
-
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        raise PluginsConfigError(f"{path}: invalid JSON: {exc}") from exc
+    data = _parse_json_file(path)
 
     _validate_top_level(data, path)
     tool_groups = _validate_tool_groups(data.get("tool_groups"), path)
     mcps_raw = _validate_mcps(data.get("mcps"), path)
     skills_disabled = _validate_skills_disabled(data.get("skills_disabled"), path)
     builtin_tools_disabled = _validate_builtin_tools_disabled(
-        data.get("builtin_tools_disabled"), path,
+        data.get("builtin_tools_disabled"),
+        path,
     )
-
-    mcps_out: list[McpPluginSpec] = []
-    for entry in mcps_raw:
-        name = entry["name"]
-        if not entry["enabled"]:
-            log.info("mcp %s skipped (disabled in plugins.json)", name)
-            continue
-        spec, missing = _interp_mcp(entry, env)
-        if spec is None:
-            log.error("mcp %s skipped (unresolved ${VAR} in %s)", name, missing)
-            continue
-        mcps_out.append(spec)
 
     return Plugins(
         tool_groups=tool_groups,
-        mcps=tuple(mcps_out),
+        mcps=tuple(_build_mcp_specs(mcps_raw, env)),
         skills_disabled=skills_disabled,
         builtin_tools_disabled=builtin_tools_disabled,
     )

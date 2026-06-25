@@ -7,7 +7,7 @@ module was split into ``format`` + ``engine`` submodules.
 
 from __future__ import annotations
 
-from .engine import Engine, ErrorNotify
+from .engine import Engine, EngineOptions, ErrorNotify
 from .typing_indicator import (
     MIN_TYPING_VISIBLE_SECONDS,
     TYPING_REFRESH_SECONDS,
@@ -22,6 +22,7 @@ from .format import (
 __all__ = [
     "DEFAULT_REPLY_DEPTH",
     "Engine",
+    "EngineOptions",
     "ErrorNotify",
     "MIN_TYPING_VISIBLE_SECONDS",
     "TYPING_REFRESH_SECONDS",

@@ -10,7 +10,7 @@ import pytest
 
 from pyclaudir.access import AccessConfig, save_access
 from pyclaudir.config import Config
-from pyclaudir.telegram_io import TelegramDispatcher
+from pyclaudir.telegram_io import DispatcherDeps, TelegramDispatcher
 
 OWNER = 42
 STRANGER = 100
@@ -39,7 +39,9 @@ def _ctx(args: list[str] | None = None) -> MagicMock:
 
 
 def _dispatcher(cfg: Config) -> TelegramDispatcher:
-    return TelegramDispatcher(cfg, MagicMock(), engine=MagicMock(), chat_titles={})
+    return TelegramDispatcher(
+        cfg, MagicMock(), DispatcherDeps(engine=MagicMock(), chat_titles={})
+    )
 
 
 def _write_log(cfg: Config, *messages: str) -> None:

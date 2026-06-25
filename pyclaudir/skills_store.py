@@ -79,7 +79,7 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
         raise SkillsError(f"SKILL.md frontmatter is not valid YAML: {exc}") from exc
     if not isinstance(data, dict):
         raise SkillsError("SKILL.md frontmatter must be a YAML mapping")
-    return data, text[m.end():]
+    return data, text[m.end() :]
 
 
 def _validate_skill_metadata(metadata: dict, expected_name: str) -> None:
@@ -158,9 +158,7 @@ class SkillsStore:
             raise SkillsError(
                 f"skill name must be a single directory name, got {name!r}"
             )
-        return resolve_under_root(
-            self._root, f"{name}/SKILL.md", SkillsError, "skill"
-        )
+        return resolve_under_root(self._root, f"{name}/SKILL.md", SkillsError, "skill")
 
     # ------------------------------------------------------------------
     # Read API
@@ -184,33 +182,38 @@ class SkillsStore:
             return []
         out: list[SkillFile] = []
         for entry in sorted(self._root.iterdir()):
-            if not entry.is_dir() or entry.is_symlink():
-                continue
-            if entry.name.startswith("."):
-                continue
-            if entry.name in self._disabled:
-                continue
-            skill_md = entry / "SKILL.md"
-            if not skill_md.is_file() or skill_md.is_symlink():
-                continue
-            try:
-                size = skill_md.stat().st_size
-                text = skill_md.read_text(encoding="utf-8")
-                metadata, _ = _parse_frontmatter(text)
-                _validate_skill_metadata(metadata, entry.name)
-            except (OSError, SkillsError):
-                # Malformed or unreadable skill — skip. We don't raise
-                # because one bad skill shouldn't blind the agent to
-                # the valid ones.
-                continue
-            out.append(
-                SkillFile(
-                    name=entry.name,
-                    size_bytes=size,
-                    description=metadata["description"].strip(),
-                )
-            )
+            skill = self._load_skill_entry(entry)
+            if skill is not None:
+                out.append(skill)
         return out
+
+    def _load_skill_entry(self, entry: Path) -> SkillFile | None:
+        """Build a :class:`SkillFile` for ``entry`` or ``None`` to skip it.
+
+        Returns ``None`` for non-skill directories (hidden, disabled,
+        missing/symlinked ``SKILL.md``) and for malformed or unreadable
+        skills — one bad skill shouldn't blind the agent to the valid
+        ones, so we never raise here.
+        """
+        if not entry.is_dir() or entry.is_symlink():
+            return None
+        if entry.name.startswith(".") or entry.name in self._disabled:
+            return None
+        skill_md = entry / "SKILL.md"
+        if not skill_md.is_file() or skill_md.is_symlink():
+            return None
+        try:
+            size = skill_md.stat().st_size
+            text = skill_md.read_text(encoding="utf-8")
+            metadata, _ = _parse_frontmatter(text)
+            _validate_skill_metadata(metadata, entry.name)
+        except (OSError, SkillsError):
+            return None
+        return SkillFile(
+            name=entry.name,
+            size_bytes=size,
+            description=metadata["description"].strip(),
+        )
 
     def read(self, name: str, max_bytes: int = MAX_SKILL_BYTES) -> str:
         """Read ``skills/<name>/SKILL.md`` as UTF-8, truncating if larger

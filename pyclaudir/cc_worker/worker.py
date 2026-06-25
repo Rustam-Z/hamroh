@@ -14,9 +14,6 @@ Lifecycle:
 - ``wait_for_result()`` returns the next :class:`TurnResult` produced by the
   subprocess.
 - ``stop()`` terminates the subprocess and reaps it.
-
-Step 7 implements basic spawn/read/send. Inject and crash-recovery come in
-Steps 9 and 10.
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from typing import Awaitable, Callable
 
 from ..config import Config
 from ..tools.base import Heartbeat
@@ -36,6 +33,44 @@ from .event_handlers import CcEventHandlerMixin
 from .events import CrashLoop, TurnResult
 from .raw_capture import RawCapture
 from .spec import CcSpawnSpec, FORBIDDEN_FLAG, build_argv
+
+#: Supervisor lifecycle callbacks. Each is optional (``None`` disables it).
+#:
+#: ``OnCrash`` — called when CC crashes (one per crash, before the
+#: backoff/respawn). Only fires for *unexpected* exits; intentional
+#: terminations (tool-error breaker, liveness watchdog) are recognised via
+#: ``_supervisor_abort_reason`` and do not reach it.
+#: Signature: ``async on_crash(attempt: int, backoff: float)``.
+OnCrash = Callable[[int, float], Awaitable[None]] | None
+#: ``OnGiveup`` — called *once* when the crash loop has exhausted its budget,
+#: before :class:`CrashLoop` is re-raised, so it can notify the owner/users.
+#: Signature: ``async on_giveup(crash_count: int)``.
+OnGiveup = Callable[[int], Awaitable[None]] | None
+#: ``OnStaleSession`` — called when the supervisor sees CC reject the resumed
+#: ``session_id`` as stale (see :data:`STALE_SESSION_PATTERNS`), *before* the
+#: fresh respawn, so it can drop the persisted id and notify the owner. Stale
+#: recoveries do not consume the crash budget.
+#: Signature: ``async on_stale_session(stale_id: str)``.
+OnStaleSession = Callable[[str], Awaitable[None]] | None
+#: ``OnStatus`` — fired by the per-turn status heartbeat every
+#: ``status_interval_seconds`` while a turn is still running, so a long task
+#: can report progress instead of going silent; the turn keeps running.
+#: Signature: ``async on_status(elapsed_s: float, last_action: str | None)``.
+OnStatus = Callable[[float, "str | None"], Awaitable[None]] | None
+
+
+@dataclasses.dataclass(frozen=True)
+class WorkerHooks:
+    """Optional liveness heartbeat + supervisor lifecycle callbacks for
+    :class:`CcWorker`. All default to ``None`` so a test can build a worker
+    from just a spec and config."""
+
+    heartbeat: Heartbeat | None = None
+    on_crash: OnCrash = None
+    on_giveup: OnGiveup = None
+    on_stale_session: OnStaleSession = None
+    on_status: OnStatus = None
+
 
 # Pinned to the parent package name so log captures keyed on
 # ``"pyclaudir.cc_worker"`` (e.g. tests/test_cc_worker_mcp_init.py) keep
@@ -68,50 +103,27 @@ class CcWorker(CcEventHandlerMixin):
     flow through :class:`pyclaudir.config.Config`.
     """
 
-    #: Optional callback the supervisor calls when CC crashes (one per
-    #: crash, before the backoff/respawn). Only fires for *unexpected*
-    #: exits — intentional terminations (tool-error breaker, liveness
-    #: watchdog) are recognised via ``_supervisor_abort_reason`` and
-    #: do not reach this callback.
-    #: Signature: ``async on_crash(attempt: int, backoff: float)``
-    OnCrash = Any  # Callable[[int, float], Awaitable[None]] | None
-    #: Optional callback the supervisor calls *once* when the crash loop
-    #: has exhausted its budget. Fires before :class:`CrashLoop` is
-    #: re-raised so the callback can notify the owner/users.
-    #: Signature: ``async on_giveup(crash_count: int)``
-    OnGiveup = Any  # Callable[[int], Awaitable[None]] | None
-    #: Optional callback fired when the supervisor sees CC reject the
-    #: resumed ``session_id`` as stale (see :data:`STALE_SESSION_PATTERNS`).
-    #: Called *before* the fresh respawn so the callback can drop any
-    #: persisted id and notify the owner. Stale recoveries do not
-    #: consume the crash budget.
-    #: Signature: ``async on_stale_session(stale_id: str)``
-    OnStaleSession = Any  # Callable[[str], Awaitable[None]] | None
-    #: Optional callback fired by the per-turn status heartbeat every
-    #: ``status_interval_seconds`` while a turn is still running. Lets a long
-    #: task report progress instead of going silent; the turn keeps running.
-    #: Signature: ``async on_status(elapsed_s: float, last_action: str | None)``
-    OnStatus = Any  # Callable[[float, str | None], Awaitable[None]] | None
-
     def __init__(
-        self,
-        spec: CcSpawnSpec,
-        config: Config,
-        *,
-        heartbeat: Heartbeat | None = None,
-        on_crash: OnCrash = None,
-        on_giveup: OnGiveup = None,
-        on_stale_session: OnStaleSession = None,
-        on_status: OnStatus = None,
+        self, spec: CcSpawnSpec, config: Config, hooks: WorkerHooks = WorkerHooks()
     ) -> None:
         self.spec = spec
-        self.heartbeat = heartbeat or Heartbeat()
-        # Cache the runtime knobs once at construction so the hot paths
-        # (``_liveness_loop``, ``_record_tool_error``, ``_supervise_loop``)
-        # don't re-read the config dataclass on every event. Tests can
-        # override the cached attributes directly
-        # (``worker._tool_error_max_count = 99``) for fine-grained
-        # control without rebuilding the Config.
+        self.heartbeat = hooks.heartbeat or Heartbeat()
+        self._session_id_path = config.session_id_path
+        self._session_id: str | None = spec.session_id
+        self._on_crash = hooks.on_crash
+        self._on_giveup = hooks.on_giveup
+        self._on_stale_session = hooks.on_stale_session
+        self._on_status = hooks.on_status
+        #: Raw stdout/stderr capture — no-ops when ``spec.cc_logs_dir`` is None.
+        self._capture = RawCapture(spec.cc_logs_dir)
+        self._cache_config(config)
+        self._init_io_state()
+        self._init_turn_state()
+
+    def _cache_config(self, config: Config) -> None:
+        """Snapshot the runtime knobs once so the hot paths (liveness, breaker,
+        supervisor) never re-read the Config dataclass per event. Tests can
+        override these attributes directly without rebuilding a Config."""
         self._liveness_timeout: float = config.liveness_timeout_seconds
         self._liveness_poll: float = config.liveness_poll_seconds
         self._tool_error_max_count: int = config.tool_error_max_count
@@ -121,67 +133,48 @@ class CcWorker(CcEventHandlerMixin):
         self._crash_backoff_cap: float = config.crash_backoff_cap
         self._crash_limit: int = config.crash_limit
         self._crash_window_seconds: float = config.crash_window_seconds
-        self._session_id_path = config.session_id_path
+
+    def _init_io_state(self) -> None:
+        """Subprocess handles, stdout/stderr pump tasks, the result/inject
+        queues, and the supervisor/liveness coordination primitives."""
         self._proc: asyncio.subprocess.Process | None = None
         self._stdout_task: asyncio.Task | None = None
         self._stderr_task: asyncio.Task | None = None
         self._result_queue: asyncio.Queue[TurnResult] = asyncio.Queue()
         self._inject_queue: asyncio.Queue[str] = asyncio.Queue()
         self._stderr_tail: list[str] = []
-        self._current_turn: TurnResult | None = None
-        #: Init-gate for the freshly-sent turn. ``send()`` arms it; the next
-        #: ``system/init`` (the real start of this send's cc-turn) clears it.
-        #: While armed, assistant/result events are dropped — cc runs one turn
-        #: per stdin user message sequentially, so events arriving before our
-        #: own init belong to a *prior* turn still draining its trailing
-        #: text+result and must not be folded into the just-sent TurnResult.
-        #: Reset wherever ``_current_turn`` is force-cleared so it can't stay
-        #: stuck armed if the subprocess dies before its init.
-        self._awaiting_turn_init: bool = False
-        self._session_id: str | None = spec.session_id
-        self._crash_times: list[float] = []
         self._supervisor_task: asyncio.Task | None = None
         self._liveness_task: asyncio.Task | None = None
         self._stop_supervisor = asyncio.Event()
-        self._on_crash = on_crash
-        self._on_giveup = on_giveup
-        self._on_stale_session = on_stale_session
-        self._on_status = on_status
-        #: ``time.monotonic()`` of the last successfully parsed stdout
-        #: event. Together with ``heartbeat.last_activity`` (bumped on
-        #: every MCP tool call) this tells the liveness monitor whether
-        #: the subprocess is alive-and-working or actually wedged.
+        self._crash_times: list[float] = []
+        #: ``time.monotonic()`` of the last parsed stdout event; with
+        #: ``heartbeat.last_activity`` it tells the liveness monitor whether the
+        #: subprocess is working or wedged.
         self._last_event_at: float = time.monotonic()
-        #: Tool-error circuit-breaker state. Reset in ``send()`` at the
-        #: start of every turn; incremented in ``_handle_event`` each
-        #: time a ``tool_result`` block arrives with ``is_error=true``.
-        #: The breaker trips on whichever fires first: the count
-        #: reaches ``_tool_error_max_count``, OR the wall-clock
-        #: watchdog fires at ``_turn_first_tool_error_at +
-        #: _tool_error_window``. The watchdog handles the
-        #: "single error, then silence" case where no further errors
-        #: arrive to drive an event-based check.
+
+    def _init_turn_state(self) -> None:
+        """Per-turn state: the in-flight TurnResult, the init-gate, the
+        tool-error circuit breaker, and the status-heartbeat bookkeeping.
+
+        ``_awaiting_turn_init`` is armed by ``send()`` and cleared by the next
+        ``system/init``; while armed, assistant/result events from a prior
+        draining turn are dropped so they aren't folded into the new turn. The
+        breaker (``_turn_tool_error_*``) trips on whichever comes first: the
+        count reaching ``_tool_error_max_count`` or the wall-clock watchdog at
+        ``_turn_first_tool_error_at + _tool_error_window``.
+        ``_supervisor_abort_reason`` marks a self-inflicted exit so the
+        supervisor skips the crash callback.
+        """
+        self._current_turn: TurnResult | None = None
+        self._awaiting_turn_init: bool = False
         self._turn_tool_error_count: int = 0
         self._turn_first_tool_error_at: float | None = None
         self._tool_error_watchdog_task: asyncio.Task | None = None
-        #: Set just before ``_terminate_proc`` when the worker aborts a
-        #: turn for a known reason (e.g. ``"tool-error-limit"``). The
-        #: supervisor reads-and-clears it to skip the crash callback
-        #: for self-inflicted exits.
         self._supervisor_abort_reason: str | None = None
         self._tool_error_abort_task: asyncio.Task | None = None
-        #: Per-turn status heartbeat. A recurring timer that, every
-        #: ``status_interval`` seconds while a turn runs, fires ``on_status`` so a
-        #: long task reports progress instead of going silent. It does NOT abort
-        #: the turn — the owner can reply "stop" to halt it; otherwise it
-        #: continues. ``_last_tool_action`` is the most recent tool the agent
-        #: called this turn, surfaced in the status so the ping is meaningful.
         self._turn_started_at: float | None = None
         self._last_tool_action: str | None = None
         self._status_task: asyncio.Task | None = None
-        #: Raw stdout/stderr capture — see :class:`RawCapture`. No-ops
-        #: entirely when ``spec.cc_logs_dir`` is None.
-        self._capture = RawCapture(spec.cc_logs_dir)
 
     @property
     def session_id(self) -> str | None:
@@ -198,11 +191,13 @@ class CcWorker(CcEventHandlerMixin):
             f"{FORBIDDEN_FLAG} found in argv at spawn time — refusing to start"
         )
         enabled_features = [
-            f for f, on in (
+            f
+            for f, on in (
                 ("bash", self.spec.enable_bash),
                 ("code", self.spec.enable_code),
                 ("subagents", self.spec.enable_subagents),
-            ) if on
+            )
+            if on
         ]
         log.info(
             "spawning claude (model=%s, enabled=%s, mcp_tools=%d)",
@@ -219,12 +214,8 @@ class CcWorker(CcEventHandlerMixin):
             env={**os.environ},
             limit=4 * 1024 * 1024,  # 4 MiB – large MCP responses (e.g. GitLab)
         )
-        self._stdout_task = asyncio.create_task(
-            self._read_stdout(), name="cc-stdout"
-        )
-        self._stderr_task = asyncio.create_task(
-            self._read_stderr(), name="cc-stderr"
-        )
+        self._stdout_task = asyncio.create_task(self._read_stdout(), name="cc-stdout")
+        self._stderr_task = asyncio.create_task(self._read_stderr(), name="cc-stderr")
 
     async def stop(self) -> None:
         self._stop_supervisor.set()
@@ -292,46 +283,46 @@ class CcWorker(CcEventHandlerMixin):
             self._liveness_loop(), name="cc-liveness"
         )
 
-    async def _liveness_loop(self) -> None:
-        """Detect wedged subprocesses and terminate them.
+    def _wedge_silence(self) -> float | None:
+        """Seconds of silence if a turn is wedged past the timeout, else ``None``.
 
-        Only fires when all three conditions hold:
-        1. The subprocess is running (``is_running``).
-        2. A turn is currently in progress (``_current_turn is not None``).
-           Idle silence is fine — we only care about stuck turns.
-        3. Time since the most recent activity signal exceeds
-           ``self._liveness_timeout``. Activity signal is the max of
-           ``_last_event_at`` (stdout parse time) and
-           ``heartbeat.last_activity`` (bumped on every MCP tool call).
-
-        On wedge, we call ``_terminate_proc()`` — the supervisor's
-        existing crash-recovery path respawns with the same session id.
+        Wedged means the subprocess is running, a turn is in progress, and the
+        most recent activity signal — the max of ``_last_event_at`` (stdout
+        parse time) and ``heartbeat.last_activity`` (bumped on every MCP tool
+        call) — is older than ``_liveness_timeout``. Idle silence between turns
+        is fine, so it returns ``None``.
         """
-        timeout = self._liveness_timeout
+        if not self.is_running or self._current_turn is None:
+            return None
+        last_activity = max(self._last_event_at, self.heartbeat.last_activity)
+        silence = time.monotonic() - last_activity
+        return silence if silence > self._liveness_timeout else None
 
+    async def _liveness_loop(self) -> None:
+        """Poll for a wedged subprocess and terminate it on detection.
+
+        On wedge we call ``_terminate_proc()`` — the supervisor's existing
+        crash-recovery path respawns with the same session id. See
+        :meth:`_wedge_silence` for the wedge criteria.
+        """
         while not self._stop_supervisor.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop_supervisor.wait(), timeout=self._liveness_poll,
+                    self._stop_supervisor.wait(),
+                    timeout=self._liveness_poll,
                 )
                 return  # stop requested
             except asyncio.TimeoutError:
                 pass
 
-            if not self.is_running:
+            silence = self._wedge_silence()
+            if silence is None:
                 continue
-            if self._current_turn is None:
-                continue  # idle — silence is expected
-            now = time.monotonic()
-            last_activity = max(self._last_event_at, self.heartbeat.last_activity)
-            silence = now - last_activity
-            if silence <= timeout:
-                continue
-
             log.error(
                 "cc subprocess wedged mid-turn: no activity for %.0fs "
                 "(timeout=%.0fs). Terminating to trigger respawn.",
-                silence, timeout,
+                silence,
+                self._liveness_timeout,
             )
             self._supervisor_abort_reason = "liveness-wedge"
             await self._terminate_proc()
@@ -371,7 +362,8 @@ class CcWorker(CcEventHandlerMixin):
             if intentional is not None:
                 log.info(
                     "cc subprocess exited rc=%s on intentional %s — respawning",
-                    rc, intentional,
+                    rc,
+                    intentional,
                 )
                 await asyncio.sleep(self._crash_backoff_base)
                 await self._terminate_proc()
@@ -416,7 +408,8 @@ class CcWorker(CcEventHandlerMixin):
         raise :class:`CrashLoop` if the budget is exhausted."""
         log.error(
             "cc subprocess exited rc=%s; recent stderr=%s",
-            rc, self._stderr_tail[-5:],
+            rc,
+            self._stderr_tail[-5:],
         )
         now = time.monotonic()
         self._crash_times = [
@@ -538,7 +531,6 @@ class CcWorker(CcEventHandlerMixin):
             log.warning("inject failed: stdin closed; queueing for next turn")
             await self._inject_queue.put(text)
 
-
     # ------------------------------------------------------------------
     # Background readers
     # ------------------------------------------------------------------
@@ -656,8 +648,11 @@ class CcWorker(CcEventHandlerMixin):
             "cc tool-error circuit breaker tripped (reason=%s): "
             "%d errors in %.1fs (max=%d, window=%.0fs). "
             "Terminating to trigger respawn.",
-            reason, self._turn_tool_error_count, elapsed,
-            self._tool_error_max_count, self._tool_error_window,
+            reason,
+            self._turn_tool_error_count,
+            elapsed,
+            self._tool_error_max_count,
+            self._tool_error_window,
         )
         self._supervisor_abort_reason = "tool-error-limit"
         # Unblock the engine's ``wait_for_result`` immediately with a
@@ -669,7 +664,8 @@ class CcWorker(CcEventHandlerMixin):
         self._current_turn = None
         self._awaiting_turn_init = False
         self._tool_error_abort_task = asyncio.create_task(
-            self._terminate_proc(), name="cc-tool-error-abort",
+            self._terminate_proc(),
+            name="cc-tool-error-abort",
         )
 
     def _arm_status_heartbeat(self) -> None:
@@ -677,7 +673,8 @@ class CcWorker(CcEventHandlerMixin):
         self._cancel_status_heartbeat()
         self._turn_started_at = time.monotonic()
         self._status_task = asyncio.create_task(
-            self._status_heartbeat(), name="cc-status-heartbeat",
+            self._status_heartbeat(),
+            name="cc-status-heartbeat",
         )
 
     async def _status_heartbeat(self) -> None:

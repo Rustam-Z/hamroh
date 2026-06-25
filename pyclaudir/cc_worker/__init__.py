@@ -17,7 +17,7 @@ from .spec import (
     CcSpawnSpec,
     build_argv,
 )
-from .worker import CcWorker
+from .worker import CcWorker, WorkerHooks
 
 __all__ = [
     "BASE_ALLOWED_TOOLS",
@@ -29,5 +29,6 @@ __all__ = [
     "CcWorker",
     "CrashLoop",
     "TurnResult",
+    "WorkerHooks",
     "build_argv",
 ]

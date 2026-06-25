@@ -36,7 +36,9 @@ def current_cc_session_id(cc_logs_dir: Path) -> str | None:
     ]
     if not files:
         return None
-    return max(files, key=lambda p: p.stat().st_mtime).name.removesuffix(".stream.jsonl")
+    return max(files, key=lambda p: p.stat().st_mtime).name.removesuffix(
+        ".stream.jsonl"
+    )
 
 
 def memory_files_containing(memories_dir: Path, token: str) -> list[Path]:

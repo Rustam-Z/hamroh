@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +26,29 @@ from .base import BaseTool, ToolResult
 from .browser import BrowserManager
 
 log = logging.getLogger(__name__)
+
+#: Playwright's ``set_content(wait_until=...)`` accepts exactly these values.
+WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
+
+
+@dataclass(frozen=True)
+class RenderRequest:
+    """Everything :func:`_render_to_png` needs for one screenshot.
+
+    ``allowed_hosts`` is internal (never an agent arg): ``None`` blocks all
+    outbound traffic, a tuple allow-lists specific CDN hosts (``render_latex``
+    passes KaTeX's). ``manager`` reuses the warm browser; ``None`` spins up a
+    throwaway one for this call.
+    """
+
+    html: str
+    width: int
+    height: int
+    out_path: Path
+    allowed_hosts: tuple[str, ...] | None = None
+    wait_until: WaitUntil = "domcontentloaded"
+    manager: BrowserManager | None = None
+
 
 #: Hard cap on viewport pixels. Past this point screenshots get heavy and
 #: chromium gets sluggish. ``full_page=True`` captures beyond the viewport
@@ -70,82 +95,33 @@ class RenderHtmlArgs(BaseModel):
     )
 
 
-async def _render_to_png(
-    html: str,
-    width: int,
-    height: int,
-    out_path: Path,
-    *,
-    allowed_hosts: tuple[str, ...] | None = None,
-    wait_until: str = "domcontentloaded",
-    manager: BrowserManager | None = None,
-) -> None:
-    """Drive playwright to render ``html`` → ``out_path``.
+async def _render_to_png(req: RenderRequest) -> None:
+    """Drive playwright to render ``req.html`` → ``req.out_path``.
 
-    Pulled out so tests can monkey-patch a fake without spinning up a
-    real browser. Uses the process-wide warm ``manager`` (from
-    ``ToolContext``) so Chromium isn't relaunched per call. When
-    ``manager`` is None (unit/e2e tests, or a ctx built without one) a
-    throwaway manager is created and closed for this one call — same
-    behaviour as the old launch-per-call path.
-
-    Cleanup is layered:
-
-    1. Page-level: ``set_content(timeout=_RENDER_TIMEOUT_MS)`` bounds
-       rendering inside the browser.
-    2. Context-level: ``manager.context()`` closes the per-render context
-       (with its own bounded budget) on any path; the warm browser is NOT
-       closed.
-    3. Wall-clock: the whole coroutine is wrapped in
-       ``asyncio.wait_for(_WALL_CLOCK_S)``. If we time out, the inner
-       task is cancelled — the context ``finally`` still fires — and a
-       wedged Chromium is relaunched on the next render via
-       ``is_connected``.
-
-    ``allowed_hosts`` is **internal** — not exposed via any tool arg.
-    Default ``None`` blocks all outbound traffic. ``render_latex`` passes
-    a narrow tuple (e.g. ``("cdn.jsdelivr.net",)``) so KaTeX can load.
-    Anything not in the list is still aborted; ``data:``/``about:`` URLs
-    are always allowed (they don't hit the network).
-
-    ``wait_until`` defaults to ``"domcontentloaded"`` for fully-inline
-    pages. Set to ``"networkidle"`` when external assets need to load
-    + run before screenshot (e.g. KaTeX rendering).
+    Pulled out so tests can monkey-patch a fake. Reuses the warm
+    ``req.manager`` (or spins up a throwaway one when ``None``). Cleanup is
+    layered: ``set_content`` bounds rendering inside the browser,
+    ``manager.context()`` closes the per-render context on any path, and the
+    whole coroutine is wrapped in ``asyncio.wait_for(_WALL_CLOCK_S)`` so a
+    hung launch is cancelled (the context ``finally`` still fires) and a
+    wedged Chromium is relaunched on the next render.
     """
-    from urllib.parse import urlparse
-
-    owns_manager = manager is None
-    mgr = manager if manager is not None else BrowserManager()
+    owns_manager = req.manager is None
+    mgr = req.manager if req.manager is not None else BrowserManager()
 
     async def _do() -> None:
         async with mgr.context(
-            viewport={"width": width, "height": height},
+            viewport={"width": req.width, "height": req.height},
             java_script_enabled=True,
         ) as ctx:
             page = await ctx.new_page()
-
-            async def _route(route):
-                if allowed_hosts is None:
-                    await route.abort()
-                    return
-                url = route.request.url
-                scheme = url.split(":", 1)[0].lower()
-                if scheme in ("data", "about", "blob"):
-                    await route.continue_()
-                    return
-                host = urlparse(url).hostname or ""
-                if host in allowed_hosts:
-                    await route.continue_()
-                else:
-                    await route.abort()
-
-            await page.route("**/*", _route)
+            await page.route("**/*", _route_filter(req.allowed_hosts))
             await page.set_content(
-                html,
-                wait_until=wait_until,
+                req.html,
+                wait_until=req.wait_until,
                 timeout=_RENDER_TIMEOUT_MS,
             )
-            await page.screenshot(path=str(out_path), full_page=True)
+            await page.screenshot(path=str(req.out_path), full_page=True)
 
     try:
         await asyncio.wait_for(_do(), timeout=_WALL_CLOCK_S)
@@ -158,7 +134,84 @@ async def _render_to_png(
             await mgr.close()
 
 
-class RenderHtmlTool(BaseTool):
+def _route_filter(allowed_hosts: tuple[str, ...] | None):
+    """Build the Playwright route handler enforcing the network allow-list.
+
+    ``None`` blocks everything; ``data:``/``about:``/``blob:`` URLs always
+    pass (they don't hit the network); any other host must be allow-listed.
+    """
+    from urllib.parse import urlparse
+
+    async def _route(route) -> None:
+        if allowed_hosts is None:
+            await route.abort()
+            return
+        scheme = route.request.url.split(":", 1)[0].lower()
+        if scheme in ("data", "about", "blob"):
+            await route.continue_()
+            return
+        host = urlparse(route.request.url).hostname or ""
+        if host in allowed_hosts:
+            await route.continue_()
+        else:
+            await route.abort()
+
+    return _route
+
+
+async def _render_or_error(req: RenderRequest) -> ToolResult | None:
+    """Run the render; return an error ``ToolResult`` on failure, else ``None``.
+
+    Cleans up any half-written file on a render failure so a later
+    existence check can't mistake a corpse for output.
+    """
+    try:
+        await _render_to_png(req)
+        return None
+    except ImportError as exc:
+        return ToolResult(
+            content=(
+                "playwright not installed; run `uv sync` and "
+                f"`playwright install chromium` on the host. ({exc})"
+            ),
+            is_error=True,
+        )
+    except Exception as exc:  # browser launch / render failure
+        log.warning("render_html failed: %s: %s", type(exc).__name__, exc)
+        try:
+            if req.out_path.exists():
+                req.out_path.unlink()
+        except OSError:
+            pass
+        return ToolResult(
+            content=f"render failed: {type(exc).__name__}: {exc}", is_error=True
+        )
+
+
+def _result_for(store, args: RenderHtmlArgs, out_path: Path) -> ToolResult:
+    """Build the success (or empty-output) ``ToolResult`` after a render."""
+    if not out_path.exists() or out_path.stat().st_size == 0:
+        return ToolResult(content="render produced no output", is_error=True)
+    relative = store.relative(out_path)
+    size = out_path.stat().st_size
+    log.info(
+        "rendered html → %s (%d bytes, %dx%d)", relative, size, args.width, args.height
+    )
+    return ToolResult(
+        content=(
+            f"rendered to {relative} ({size} bytes). "
+            f"Pass this path to telegram_send_photo to deliver it."
+        ),
+        data={
+            "path": relative,
+            "size_bytes": size,
+            "width": args.width,
+            "height": args.height,
+        },
+    )
+
+
+class RenderHtmlTool(BaseTool[RenderHtmlArgs]):
     name = "render_html"
     description = (
         "Render an HTML snippet to a PNG via headless Chromium and save it "
@@ -179,7 +232,7 @@ class RenderHtmlTool(BaseTool):
         args: RenderHtmlArgs,
         *,
         allowed_hosts: tuple[str, ...] | None = None,
-        wait_until: str = "domcontentloaded",
+        wait_until: WaitUntil = "domcontentloaded",
     ) -> ToolResult:
         """Internal entry point — companion tools (``render_latex``) call
         this directly to opt into a narrow CDN allow-list. Not exposed to
@@ -190,59 +243,16 @@ class RenderHtmlTool(BaseTool):
             return ToolResult(content="render store unavailable", is_error=True)
 
         out_path = store.allocate(args.title)
-        try:
-            await _render_to_png(
-                args.html,
-                args.width,
-                args.height,
-                out_path,
-                allowed_hosts=allowed_hosts,
-                wait_until=wait_until,
-                manager=self.ctx.browser_manager,
-            )
-        except ImportError as exc:
-            return ToolResult(
-                content=(
-                    "playwright not installed; run `uv sync` and "
-                    "`playwright install chromium` on the host. "
-                    f"({exc})"
-                ),
-                is_error=True,
-            )
-        except Exception as exc:  # browser launch / render failure
-            log.warning("render_html failed: %s: %s", type(exc).__name__, exc)
-            # Best-effort cleanup of any half-written file.
-            try:
-                if out_path.exists():
-                    out_path.unlink()
-            except OSError:
-                pass
-            return ToolResult(
-                content=f"render failed: {type(exc).__name__}: {exc}",
-                is_error=True,
-            )
-
-        if not out_path.exists() or out_path.stat().st_size == 0:
-            return ToolResult(
-                content="render produced no output",
-                is_error=True,
-            )
-
-        relative = store.relative(out_path)
-        size = out_path.stat().st_size
-        log.info(
-            "rendered html → %s (%d bytes, %dx%d)",
-            relative, size, args.width, args.height,
+        req = RenderRequest(
+            args.html,
+            args.width,
+            args.height,
+            out_path,
+            allowed_hosts=allowed_hosts,
+            wait_until=wait_until,
+            manager=self.ctx.browser_manager,
         )
-        return ToolResult(
-            content=(
-                f"rendered to {relative} ({size} bytes). "
-                f"Pass this path to telegram_send_photo to deliver it."
-            ),
-            data={
-                "path": relative,
-                "size_bytes": size,
-                "width": args.width,
-                "height": args.height,
-            },
-        )
+        error = await _render_or_error(req)
+        if error is not None:
+            return error
+        return _result_for(store, args, out_path)

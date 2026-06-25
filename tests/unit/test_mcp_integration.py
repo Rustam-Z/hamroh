@@ -63,7 +63,9 @@ def _build_mcp_config(plugin_name: str, plugins_path: Path) -> Path:
     return out
 
 
-def _run_claude(mcp_config: Path, allowed: str, prompt: str, *, timeout: int = 60) -> str:
+def _run_claude(
+    mcp_config: Path, allowed: str, prompt: str, *, timeout: int = 60
+) -> str:
     """Invoke ``claude --print`` headlessly with the given MCP config.
 
     Returns stdout. Pins the test to Sonnet at low effort for speed
@@ -71,12 +73,17 @@ def _run_claude(mcp_config: Path, allowed: str, prompt: str, *, timeout: int = 6
     """
     proc = subprocess.run(
         [
-            "claude", "--print",
-            "--mcp-config", str(mcp_config),
+            "claude",
+            "--print",
+            "--mcp-config",
+            str(mcp_config),
             "--strict-mcp-config",
-            "--allowedTools", allowed,
-            "--model", "claude-sonnet-4-6",
-            "--effort", "low",
+            "--allowedTools",
+            allowed,
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
             prompt,
         ],
         capture_output=True,
@@ -84,7 +91,9 @@ def _run_claude(mcp_config: Path, allowed: str, prompt: str, *, timeout: int = 6
         timeout=timeout,
     )
     if proc.returncode != 0:
-        pytest.fail(f"claude exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        pytest.fail(
+            f"claude exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
     return proc.stdout
 
 
@@ -96,17 +105,21 @@ def deepwiki_config(tmp_path_factory) -> Path:
     the entry inline so the test is portable and idempotent.
     """
     spec_path = tmp_path_factory.mktemp("plugins") / "plugins.json"
-    spec_path.write_text(json.dumps({
-        "mcps": [
+    spec_path.write_text(
+        json.dumps(
             {
-                "name": "deepwiki",
-                "type": "http",
-                "url": "https://mcp.deepwiki.com/mcp",
-                "allowed_tools": ["mcp__deepwiki"],
-                "enabled": True,
+                "mcps": [
+                    {
+                        "name": "deepwiki",
+                        "type": "http",
+                        "url": "https://mcp.deepwiki.com/mcp",
+                        "allowed_tools": ["mcp__deepwiki"],
+                        "enabled": True,
+                    }
+                ]
             }
-        ]
-    }))
+        )
+    )
     return _build_mcp_config("deepwiki", spec_path)
 
 
@@ -149,7 +162,9 @@ def test_http_transport_real_tool_call(deepwiki_config: Path) -> None:
         "first page title it returned, as one line. No other prose.",
         timeout=90,
     )
-    if "500" in output and ("Internal Server Error" in output or "transient" in output.lower()):
+    if "500" in output and (
+        "Internal Server Error" in output or "transient" in output.lower()
+    ):
         pytest.xfail("DeepWiki backend returned 500 — server-side issue, not pyclaudir")
     # The repo's wiki has known top-level pages like "Overview" or
     # "FastMCP Server Framework". We don't pin the exact string (their

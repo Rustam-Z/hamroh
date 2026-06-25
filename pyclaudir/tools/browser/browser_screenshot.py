@@ -29,7 +29,7 @@ class BrowserScreenshotArgs(BaseModel):
     )
 
 
-class BrowserScreenshotTool(BrowserSessionTool):
+class BrowserScreenshotTool(BrowserSessionTool[BrowserScreenshotArgs]):
     name = "browser_screenshot"
     description = (
         "Screenshot the current browser page to a PNG under data/renders/ and "

@@ -18,7 +18,9 @@ def _write_jsonl(path: Path, events: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
 
 
-def _bot_event(text: str = "<msg id=\"1\" chat=\"-100\" user=\"42\" name=\"A\" time=\"10:00\">hi</msg>") -> dict:
+def _bot_event(
+    text: str = '<msg id="1" chat="-100" user="42" name="A" time="10:00">hi</msg>',
+) -> dict:
     return {
         "type": "user",
         "message": {"role": "user", "content": [{"type": "text", "text": text}]},
@@ -84,13 +86,13 @@ def test_falls_back_to_xml_fingerprint(patched_dirs) -> None:
 
 def test_returns_none_when_no_bot_session(patched_dirs) -> None:
     project_dir, _ = patched_dirs
-    (project_dir / "operator.jsonl").write_text(
-        json.dumps(_operator_event()) + "\n"
-    )
+    (project_dir / "operator.jsonl").write_text(json.dumps(_operator_event()) + "\n")
     assert trace_mod.find_bot_session() is None
 
 
-def test_returns_none_when_dir_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_returns_none_when_dir_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(trace_mod, "PROJECT_DIR", tmp_path / "does_not_exist")
     monkeypatch.setenv("PYCLAUDIR_DATA_DIR", str(tmp_path / "data"))
     assert trace_mod.find_bot_session() is None
@@ -121,7 +123,9 @@ def test_looks_like_bot_session_skips_non_text_first_event(patched_dirs) -> None
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": "x", "content": "ok"}],
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "x", "content": "ok"}
+                    ],
                 },
             },
             _bot_event(),

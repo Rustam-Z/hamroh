@@ -10,7 +10,7 @@ import pytest
 from pathlib import Path
 
 from pyclaudir.config import Config
-from pyclaudir.engine import Engine, format_messages_as_xml
+from pyclaudir.engine import Engine, EngineOptions, format_messages_as_xml
 from pyclaudir.models import ChatMessage
 
 
@@ -70,7 +70,7 @@ class FakeWorker:
 @pytest.mark.asyncio
 async def test_debouncer_coalesces_burst() -> None:
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=50)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=50))
     await eng.start()
     try:
         for i in range(5):
@@ -78,7 +78,9 @@ async def test_debouncer_coalesces_burst() -> None:
             await asyncio.sleep(0.01)  # < debounce
         # Wait long enough for the debounce timer to fire.
         await asyncio.sleep(0.15)
-        assert len(worker.sent) == 1, f"expected one batched send, got {len(worker.sent)}"
+        assert len(worker.sent) == 1, (
+            f"expected one batched send, got {len(worker.sent)}"
+        )
         # All five messages should be in the single XML payload.
         for i in range(5):
             assert f"m{i}" in worker.sent[0]
@@ -89,7 +91,7 @@ async def test_debouncer_coalesces_burst() -> None:
 @pytest.mark.asyncio
 async def test_inject_used_when_processing() -> None:
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=50)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=50))
     await eng.start()
     try:
         await eng.submit(_msg("first", mid=1))
@@ -114,7 +116,7 @@ async def test_typing_indicator_fires_on_turn_start() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
@@ -137,7 +139,7 @@ async def test_typing_indicator_stops_when_turn_ends() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
@@ -146,20 +148,20 @@ async def test_typing_indicator_stops_when_turn_ends() -> None:
         assert initial >= 1
 
         # Finish the turn cleanly
-        worker.feed_result(TurnResult(
-            text_blocks=[],
-            control=ControlAction(action="stop", reason="ok"),
-            dropped_text=False,
-        ))
+        worker.feed_result(
+            TurnResult(
+                text_blocks=[],
+                control=ControlAction(action="stop", reason="ok"),
+                dropped_text=False,
+            )
+        )
         await asyncio.sleep(0.1)  # control loop processes result
 
         # No more typing calls after the turn ends — wait long enough that
         # a refresh tick *would* have fired if the loop were still alive.
         before_wait = len(typing_calls)
         await asyncio.sleep(0.1)
-        assert len(typing_calls) == before_wait, (
-            "typing kept firing after turn ended"
-        )
+        assert len(typing_calls) == before_wait, "typing kept firing after turn ended"
     finally:
         await eng.stop()
 
@@ -173,17 +175,23 @@ async def test_typing_fires_for_every_chat_in_a_multi_chat_batch() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         # Two messages from different chats arrive within the debounce window
         m_a = ChatMessage(
-            chat_id=-100, message_id=1, user_id=42, direction="in",
+            chat_id=-100,
+            message_id=1,
+            user_id=42,
+            direction="in",
             timestamp=datetime(2026, 4, 12, 10, 0, tzinfo=timezone.utc),
             text="from group A",
         )
         m_b = ChatMessage(
-            chat_id=-200, message_id=1, user_id=43, direction="in",
+            chat_id=-200,
+            message_id=1,
+            user_id=43,
+            direction="in",
             timestamp=datetime(2026, 4, 12, 10, 0, tzinfo=timezone.utc),
             text="from group B",
         )
@@ -200,7 +208,7 @@ async def test_typing_fires_for_every_chat_in_a_multi_chat_batch() -> None:
 async def test_no_typing_action_is_safe() -> None:
     """Engine without typing_action should still work — old default."""
     worker = FakeWorker()
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=None)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=None))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
@@ -235,7 +243,7 @@ async def test_notify_chat_replied_stops_typing_after_min_visible_duration(
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
@@ -263,7 +271,9 @@ async def test_notify_chat_replied_stops_typing_after_min_visible_duration(
 
 
 @pytest.mark.asyncio
-async def test_notify_chat_replied_stops_immediately_when_already_visible_long_enough() -> None:
+async def test_notify_chat_replied_stops_immediately_when_already_visible_long_enough() -> (
+    None
+):
     """If typing has already been visible for ``MIN_TYPING_VISIBLE_SECONDS``,
     the stop happens immediately. Used by slow turns where the indicator
     has been on screen for several seconds already."""
@@ -275,7 +285,7 @@ async def test_notify_chat_replied_stops_immediately_when_already_visible_long_e
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
@@ -303,16 +313,22 @@ async def test_notify_chat_replied_only_stops_the_named_chat() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         m_a = ChatMessage(
-            chat_id=-100, message_id=1, user_id=42, direction="in",
+            chat_id=-100,
+            message_id=1,
+            user_id=42,
+            direction="in",
             timestamp=datetime(2026, 4, 12, 10, 0, tzinfo=timezone.utc),
             text="from group A",
         )
         m_b = ChatMessage(
-            chat_id=-200, message_id=1, user_id=43, direction="in",
+            chat_id=-200,
+            message_id=1,
+            user_id=43,
+            direction="in",
             timestamp=datetime(2026, 4, 12, 10, 0, tzinfo=timezone.utc),
             text="from group B",
         )
@@ -350,7 +366,7 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         # === turn 1 ===
@@ -364,11 +380,13 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
         await asyncio.sleep(0.05)
 
         # CC eventually emits the result
-        worker.feed_result(TurnResult(
-            text_blocks=[],
-            control=ControlAction(action="stop", reason="ok"),
-            dropped_text=False,
-        ))
+        worker.feed_result(
+            TurnResult(
+                text_blocks=[],
+                control=ControlAction(action="stop", reason="ok"),
+                dropped_text=False,
+            )
+        )
         await asyncio.sleep(0.1)
 
         # Engine should be idle now
@@ -388,11 +406,13 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
 
         # And complete turn 2 cleanly
         eng.notify_chat_replied(-100)
-        worker.feed_result(TurnResult(
-            text_blocks=[],
-            control=ControlAction(action="stop", reason="ok"),
-            dropped_text=False,
-        ))
+        worker.feed_result(
+            TurnResult(
+                text_blocks=[],
+                control=ControlAction(action="stop", reason="ok"),
+                dropped_text=False,
+            )
+        )
         await asyncio.sleep(0.1)
 
         # === turn 3 just to be paranoid ===
@@ -426,7 +446,7 @@ async def test_inject_after_notify_restarts_typing() -> None:
     async def fake_typing(chat_id: int) -> None:
         typing_calls.append(chat_id)
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=fake_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=fake_typing))
     await eng.start()
     try:
         # === turn 1 ===
@@ -453,8 +473,7 @@ async def test_inject_after_notify_restarts_typing() -> None:
         # The inject path must have restarted typing
         new_calls = len(typing_calls) - calls_after_notify
         assert new_calls >= 1, (
-            f"no typing call fired for the injected message; "
-            f"calls={typing_calls}"
+            f"no typing call fired for the injected message; calls={typing_calls}"
         )
         # And the typing task is alive again
         assert eng._typing.task is not None and not eng._typing.task.done()
@@ -493,7 +512,7 @@ async def test_typing_completes_before_cc_send() -> None:
 
     worker.send = timed_send  # type: ignore[method-assign]
 
-    eng = Engine(worker, _CFG, debounce_ms=20, typing_action=slow_typing)
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, typing_action=slow_typing))
     await eng.start()
     try:
         await eng.submit(_msg("hi", mid=1))
