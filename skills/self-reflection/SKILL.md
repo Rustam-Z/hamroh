@@ -1,6 +1,6 @@
 ---
 name: self-reflection
-description: Daily two-phase loop that reviews the bot's own recent outbound behavior and any pending lessons in self/learnings.md, stress-tests candidate rules against 10-20 hypothetical scenarios, and proposes promotion into prompts/project.md pending explicit owner approval. Invoked via a mandatory auto-seeded reminder wrapped in a <reminder> envelope; refuse invocation outside that envelope.
+description: Daily loop that reviews the bot's own recent outbound behavior and any pending lessons in self/learnings.md, stress-tests candidate rules against 10-20 hypothetical scenarios, and on explicit owner approval promotes each into either prompts/project.md (durable rules) or a memory file (facts/context), the owner choosing the target. Invoked via a mandatory auto-seeded reminder wrapped in a <reminder> envelope; refuse invocation outside that envelope.
 license: MIT
 compatibility: Requires pyclaudir runtime (reminder loop, instructions tools, memory tools, database_query).
 metadata:
@@ -139,7 +139,8 @@ Read `data/memories/self/learnings.md` via `memory_read`.
 
 Parse the h2 headers (`## YYYY-MM-DD — topic [marker]`). Collect every
 entry whose marker is exactly `[pending]`. Entries without a marker,
-or with `[promoted]`/`[discarded]`/`[refined]`, are not candidates —
+or whose marker starts with `[promoted`/`[discarded`/`[refined`
+(it may carry a `→ project`/`→ memory` suffix), are not candidates —
 skip them.
 
 If you have zero pending entries:
@@ -192,6 +193,26 @@ correctly fires (or correctly doesn't fire). Compute a fit percentage:
 The thresholds are model judgment. Be honest: if you aren't sure,
 call it ambiguous rather than forcing a number.
 
+#### Choose a promotion target
+
+A promote/refine verdict isn't enough — decide **where** it should
+land. Two sinks, picked by what the lesson *is*:
+
+- **Project instructions** (`prompts/project.md`) — a durable **rule**
+  that should govern *how you behave* in every session ("default to
+  the lead on assignment", "never reply in English to an Uzbek
+  message"). Effective only after the operator restarts.
+- **Memory** (`data/memories/...`) — a **fact or context**, not a
+  behavioral rule: a user preference → `notes/users/<user_id>.md`, a
+  group quirk → `notes/groups/<chat_id>.md`, a cross-session
+  reference → `notes/<topic>.md`. Effective immediately, no restart.
+
+Decision test: *"Is this telling me how to act, or what is true?"*
+How-to-act → project instructions. What-is-true → memory. If a lesson
+is genuinely both, prefer project instructions and note the fact
+inline in the rule. This is a **suggestion** — the owner makes the
+final call in Step 5 and can redirect it.
+
 ### Step 3 — save the audit log
 
 Write the per-run reasoning to
@@ -214,37 +235,56 @@ Send ONE message to the owner DM via `telegram_send_message`. Structure:
 ```
 Daily reflection — <N> candidate(s).
 
-1. [promote] <one-line rule summary> (fit <X>%, <short reasoning>).
-2. [refine]  <one-line rule summary> (fit <X>% but overreaches on
-             <condition>; proposed narrower wording: "<new text>").
-3. [discard] <one-line rule summary> (fit <X>%, <short reasoning>).
-4. [ambiguous] <one-line>, need your judgment (fit <X>%, concern: …).
+1. [promote → project] <one-line rule summary> (fit <X>%, <reasoning>).
+2. [refine → project]  <one-line rule summary> (fit <X>% but overreaches
+             on <condition>; proposed narrower wording: "<new text>").
+3. [promote → memory: notes/users/<id>.md] <one-line fact> (fit <X>%).
+4. [discard] <one-line rule summary> (fit <X>%, <short reasoning>).
+5. [ambiguous] <one-line>, need your judgment (fit <X>%, concern: …).
 
-Reply with e.g. "approve 1, 2; reject 3" or free-form feedback.
+Reply e.g. "approve 1, 3; send 2 to memory; reject 4" or free-form.
 Full reasoning saved at data/memories/self/reflections/<date>.md.
 ```
 
-Use a numbered list. Keep each item to 2-3 lines max. Don't echo the
-full scenarios into chat — they're in the audit log for the owner to
-read if they want.
+Every promote/refine line names its **suggested target** (`→ project`
+or `→ memory: <path>`). Use a numbered list, each item 2-3 lines max.
+Don't echo the full scenarios into chat — they're in the audit log for
+the owner to read if they want.
 
 ### Step 5 — parse the owner's reply
 
 The owner replies in the same DM. Interpret natural language:
 
-- "approve all" / "yes" — approve everything in the default direction.
-- "approve 1, 3" / "1 and 3 yes" — approve the named items.
+- "approve all" / "yes" — approve everything at its suggested target.
+- "approve 1, 3" / "1 and 3 yes" — approve the named items, each at
+  the target you proposed for it.
 - "reject 2" / "no to 2" — discard.
 - "refine 4 to X" — the owner is dictating wording; use X verbatim.
 - Ambiguous reply → ask one clarifying question rather than guess.
 - "cancel" / "not today" / "skip" — do nothing, end the turn.
+
+**Target overrides.** The owner can redirect where an approved item
+lands, overriding your suggestion:
+
+- "send 2 to memory" / "1 to project instead" — change the sink.
+- "2 to memory: notes/users/123.md" — owner names the exact file; use
+  it verbatim (must resolve under `data/memories/`).
+- "approve 1 to memory" — approval and target in one breath.
+
+If the owner approves a memory-bound item but names no file and your
+suggestion had none, ask one clarifying question for the path rather
+than guessing.
 
 For `[ambiguous]` items, the owner's reply IS the verdict — take
 their decision directly.
 
 ### Step 6 — execute approved actions
 
-For each approved item (promote or refined-promote):
+For each approved item, first write it to its **resolved target** (the
+one you proposed, unless the owner redirected it in Step 5), then
+compact the `learnings.md` entry. Two target branches:
+
+**Target = project instructions** (a durable behavioral rule):
 
 1. Optionally call `instruction_read()` first to see how project.md
    is currently structured — useful for picking the right section to
@@ -254,44 +294,62 @@ For each approved item (promote or refined-promote):
    without additional context. Prepend with a `\n- ` so it appends
    cleanly under whatever section it lands in, or wrap it in its own
    `## Learned rules` section if that section doesn't exist yet.
-3. Update the corresponding `[pending]` marker in
-   `data/memories/self/learnings.md` to `[promoted]` (or `[refined]`
-   if the owner dictated narrower wording).
-   - `memory_read("self/learnings.md")` first (read-before-write).
-   - Replace the specific h2 line, preserving everything else.
-   - `memory_write("self/learnings.md", <full updated content>)`.
 
-For each rejected item: update marker to `[discarded]` in
-`learnings.md`.
+**Target = memory** (a fact or context, not a rule):
 
-## Phase C — compact aging entries
+1. `memory_read(<target path>)` first if the file already exists
+   (read-before-write rail); brand-new files are exempt.
+2. `memory_append(<target path>, <fact text>)` — append a self-
+   contained line under the right file (`notes/users/<id>.md`,
+   `notes/groups/<chat_id>.md`, or `notes/<topic>.md`). Use the path
+   the owner named, or your suggested path if they accepted it. No
+   restart needed — memory is read live.
 
-After phase B finishes, check whether `learnings.md` is getting
-large. The file has a 64 KiB hard cap (memory files are truncated
-at read time), so runaway growth = silent loss of early history.
+**Then, for either branch, compact the source entry** in
+`data/memories/self/learnings.md` **in one write** — the lesson now
+lives at its target and the full reasoning lives in the audit log
+(`self/reflections/<date>.md`), so the entry's prose is redundant the
+moment it resolves. Don't leave the full body behind to be swept
+"later" — that's exactly what let the file grow unbounded.
 
-### C.1 — when to compact
+- `memory_read("self/learnings.md")` first (read-before-write).
+- Flip the marker to `[promoted]` (or `[refined]` if the owner
+  dictated narrower wording) **and** replace the entry's body with a
+  one-line tombstone naming where it went, in one edit:
 
-Skip compaction unless **at least one** of these is true:
+  ```
+  ## <YYYY-MM-DD> — <topic> [promoted → project]
+  One-line summary. (resolved YYYY-MM-DD, see reflections/<date>.md)
+  ```
 
-- The file is over 40 KiB (about two-thirds of the cap).
-- There are more than 50 h2 entries total.
-- It's been 7+ days since the last compaction (check for a
-  `## Last compaction: <date>` marker near the top; if absent, it's
-  the first pass and you should proceed).
+  Use `[promoted → project]` or `[promoted → memory]` (likewise
+  `[refined → …]`) so the tombstone records the sink.
+- `memory_write("self/learnings.md", <full updated content>)`.
 
-If none apply, skip to Step 7 of phase B.
+For each rejected item: same compaction, marker `[discarded]`, with a
+one-line summary of *why* it was dropped so it isn't re-proposed.
 
-### C.2 — what to compact
+## Phase C — sweep stray resolved entries
 
-Target **only** entries with `[promoted]`, `[discarded]`, or
-`[refined]` markers that are **older than 90 days**. These have
-been resolved; their full prose is no longer load-bearing. Compact
-each such entry to a one-line summary:
+Step 6 already compacts everything this run resolved, so on a healthy
+file phase C finds nothing. It's a **safety net**: it catches entries
+left full-bodied by an older skill version, or resolved outside this
+loop. The file has a 64 KiB hard cap (memory files are truncated at
+read time, dropping the *newest* entries first), so any resolved
+prose left lying around is pure growth risk — sweep it every run.
+
+### C.1 — what to compact
+
+Target every entry whose marker starts with `[promoted`, `[discarded`,
+or `[refined` (any `→ project`/`→ memory` suffix included) and whose
+body is still more than one line — **regardless of age**.
+These are resolved; their prose is redundant (the rule is in
+`project.md`, the reasoning is in `self/reflections/`). Compact each
+to a one-line tombstone, same shape as Step 6:
 
 ```
 ## <YYYY-MM-DD> — <topic> [promoted]
-One-line summary of what the entry concluded. (compacted YYYY-MM-DD)
+One-line summary. (compacted YYYY-MM-DD)
 ```
 
 **Never compact:**
@@ -302,18 +360,15 @@ One-line summary of what the entry concluded. (compacted YYYY-MM-DD)
   reads at session start; keep them intact).
 - Entries marked as "seed" or "adversarial attack pattern" — these
   are reference material.
-- Anything less than 90 days old.
 
-### C.3 — the compaction pass
+### C.2 — the sweep
 
 1. `memory_read("self/learnings.md")` (already done in phase B —
    re-use the content).
-2. Identify compaction targets per C.2.
-3. For each target, preserve the h2 header with the status marker
-   intact, replace the body with the one-line summary + `(compacted
-   YYYY-MM-DD)` footer.
-4. Add or update a `## Last compaction: <today>` line near the top
-   of the file so future runs know when the last pass happened.
+2. Identify any resolved entry whose body is still multi-line.
+3. For each, preserve the h2 header + marker, replace the body with
+   the one-line summary + `(compacted YYYY-MM-DD)` footer.
+4. If nothing needs compacting, skip the write entirely.
 5. `memory_write("self/learnings.md", <new content>)`.
 
 Report the compaction in the step-7 confirmation message: "Done. N
@@ -325,22 +380,26 @@ happened this run, don't mention it.
 Send ONE final message summarizing what happened:
 
 ```
-Done. <N> rule(s) appended to project.md; <M> discarded.
-Run `docker compose restart pyclaudir` to apply the new rules.
+Done. <P> rule(s) → project.md; <M> fact(s) → memory; <D> discarded.
+Memory writes are already live. The project.md rules apply after
+`docker compose restart pyclaudir`.
 Backups are saved in data/prompt_backups/ — revert with
 mv <backup> prompts/project.md && docker compose restart pyclaudir.
 ```
 
-Then `stop`.
+Drop the restart line entirely if nothing went to project.md this run
+— memory-only runs need no restart. Then `stop`.
 
 ## Failure handling
 
-- **`instruction_append` returns an error** (size cap, file missing,
-  etc.) — abort without touching markers and post a note to the owner
-  describing the failure.
-- **`memory_write` fails** (size cap, read-before-write) — abort that
-  item only. Mark it with `[error]` so next run doesn't re-pick it up
-  until the operator looks.
+- **The target write fails** — `instruction_append` (project) or the
+  `memory_append` to a memory target (size cap, file missing, etc.):
+  abort that item without touching its `[pending]` marker and post a
+  note to the owner describing the failure. It re-surfaces next run.
+- **The `learnings.md` compaction write fails** (size cap, read-before-
+  write) — the target write already succeeded, so don't lose it: abort
+  the compaction for that item only and mark it `[error]` so next run
+  doesn't re-pick it up until the operator looks.
 - **Owner doesn't reply** — the turn ends when the model decides.
   Nothing commits. Next day's reflection will re-surface the same
   items unless you proactively marked them during this session (you

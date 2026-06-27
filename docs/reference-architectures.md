@@ -299,8 +299,11 @@ reminder (default cron `0 0 * * *` — midnight UTC every day).
   each one against 10-20 hypothetical scenarios, scores fit (<30% /
   60-85% / 85%+ with overreach thresholds are soft LLM judgment),
   proposes promote/refine/discard to the owner via DM, and on
-  explicit approval appends rules to `project.md` via
-  `instruction_append`.
+  explicit approval routes each lesson to its target — a durable rule
+  to `project.md` via `instruction_append` (applied on restart), or a
+  fact/context to a memory file via `memory_append` (live
+  immediately). Each proposal names a suggested target; the owner can
+  redirect it in their reply.
 
 **Mandatory loop.** Learning cannot be stopped:
 
@@ -648,14 +651,17 @@ nobody's messaged in a while.
 **File:** `skills/self-reflection/SKILL.md § Phase C`.
 
 `learnings.md` is append-only and capped at 64 KiB per memory file.
-Without pruning, a year of daily self-reflection would blow the cap
-and `memory_read` would start truncating. Phase C runs after Phase B
-on each invocation. Compacts **only** old (>90 days), resolved
-(`[promoted]`/`[discarded]`/`[refined]`) entries to one-line
-summaries. Leaves `[pending]`/`[error]` entries, plain-history
-entries, and seeded adversarial examples untouched. Skips the pass
-entirely unless the file is over 40 KiB or >50 entries or it's been
-7+ days since the last compaction (idempotent marker at the top).
+Without pruning it blows the cap and `memory_read` starts truncating —
+dropping the *newest* entries first. Primary defense is **compact on
+resolution**: Step 6 of Phase B replaces a promoted/refined/discarded
+entry's body with a one-line tombstone the moment it resolves (the
+rule is now in `project.md`, the reasoning in `self/reflections/`).
+Phase C is a safety-net sweep that runs after Phase B on each
+invocation and compacts any resolved entry still carrying multi-line
+prose — **regardless of age** — catching entries left full-bodied by
+an older skill version or resolved outside the loop. Leaves
+`[pending]`/`[error]` entries, plain-history entries, and seeded
+adversarial examples untouched.
 
 ### 5.11 Owner-only operational commands
 

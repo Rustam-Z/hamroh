@@ -1,6 +1,6 @@
 # self-reflection skill
 
-Daily two-phase loop that drives the bot's own learning:
+Daily loop that drives the bot's own learning:
 
 - **Phase A — introspect.** Looks at the last 24h of outbound
   behavior (recent messages, their reactions, tool-call patterns)
@@ -12,12 +12,22 @@ Daily two-phase loop that drives the bot's own learning:
   `learnings.md` (both phase-A's fresh additions and anything
   written earlier via the on-correction rule), stress-tests each
   against 10-20 hypothetical scenarios, scores fit, and proposes
-  promote / refine / discard to the owner. On explicit owner
-  approval, appends the rule to `prompts/project.md` via
-  `instruction_append` (owner-only by prompt policy; system.md is
-  not exposed via tools).
+  promote / refine / discard to the owner. Each promote/refine
+  candidate names a **suggested target** — `prompts/project.md` for a
+  durable behavioral rule (via `instruction_append`, applied on
+  restart) or a memory file for a fact/context (via `memory_append`,
+  live immediately). The owner approves and can redirect the target
+  in their reply ("send 2 to memory"). The moment an entry resolves
+  (promote/refine/discard) its prose is compacted to a one-line
+  tombstone — the rule now lives in `project.md` and the full
+  reasoning in `self/reflections/`, so keeping the body would only
+  grow `learnings.md` toward its 64 KiB cap.
+- **Phase C — sweep.** Safety net after Phase B: compacts any
+  resolved entry still carrying multi-line prose (e.g. left behind by
+  an older skill version), regardless of age. Keeps `learnings.md`
+  bounded so `memory_read` never truncates.
 
-Both phases run back-to-back in one invocation, triggered by a
+Phases run back-to-back in one invocation, triggered by a
 single auto-seeded recurring reminder (midnight UTC every day by
 default — `PYCLAUDIR_SELF_REFLECTION_CRON` overrides). The reminder
 is mandatory — attempts to cancel it are
