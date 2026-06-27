@@ -21,6 +21,7 @@ The "read paths" set lives in this instance and resets on process restart.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,23 @@ class MemoryPathError(ValueError):
 class MemoryFile:
     relative_path: str
     size_bytes: int
+
+
+@dataclass(frozen=True)
+class MemorySearchHit:
+    relative_path: str
+    line_number: int
+    line: str
+    #: How many distinct query terms appear on this line. Used to rank hits.
+    score: int
+
+
+#: Alias for the search return type. The class below defines a method named
+#: ``list``, which shadows the builtin ``list`` for type annotations *inside*
+#: the class body — so ``list[MemorySearchHit]`` there resolves to the method,
+#: not the generic. Spelling the type at module scope (where ``list`` is the
+#: builtin) sidesteps that without renaming the public ``list`` method.
+_HitList = list[MemorySearchHit]
 
 
 #: Maximum size of any one memory file. Matches the read-truncation default
@@ -127,6 +145,44 @@ class MemoryStore:
         # raised never gets credited.
         self._read_paths.add(relative)
         return text
+
+    def search(self, query: str, *, max_results: int = 50) -> _HitList:
+        """Find lines matching ``query`` across every memory file.
+
+        The query is split into whitespace-separated terms; a line is a hit if
+        it contains **at least one** term (case-insensitive), and lines that
+        contain more distinct terms rank higher. Splitting per term — rather
+        than matching the whole query as one substring — is what lets
+        ``"acme deadline"`` find ``"deadline for the Acme project"``.
+
+        Reads current bytes off disk, so results are never stale. Crucially
+        this does **not** touch :attr:`_read_paths`: a search is not a "read"
+        for the read-before-write gate, or grepping a file would silently
+        unlock overwriting it.
+        """
+        terms = [t for t in query.lower().split() if t]
+        if not terms:
+            return []
+        hits: _HitList = []
+        for mf in self.list():
+            hits.extend(self._scan_file(mf.relative_path, terms))
+        # Rank globally, then truncate, so the best lines survive the cap.
+        hits.sort(key=lambda h: (-h.score, h.relative_path, h.line_number))
+        return hits[:max_results]
+
+    def _scan_file(self, relative: str, terms: Sequence[str]) -> _HitList:
+        """Return every line in one file that matches at least one term."""
+        try:
+            text = (self._root / relative).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return []
+        out: _HitList = []
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            lowered = line.lower()
+            score = sum(1 for term in terms if term in lowered)
+            if score:
+                out.append(MemorySearchHit(relative, line_number, line.strip(), score))
+        return out
 
     # ------------------------------------------------------------------
     # Write API

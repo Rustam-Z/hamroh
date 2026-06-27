@@ -30,8 +30,10 @@ class ListMemoriesTool(BaseTool[ListMemoriesArgs]):
     name = "list_memories"
     description = (
         "List every memory file the operator has placed under data/memories/. "
-        "Returns one path per line with its size in bytes. Files are read-only "
-        "from your perspective; the operator curates them out of band."
+        "Returns one path per line with its size in bytes. To find files by "
+        "their CONTENTS rather than their names, use search_memory instead. "
+        "Files are read-only from your perspective; the operator curates them "
+        "out of band."
     )
     args_model = ListMemoriesArgs
 
@@ -46,6 +48,50 @@ class ListMemoriesTool(BaseTool[ListMemoriesArgs]):
         return ToolResult(
             content="\n".join(lines),
             data={"files": [f.relative_path for f in files]},
+        )
+
+
+class SearchMemoryArgs(BaseModel):
+    query: str = Field(
+        description=(
+            "Keywords to find inside memory file contents (case-insensitive). "
+            "Use a few keywords, not a full sentence — e.g. 'acme deadline', "
+            "not 'when is the Acme deadline?'. Lines matching more of your "
+            "keywords rank higher."
+        ),
+    )
+    max_results: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Maximum number of matching lines to return.",
+    )
+
+
+class SearchMemoryTool(BaseTool[SearchMemoryArgs]):
+    name = "search_memory"
+    description = (
+        "Search the TEXT INSIDE memory files (not just their names) for "
+        "keywords. Case-insensitive. Returns matching lines as "
+        "'path:line: text', best matches first. Faster than list_memories "
+        "plus reading every file: search first, then read_memory the most "
+        "relevant file for full context."
+    )
+    args_model = SearchMemoryArgs
+
+    async def run(self, args: SearchMemoryArgs) -> ToolResult:
+        store = self.ctx.memory_store
+        if store is None:
+            return ToolResult(content="memory store unavailable", is_error=True)
+        hits = await asyncio.to_thread(
+            store.search, args.query, max_results=args.max_results
+        )
+        if not hits:
+            return ToolResult(content="(no matches)")
+        lines = [f"{h.relative_path}:{h.line_number}: {h.line}" for h in hits]
+        return ToolResult(
+            content="\n".join(lines),
+            data={"hits": [h.relative_path for h in hits]},
         )
 
 
