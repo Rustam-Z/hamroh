@@ -115,6 +115,7 @@ into a `Config` field.
 | `PYCLAUDIR_ATTACHMENT_MAX_BYTES` | no | `20000000` | largest inbound photo/document (20 MB) the bot will download and read; bigger files are refused with a marker. |
 | `PYCLAUDIR_BROWSER_HEADLESS` | no | `true` | run the automation Chromium headless. Set `false` only for local debugging (visible window). |
 | `PYCLAUDIR_STATUS_INTERVAL_SECONDS` | no | `300` | while a turn is still running, ping the waiting chats with a progress note this often (seconds) so a long task isn't silent. |
+| `PYCLAUDIR_PROGRESS_DRAFT_ENABLED` | no | `false` | show a live "working…" draft in DMs while a long turn runs (Telegram's `sendMessageDraft`), updating with elapsed time + current step, then replaced by the real reply. Private chats only — groups keep the typing indicator. |
 | `PYCLAUDIR_SELF_REFLECTION_ENABLED` | no | `false` | master switch for the daily self-reflection loop (off by default). When off, the auto-seeded reflection reminder is removed at boot. |
 | `PYCLAUDIR_SELF_REFLECTION_CRON` | no | `0 0 * * *` | when the daily self-reflection task runs (UTC cron). Default: midnight UTC. Only used when the loop is enabled. |
 | `PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS` | no | `300` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |

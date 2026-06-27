@@ -19,7 +19,7 @@ dependencies = [
     "pyyaml>=6.0",
     "pypdf>=5.0",
     "playwright>=1.40",
-    "python-telegram-bot[rate-limiter]>=21.6,<22",
+    "python-telegram-bot[rate-limiter]>=22.8,<23",
 ]
 
 [project.optional-dependencies]

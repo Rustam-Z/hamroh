@@ -21,6 +21,7 @@ from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
 from tests.e2e.support.config import (
+    DRAFT_SUT_ENV,
     STATUS_SUT_ENV,
     E2EConfig,
     group_ids,
@@ -133,6 +134,34 @@ def status_sut(
         e2e_config,
         tmp_path_factory.mktemp("status-data"),
         extra_env=STATUS_SUT_ENV,
+    )
+    try:
+        yield sut
+    finally:
+        stop_sut(sut)
+        revived = launch_sut(e2e_config, pyclaudir_sut.data_dir)
+        pyclaudir_sut.proc = revived.proc
+        pyclaudir_sut._log = revived._log
+
+
+@pytest.fixture(scope="module")
+def draft_sut(
+    pyclaudir_sut: Sut,
+    e2e_config: E2EConfig,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Sut]:
+    """A bot with the live progress draft (``sendMessageDraft``) turned on.
+
+    The toggle is read from the environment at startup, so it needs its own
+    process — same stop-launch-revive swap dance as ``status_sut`` (only one
+    process may poll the bot token). Every other test keeps the draft off and
+    sees the plain typing indicator.
+    """
+    stop_sut(pyclaudir_sut)
+    sut = launch_sut(
+        e2e_config,
+        tmp_path_factory.mktemp("draft-data"),
+        extra_env=DRAFT_SUT_ENV,
     )
     try:
         yield sut

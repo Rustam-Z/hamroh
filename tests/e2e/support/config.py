@@ -51,6 +51,11 @@ STATUS_SUT_ENV: dict[str, str] = {
     "PYCLAUDIR_STATUS_INTERVAL_SECONDS": str(int(STATUS_SUT_INTERVAL_S))
 }
 
+#: The env override the ``draft_sut`` fixture applies — and nothing else does.
+#: Turns on the live "working…" progress draft (``sendMessageDraft``) so the
+#: draft-mode regression test can confirm DM replies still land unaffected.
+DRAFT_SUT_ENV: dict[str, str] = {"PYCLAUDIR_PROGRESS_DRAFT_ENABLED": "true"}
+
 #: Overrides applied over the operator's ``.env`` for the SUT (see ``child_env``).
 #: ``PYCLAUDIR_EFFORT="low"`` is pinned so turn latency stays fast and consistent
 #: regardless of the operator's setting — the per-test latency gates flake when a

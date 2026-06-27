@@ -140,6 +140,12 @@ class Config:
     #: the owner can reply "stop" to halt it; otherwise it keeps going.
     #: Env var: ``PYCLAUDIR_STATUS_INTERVAL_SECONDS`` (default 300, i.e. 5 min).
     status_interval_seconds: float
+    #: When on, a long turn shows a live "working…" draft (Telegram's
+    #: ``sendMessageDraft``) in DMs instead of the plain typing indicator, so the
+    #: user sees progress on a slow job. Private chats only — groups keep the
+    #: typing dots (the API rejects drafts there). Off by default.
+    #: Env var: ``PYCLAUDIR_PROGRESS_DRAFT_ENABLED`` (default False).
+    progress_draft_enabled: bool
 
     # ----- Settings for spotting a stuck Claude process -----
     # A separate watcher checks if Claude has gone silent in the middle
@@ -243,6 +249,7 @@ class Config:
                 "PYCLAUDIR_TOOL_ERROR_WINDOW_SECONDS", 30.0
             ),
             status_interval_seconds=_float("PYCLAUDIR_STATUS_INTERVAL_SECONDS", 300.0),
+            progress_draft_enabled=_bool("PYCLAUDIR_PROGRESS_DRAFT_ENABLED", False),
             liveness_timeout_seconds=_float(
                 "PYCLAUDIR_LIVENESS_TIMEOUT_SECONDS", 300.0
             ),
@@ -284,6 +291,7 @@ class Config:
             tool_error_max_count=3,
             tool_error_window_seconds=30.0,
             status_interval_seconds=300.0,
+            progress_draft_enabled=False,
             liveness_timeout_seconds=300.0,
             liveness_poll_seconds=30.0,
             crash_backoff_base=2.0,

@@ -548,27 +548,60 @@ def _build_dispatcher_and_engine(
         EngineOptions(
             debounce_ms=app.config.debounce_ms,
             db=app.db,
-            typing_action=_make_typing_action(dispatcher),
+            typing_action=_make_typing_action(dispatcher, app),
             error_notify=_make_error_notify(dispatcher),
         ),
     )
     return dispatcher, engine
 
 
-def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
-    """Wire the engine's typing indicator to ``bot.send_chat_action``."""
+#: Stable, non-zero draft identifier reused for every progress draft. Telegram
+#: animates updates that share an id, which is exactly what we want — one live
+#: draft per chat that morphs as the turn progresses.
+PROGRESS_DRAFT_ID = 1
+
+
+def _progress_draft_text(elapsed: float, last_action: str | None) -> str:
+    """One-line progress shown in the live DM draft while a turn runs."""
+    when = f"~{int(elapsed)}s" if elapsed < 60 else f"~{int(elapsed // 60)} min"
+    step = f", last step: {last_action}" if last_action else ""
+    return f"✍️ Working on it… ({when}{step})"
+
+
+async def _send_progress_draft(
+    dispatcher: TelegramDispatcher, app: _App, chat_id: int
+) -> None:
+    """Refresh the live "working…" draft for one DM (best-effort)."""
+    worker = app.worker
+    started = worker._turn_started_at if worker is not None else None
+    elapsed = (time.monotonic() - started) if started else 0.0
+    last_action = worker._last_tool_action if worker is not None else None
+    text = _progress_draft_text(elapsed, last_action)
+    try:
+        await dispatcher.bot.send_message_draft(
+            chat_id=chat_id, draft_id=PROGRESS_DRAFT_ID, text=text
+        )
+    except Exception as exc:
+        log.warning("send_message_draft failed for chat %s: %s", chat_id, exc)
+
+
+def _make_typing_action(dispatcher: TelegramDispatcher, app: _App) -> TypingAction:
+    """Wire the engine's per-chat liveness signal.
+
+    Normally fires ``bot.send_chat_action`` ("typing…"). When the progress-draft
+    feature is on *and* the chat is a DM, fires ``bot.send_message_draft`` instead
+    so a long job shows a live "working…" draft. Telegram only allows drafts in
+    private chats, whose ids are positive (groups/supergroups are negative), so
+    the sign of ``chat_id`` picks the right path without an extra API call.
+    """
 
     async def _typing(chat_id: int) -> None:
-        t0 = time.monotonic()
+        if app.config.progress_draft_enabled and chat_id > 0:
+            await _send_progress_draft(dispatcher, app, chat_id)
+            return
         try:
             ok = await dispatcher.bot.send_chat_action(chat_id=chat_id, action="typing")
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
-            log.debug(
-                "send_chat_action chat=%s returned=%r elapsed=%dms",
-                chat_id,
-                ok,
-                elapsed_ms,
-            )
+            log.debug("send_chat_action chat=%s returned=%r", chat_id, ok)
         except Exception as exc:
             log.warning("send_chat_action failed for chat %s: %s", chat_id, exc)
 
