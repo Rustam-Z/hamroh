@@ -58,11 +58,15 @@ class StatusObservation:
     heartbeat (``None`` if none arrived); ``completed`` says the turn's final
     answer landed (so the long turn won't bleed into the next test); ``chunks``
     are every message's text, in arrival order, for failure diagnostics.
+
+    ``first_ping_replies_to_request`` is True when that first heartbeat was sent
+    as a reply to the request that kicked the turn (the threading promise).
     """
 
     first_ping_s: float | None
     completed: bool
     chunks: tuple[str, ...]
+    first_ping_replies_to_request: bool
 
 
 @dataclass(frozen=True)

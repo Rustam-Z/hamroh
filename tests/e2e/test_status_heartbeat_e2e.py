@@ -105,6 +105,12 @@ async def _assert_reports_progress(
     )
     # ...and promptly once due.
     assert_within(obs.first_ping_s, MAX_STATUS_PING_S, "status heartbeat")
+    # Assert: the heartbeat threads under the request that kicked the turn,
+    # rather than floating free in the chat.
+    assert obs.first_ping_replies_to_request, (
+        "the '⏳ Still working' heartbeat must reply to the request that kicked "
+        "the turn, but it was sent as a standalone message"
+    )
 
 
 @pytest.mark.slow

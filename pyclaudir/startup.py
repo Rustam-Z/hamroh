@@ -523,7 +523,11 @@ def _make_on_cc_status(app: _App):
         )
         for chat_id in set(engine._turn.active_chats):
             try:
-                await dispatcher.bot.send_message(chat_id=chat_id, text=text)
+                await dispatcher.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_to_message_id=engine._turn.reply_targets.get(chat_id),
+                )
             except Exception:
                 log.warning("status notify to %s failed", chat_id, exc_info=True)
 

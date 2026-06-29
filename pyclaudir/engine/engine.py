@@ -75,6 +75,10 @@ class TurnState:
     #: reminders (``message_id == 0``) are excluded so reminder-only
     #: turns produce no turn-start typing indicator.
     active_chats: set[int] = field(default_factory=set)
+    #: Per active chat, the most recent human ``message_id`` in the batch.
+    #: The status heartbeat replies to this so its "still working" updates
+    #: thread under the message that kicked the turn instead of floating free.
+    reply_targets: dict[int, int] = field(default_factory=dict)
     #: ``time.monotonic()`` when the current turn started in ``_kick``.
     #: Read by :attr:`Engine.turn_elapsed_s` for the /health readout.
     started_monotonic: float = 0.0
@@ -281,6 +285,9 @@ class Engine(TypingIndicatorMixin):
         # the turn-start typing indicator should be silent for
         # reminder-only turns.
         self._turn.active_chats = {m.chat_id for m in batch if m.message_id > 0}
+        self._turn.reply_targets = {
+            m.chat_id: m.message_id for m in batch if m.message_id > 0
+        }
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []
         restore = self._restore_context

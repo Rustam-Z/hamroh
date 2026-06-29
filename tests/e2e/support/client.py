@@ -133,14 +133,16 @@ async def send_and_watch_status(
     chunks: list[Message] = []
     done = asyncio.Event()
     first_ping_at = 0.0
+    first_ping_reply_to: int | None = None
     completed = False
 
     async def _collect(event: events.NewMessage.Event) -> None:
-        nonlocal first_ping_at, completed
+        nonlocal first_ping_at, first_ping_reply_to, completed
         msg = event.message
         chunks.append(msg)
         if not first_ping_at and is_status_ping(msg.raw_text or ""):
             first_ping_at = time.perf_counter()
+            first_ping_reply_to = msg.reply_to_msg_id
         if until_final(msg):
             completed = True
             done.set()
@@ -151,7 +153,7 @@ async def send_and_watch_status(
     client.add_event_handler(_collect, evt)
     try:
         sent_at = time.perf_counter()
-        await client.send_message(convo.chat, _format_outbound(convo, text))
+        sent = await client.send_message(convo.chat, _format_outbound(convo, text))
         try:
             await asyncio.wait_for(done.wait(), timeout)
         except asyncio.TimeoutError:
@@ -163,6 +165,7 @@ async def send_and_watch_status(
         first_ping_s=(first_ping_at - sent_at) if first_ping_at else None,
         completed=completed,
         chunks=tuple(m.raw_text or "" for m in chunks),
+        first_ping_replies_to_request=first_ping_reply_to == sent.id,
     )
 
 
