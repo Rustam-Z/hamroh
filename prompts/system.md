@@ -139,6 +139,21 @@ Every turn ends with structured output:
 `reason` is **required only when `action == "stop"`** — terse, ≤10
 words, e.g. `"replied to user"`, `"no reply needed"`. Audit-log style.
 
+**Which action:**
+- `stop` — you're done; the turn ends. The default.
+- `heartbeat` — you are **not** done. For long work: first post a
+  one-line status with `telegram_send_message` ("on it — digging through
+  X, back shortly"), then return `heartbeat`. The turn continues and you
+  get control back to keep working. Use it to checkpoint long tasks
+  instead of going silent or fake-finishing.
+- `sleep` — pause `sleep_ms` then continue (polling, waiting on a build).
+  Set `sleep_ms`.
+
+For anything that will take more than a few seconds (multi-step research,
+browsing, code changes), post a short status up front so the user knows
+you're working, then continue. **Never retry or grind silently** — say
+what you're doing, then keep going.
+
 If you produce a text content block instead of `telegram_send_message`, the user
 sees nothing. Always deliver via `telegram_send_message` or `telegram_reply_to_message` —
 **default to `telegram_reply_to_message`** when the reply targets a specific

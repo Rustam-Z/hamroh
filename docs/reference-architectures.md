@@ -778,6 +778,23 @@ turn would burn tokens on noise without buying any safety. The
 reason iff `action == "stop"`; sleep/heartbeat may omit the field
 entirely.
 
+**What `heartbeat` actually does (non-terminal).** When a turn ends
+with `action == "heartbeat"` the engine does *not* finish it. The model
+is expected to post a one-line status via `telegram_send_message`
+first, then return `heartbeat`; the engine re-engages the same CC
+session (`Engine._continue_after_heartbeat`) so the model picks its own
+task back up — surfacing work status instead of grinding silently
+(#67). Messages that arrived in the window since the result event are
+folded into the continuation; otherwise a minimal nudge resumes the
+task. Success callbacks and the `processed` commit stay deferred to the
+final `stop`, so a crash mid-continuation replays the work. A
+consecutive-heartbeat cap (`MAX_HEARTBEAT_CONTINUATIONS`) finalizes the
+turn if a model loops on `heartbeat`. This is distinct from the
+worker-side *status heartbeat timer* (`_status_heartbeat`), which pings
+"⏳ Still working" on a wall-clock interval even when the agent is
+wedged; the first ping fires early (`FIRST_STATUS_DELAY_SECONDS`) and
+later pings settle into `status_interval`.
+
 **Why the schema is flat (no `if`/`then`/`oneOf`).** The first
 implementation expressed the conditional in the JSON schema itself
 using `allOf` + `if`/`then`. Anthropic's API rejected it at runtime:

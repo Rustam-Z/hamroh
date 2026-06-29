@@ -47,6 +47,21 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger("hamroh.engine")
 
+#: Cap on consecutive non-terminal ``heartbeat`` continuations in one
+#: logical turn. Past this we finalize the turn like a clean stop, so a
+#: model that always returns ``heartbeat`` can't spin the control loop
+#: forever.
+MAX_HEARTBEAT_CONTINUATIONS = 10
+
+#: Nudge sent to resume CC after a ``heartbeat`` when no new user messages
+#: are waiting, so the model picks its own task back up. The model has
+#: already posted its status via ``telegram_send_message``; this only
+#: re-engages the session.
+HEARTBEAT_CONTINUE_NUDGE = (
+    "<system>Continue the task you just reported on. "
+    'Return action "stop" only once it is actually done.</system>'
+)
+
 
 def _trim_snippet(text: str, limit: int = 400) -> str:
     """Trim diagnostic text to fit comfortably in a Telegram message."""
@@ -91,6 +106,11 @@ class TurnState:
     #: digest. One-shot poison guard: if such a turn fails with an
     #: ``api_error``, the next reset must NOT rebuild the digest.
     had_restored_context: bool = False
+    #: How many times this logical turn has continued via a non-terminal
+    #: ``heartbeat`` action. Reset on each ``_kick``; capped in
+    #: ``_handle_turn_result`` so a model that always returns ``heartbeat``
+    #: can't spin the control loop forever.
+    heartbeat_count: int = 0
 
 
 @dataclass
@@ -290,6 +310,7 @@ class Engine(TypingIndicatorMixin):
         }
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []
+        self._turn.heartbeat_count = 0
         restore = self._restore_context
         self._restore_context = None
         self._turn.had_restored_context = restore is not None
@@ -646,20 +667,54 @@ class Engine(TypingIndicatorMixin):
             result.dropped_text,
             len(result.text_blocks),
         )
-
-        # Best-effort classification: if stderr tells us the failure mode
-        # (rate-limit, auth, quota…), surface a targeted message. This is
-        # orthogonal to dropped_text handling — a turn can be both
-        # rate-limited AND dropped_text, but we only notify once per turn.
-        stderr_classification = classify_cc_failure(result.stderr_tail)
-        if stderr_classification is not None:
-            await self._notify_error_to_chats(stderr_classification.user_message)
+        await self._notify_stderr_failure(result)
 
         if result.dropped_text:
             await self._handle_dropped_text(result)
             return
 
+        if action == "heartbeat" and (
+            self._turn.heartbeat_count < MAX_HEARTBEAT_CONTINUATIONS
+        ):
+            await self._continue_after_heartbeat()
+            return
+
         await self._finish_clean_turn(result, action)
+
+    async def _notify_stderr_failure(self, result: "TurnResult") -> None:
+        """Surface a targeted message if stderr names the failure mode
+        (rate-limit, auth, quota…). Orthogonal to dropped-text handling — a
+        turn can be both rate-limited AND dropped_text, but we notify once."""
+        classification = classify_cc_failure(result.stderr_tail)
+        if classification is not None:
+            await self._notify_error_to_chats(classification.user_message)
+
+    async def _continue_after_heartbeat(self) -> None:
+        """Resume CC after a non-terminal ``heartbeat`` — keep the turn alive.
+
+        The model posted a status update and signalled it isn't done, so
+        rather than ending the turn we re-engage the same session to keep
+        it working. Messages that landed in the brief window since the
+        result event are folded into the continuation; otherwise a minimal
+        nudge resumes the task. The original batch's success callbacks and
+        ``processed`` commit stay deferred to the final clean stop, so a
+        crash mid-continuation still replays the work.
+        """
+        self._turn.heartbeat_count += 1
+        async with self._lock:
+            batch = self._pending
+            self._pending = []
+            self._turn_callbacks.extend(self._pending_callbacks)
+            self._pending_callbacks = []
+        if batch:
+            xml = await format_messages_with_context(batch, self._db)
+        else:
+            xml = HEARTBEAT_CONTINUE_NUDGE
+        self._is_processing.set()
+        await self._start_typing(set(self._turn.active_chats))
+        await self._worker.send(xml)
+        if batch:
+            await self._mark_consumed(batch)
 
     async def _finish_clean_turn(
         self, result: "TurnResult", action: str | None
