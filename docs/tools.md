@@ -65,16 +65,28 @@ tools in `builtin_tools_disabled`.
 | `browser_screenshot` | Screenshot the page (or one element) to a PNG under `data/renders/`; pair with `telegram_send_photo`. |
 | `browser_download` | Download the original file at a URL (typically an image) into `data/renders/` and return its path; pair with `telegram_send_photo`. Get the URL first with `browser_get_attribute`. |
 
-### Memory (`data/memories/`)
+### Memory (`data/memories/` + committed `memories/`)
 
 | Tool | What it does |
 |---|---|
-| `memory_list` | List existing memory files, each with its frontmatter description (progressive disclosure, like `skill_list`). Legacy files without frontmatter show just path + size. |
-| `memory_search` | Search the text inside memory files for keywords; returns matching lines, best matches first. |
-| `memory_read` | Read a memory file by relative path. |
-| `memory_write` | Create or overwrite a memory file. Content **must** begin with name/description frontmatter (the template); writes without it are rejected. Read-before-write rail enforced; 64 KiB cap. |
-| `memory_append` | Append text to a memory file's body **and** refresh its frontmatter description (so `memory_list` stays current). Name is preserved or derived from the filename; the first append migrates a legacy file onto the template. |
-| `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to memories root. Optional caption + reply-to. |
+| `memory_list` | List existing memory files, each with its frontmatter description (progressive disclosure, like `skill_list`). Legacy files without frontmatter show just path + size. Spans both memory roots. |
+| `memory_search` | Search the text inside memory files for keywords; returns matching lines, best matches first. Spans both roots. |
+| `memory_read` | Read a memory file by relative path. Resolves across both roots (runtime first). |
+| `memory_write` | Create or overwrite a memory file. Content **must** begin with name/description frontmatter (the template); writes without it are rejected. Read-before-write rail enforced; 64 KiB cap. **Writes only ever target the runtime root.** |
+| `memory_append` | Append text to a memory file's body **and** refresh its frontmatter description (so `memory_list` stays current). Name is preserved or derived from the filename; the first append migrates a legacy file onto the template. Runtime root only. |
+| `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to the memory roots (runtime + committed). Optional caption + reply-to. |
+
+**Two roots.** The bot reads memory from two places, overlaid:
+
+- **Runtime** — `data/memories/` — gitignored, writable, lives on the Docker
+  volume. The bot's day-to-day working memory.
+- **Committed** — `memories/` at the repo root — git-tracked and **read-only
+  to the bot**. The operator curates and commits it by hand, so durable
+  memories survive a volume loss. See [`memories/README.md`](../memories/README.md).
+
+Reads, searches and listings span both; if the same relative path exists in
+both, the runtime copy wins. Writes and appends only ever touch the runtime
+root — the bot never mutates committed files.
 
 Memory files follow the same frontmatter protocol as skills — a `---` block
 with `name` and `description` — so the agent can scan `memory_list` and pick

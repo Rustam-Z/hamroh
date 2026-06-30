@@ -317,6 +317,25 @@ You can also seed memory yourself by putting markdown files into
 `data/memories/` while the bot is running. It will see them on the next
 `memory_list` call.
 
+### Two memory roots: runtime vs committed
+
+The bot reads memory from two places at once:
+
+- **Runtime — `data/memories/`** — gitignored, writable by the bot, lives on
+  the Docker volume. This is its day-to-day working memory, and the only place
+  `memory_write` / `memory_append` ever write.
+- **Committed — `memories/`** (at the repo root) — git-tracked and **read-only
+  to the bot**. You curate it by hand and commit it with `git`, so important
+  memories live in the repo with full history and survive a lost volume,
+  server rebuild, or move to a new machine.
+
+`memory_list`, `memory_search`, and `memory_read` span both roots. If the same
+relative path exists in both, the runtime copy wins (it's the live one).
+Nothing here is loaded into the system prompt — memories are read on demand
+either way. To add a committed memory, drop a markdown file under `memories/`
+(with `name`/`description` frontmatter), then `git add memories/ && git commit`.
+See [`memories/README.md`](../memories/README.md) for the full how-to.
+
 ### Learning — `self/learnings.md`
 
 Mistakes, corrections, and patterns the bot wants to carry forward live
@@ -1010,10 +1029,12 @@ hamroh/
 │   └── render-style/           # reference-mode: render_html style guide
 │       ├── SKILL.md            #     tokens + 3 HTML skeletons
 │       └── README.md
+├── memories/                   # committed memories (git-tracked, read-only to the bot)
+│   └── README.md               #   how to add committed memory files
 ├── data/                       # gitignored
 │   ├── hamroh.db            # SQLite (messages, users, tool_calls, ...)
 │   ├── session_id              # CC session id for --resume
-│   ├── memories/               # the agent's working memory
+│   ├── memories/               # the agent's runtime working memory (writable)
 │   ├── attachments/            # inbound photos/docs the dispatcher saves
 │   ├── renders/                # outbound PNGs from render_html
 │   ├── prompt_backups/         # auto-backups before instruction_append writes
