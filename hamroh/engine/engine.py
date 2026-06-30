@@ -568,11 +568,13 @@ class Engine(TypingIndicatorMixin):
           CC never finished the turn, so ``on_failure`` fires — reminders
           revert to ``pending`` and re-fire into the fresh session on the
           next loop tick (#22).
-        - ``tool-error-limit``: don't notify here — ``_on_cc_crash``
-          tells the user when the subprocess exits, so ``active_chats``
-          stays intact for that callback. CC saw the messages before
-          the abort, so callbacks fire — reminders advance and don't
-          loop on a poisoned state.
+        - ``tool-error-limit``: an *intentional* abort, so the worker's
+          supervisor respawns without going through crash recovery —
+          ``_on_cc_crash`` never fires. We must notify the waiting chats
+          ourselves, flushing any partial text the model wrote before the
+          breaker killed the turn. CC saw the messages before the abort, so
+          success callbacks fire — reminders advance and don't loop on a
+          poisoned state.
         Neither path kicks ``_pending`` — the subprocess is mid-respawn.
         """
         if result.aborted_reason == "session-reset":
@@ -581,6 +583,13 @@ class Engine(TypingIndicatorMixin):
             self._turn.active_chats.clear()
             return
         log.error("turn aborted: %s", result.aborted_reason)
+        if result.text_blocks:
+            await self._deliver_text_to_chats("\n\n".join(result.text_blocks))
+        await self._notify_error_to_chats(
+            "⚠️ I hit an internal error and had to restart mid-task. "
+            "Please resend your last message."
+        )
+        self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
 
     async def _handle_api_error_turn(self, result: "TurnResult") -> None:

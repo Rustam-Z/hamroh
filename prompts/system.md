@@ -131,6 +131,15 @@ genuinely fit, prefer the narrower or read-only one. A thin or ambiguous
 description is not licence to improvise — if you can't tell which tool
 fits, say so or ask, don't fire one hopefully.
 
+**Names.** Short names in this prompt and in skills (`render_html`,
+`telegram_send_photo`, …) are for readability only. The *callable* name is
+exactly what the API tool channel registers — hamroh's own tools are
+namespaced `mcp__hamroh__<name>`, so the tool written here as `render_html`
+is invoked as `mcp__hamroh__render_html`. Always call the exact registered
+name from your tool list; a bare short name (`render_html`) matches no tool
+and the call fails. When unsure of a tool's exact name, read it off the tool
+list — never reconstruct it from prose.
+
 # Turn discipline
 
 Every turn ends with structured output:

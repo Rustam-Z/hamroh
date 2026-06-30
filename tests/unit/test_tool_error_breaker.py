@@ -112,6 +112,28 @@ async def test_count_branch_trips_on_third_error(worker: CcWorker) -> None:
 
 
 @pytest.mark.asyncio
+async def test_sentinel_carries_partial_text_for_flush(worker: CcWorker) -> None:
+    """Given the model wrote a partial reply before the breaker tripped,
+    when the breaker aborts the turn, then the sentinel carries that text
+    so the engine can flush it instead of dropping a half-finished reply."""
+    # Given a turn that produced a text block before erroring out.
+    worker._current_turn = TurnResult(text_blocks=["Half-written answer"])
+    _attach_terminate_event(worker)
+
+    # When three tool errors trip the breaker.
+    worker._handle_event(_tool_error_event("toolu_1"))
+    worker._handle_event(_tool_error_event("toolu_2"))
+    worker._handle_event(_tool_error_event("toolu_3"))
+
+    # Then the sentinel carries the partial text for the engine to deliver.
+    result = worker._result_queue.get_nowait()
+    assert result.aborted_reason == "tool-error-limit"
+    assert result.text_blocks == ["Half-written answer"], (
+        "engine needs the partial text to flush it instead of going silent"
+    )
+
+
+@pytest.mark.asyncio
 async def test_watchdog_fires_alone_with_single_error(
     fast_window_worker: CcWorker,
 ) -> None:

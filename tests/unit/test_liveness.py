@@ -95,6 +95,48 @@ async def test_liveness_kills_on_wedged_turn(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_liveness_wedge_queues_sentinel_with_partial_text(
+    tmp_path: Path,
+) -> None:
+    """Given a turn wedged past the timeout after writing partial text,
+    when the watchdog kills it, then it queues an abort sentinel carrying
+    that text — so the engine unblocks and notifies instead of staying
+    silent until the next message (issue #75)."""
+    # Given a wedged mid-turn subprocess that produced partial text.
+    worker = CcWorker(_spec(tmp_path), Config.for_test(tmp_path))
+    worker._proc = MagicMock()
+    worker._proc.returncode = None
+    worker._current_turn = TurnResult(text_blocks=["Half-written answer"])
+    worker._last_event_at = time.monotonic() - 9999
+    worker.heartbeat._last = time.monotonic() - 9999
+    worker._liveness_poll = 0.05
+    worker._liveness_timeout = 0.01
+
+    terminate_called = asyncio.Event()
+
+    async def fake_terminate() -> None:
+        terminate_called.set()
+
+    worker._terminate_proc = fake_terminate  # type: ignore[assignment]
+
+    # When the watchdog fires.
+    task = asyncio.create_task(worker._liveness_loop())
+    await asyncio.wait_for(terminate_called.wait(), timeout=1.0)
+    worker._stop_supervisor.set()
+    await task
+
+    # Then a liveness-wedge sentinel reaches the engine, carrying the text.
+    result = worker._result_queue.get_nowait()
+    assert result.aborted_reason == "liveness-wedge", (
+        "the engine must learn the turn was aborted, not stay blocked"
+    )
+    assert result.text_blocks == ["Half-written answer"], (
+        "partial text must be flushed, not dropped on a wedge"
+    )
+    assert worker._current_turn is None, "per-turn state is torn down on abort"
+
+
+@pytest.mark.asyncio
 async def test_liveness_resets_on_activity(tmp_path: Path) -> None:
     """Mid-turn but with recent activity → don't kill.
 

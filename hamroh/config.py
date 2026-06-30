@@ -132,7 +132,7 @@ class Config:
     #: Time-based version of the rule above. If errors keep coming in
     #: for this many seconds after the first one, the bot stops the
     #: turn — even if the count is still under the limit.
-    #: Env var: ``HAMROH_TOOL_ERROR_WINDOW_SECONDS`` (default 30).
+    #: Env var: ``HAMROH_TOOL_ERROR_WINDOW_SECONDS`` (default 60, i.e. 1 min).
     tool_error_window_seconds: float
     #: How often a still-running turn reports progress. Every this-many seconds
     #: the bot posts a status update ("still working, N min, last step: …") to
@@ -245,7 +245,7 @@ class Config:
             rate_limit_per_min=_int("HAMROH_RATE_LIMIT_PER_MIN", 20),
             attachment_max_bytes=_int("HAMROH_ATTACHMENT_MAX_BYTES", 20_000_000),
             tool_error_max_count=_int("HAMROH_TOOL_ERROR_MAX_COUNT", 3),
-            tool_error_window_seconds=_float("HAMROH_TOOL_ERROR_WINDOW_SECONDS", 30.0),
+            tool_error_window_seconds=_float("HAMROH_TOOL_ERROR_WINDOW_SECONDS", 60.0),
             status_interval_seconds=_float("HAMROH_STATUS_INTERVAL_SECONDS", 300.0),
             progress_draft_enabled=_bool("HAMROH_PROGRESS_DRAFT_ENABLED", False),
             liveness_timeout_seconds=_float("HAMROH_LIVENESS_TIMEOUT_SECONDS", 300.0),
@@ -285,7 +285,7 @@ class Config:
             rate_limit_per_min=20,
             attachment_max_bytes=20_000_000,
             tool_error_max_count=3,
-            tool_error_window_seconds=30.0,
+            tool_error_window_seconds=60.0,
             status_interval_seconds=300.0,
             progress_draft_enabled=False,
             liveness_timeout_seconds=300.0,

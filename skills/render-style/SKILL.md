@@ -10,6 +10,10 @@ compatibility: Requires the render_html and telegram_send_photo tools.
 Reference skill (no `<reminder>` envelope required). Read it before
 calling `render_html` and adapt the closest skeleton — don't redesign.
 
+> **Tool names:** call these by their registered names —
+> `mcp__hamroh__render_html` to render and `mcp__hamroh__telegram_send_photo`
+> to deliver. The bare `render_html` is prose shorthand and matches no tool.
+
 There are three layout modes; pick the one that fits the content:
 
 - **Dashboard** — left-aligned title, stat tiles, bar rows, verdict.

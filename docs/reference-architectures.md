@@ -705,7 +705,7 @@ this change helps the fallback password case.
 
 **Files:** `hamroh/cc_worker.py` (`_record_tool_error`,
 `TurnResult.aborted_reason`). Knobs: `Config.tool_error_max_count`
-(3), `Config.tool_error_window_seconds` (30),
+(3), `Config.tool_error_window_seconds` (60),
 `Config.liveness_timeout_seconds` (300) — all flow through
 `hamroh.config.Config` from env vars of the same name (UPPERCASE,
 `HAMROH_` prefix). No other module reads these env vars directly;

@@ -325,6 +325,7 @@ class CcWorker(CcEventHandlerMixin):
                 self._liveness_timeout,
             )
             self._supervisor_abort_reason = "liveness-wedge"
+            self._abort_turn_locally("liveness-wedge")
             await self._terminate_proc()
 
     def _stderr_indicates_stale_session(self) -> bool:
@@ -637,7 +638,6 @@ class CcWorker(CcEventHandlerMixin):
             and not self._tool_error_abort_task.done()
         ):
             return  # already aborting
-        self._cancel_tool_error_watchdog()
 
         elapsed = (
             time.monotonic() - self._turn_first_tool_error_at
@@ -655,18 +655,31 @@ class CcWorker(CcEventHandlerMixin):
             self._tool_error_window,
         )
         self._supervisor_abort_reason = "tool-error-limit"
-        # Unblock the engine's ``wait_for_result`` immediately with a
-        # sentinel TurnResult — the supervisor's respawn path can
-        # take seconds, we don't want the user waiting on it.
-        sentinel = TurnResult(aborted_reason="tool-error-limit")
-        sentinel.stderr_tail = list(self._stderr_tail)
-        self._result_queue.put_nowait(sentinel)
-        self._current_turn = None
-        self._awaiting_turn_init = False
+        self._abort_turn_locally("tool-error-limit")
         self._tool_error_abort_task = asyncio.create_task(
             self._terminate_proc(),
             name="cc-tool-error-abort",
         )
+
+    def _abort_turn_locally(self, reason: str) -> None:
+        """Tear down per-turn state and hand the engine an abort sentinel.
+
+        Both intentional terminations — the tool-error breaker and the
+        liveness watchdog — skip crash recovery (and thus ``_on_crash``), so
+        this sentinel is the *only* signal the engine gets; without it the
+        engine blocks in ``wait_for_result`` and the user sees silence.
+        Carries any text the model already wrote so the engine can flush it
+        instead of dropping a half-finished reply.
+        """
+        self._cancel_tool_error_watchdog()
+        self._cancel_status_heartbeat()
+        sentinel = TurnResult(aborted_reason=reason)
+        sentinel.stderr_tail = list(self._stderr_tail)
+        if self._current_turn is not None:
+            sentinel.text_blocks = list(self._current_turn.text_blocks)
+        self._result_queue.put_nowait(sentinel)
+        self._current_turn = None
+        self._awaiting_turn_init = False
 
     def _arm_status_heartbeat(self) -> None:
         """(Re)start the per-turn status heartbeat at the start of a turn."""

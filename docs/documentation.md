@@ -121,7 +121,7 @@ into a `Config` field.
 | `HAMROH_LIVENESS_TIMEOUT_SECONDS` | no | `300` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |
 | `HAMROH_LIVENESS_POLL_SECONDS` | no | `30` | how often the watcher wakes up to check the timeout above. |
 | `HAMROH_TOOL_ERROR_MAX_COUNT` | no | `3` | how many tool errors trigger a stop. Used in two places: (a) failed tool calls in one turn — too many ends the turn; (b) turns where Claude wrote text but didn't call `telegram_send_message` — too many in a row makes the bot show the underlying error to the user. Stops the bot from looping forever on a broken tool or a broken model setup. |
-| `HAMROH_TOOL_ERROR_WINDOW_SECONDS` | no | `30` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
+| `HAMROH_TOOL_ERROR_WINDOW_SECONDS` | no | `60` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
 | `HAMROH_CRASH_BACKOFF_BASE` | no | `2` | seconds to wait before the first restart after Claude crashes. Doubles after each crash, up to `CRASH_BACKOFF_CAP`. |
 | `HAMROH_CRASH_BACKOFF_CAP` | no | `64` | maximum wait between restarts. Once the wait reaches this, it stops growing. |
 | `HAMROH_CRASH_LIMIT` | no | `10` | how many crashes within `CRASH_WINDOW_SECONDS` count as "too many". When reached, the bot tells the owner and active chats, then exits — and something outside (systemd, docker) is expected to restart the whole bot. |
@@ -838,7 +838,7 @@ is enforced by code, not by hope, and tested in
   `is_error=true` increments a per-turn counter in `CcWorker`; when
   the counter hits `HAMROH_TOOL_ERROR_MAX_COUNT` (default 3) or
   the first-error window exceeds
-  `HAMROH_TOOL_ERROR_WINDOW_SECONDS` (default 30s), the worker
+  `HAMROH_TOOL_ERROR_WINDOW_SECONDS` (default 60s), the worker
   puts a sentinel `TurnResult` on the result queue and schedules
   `_terminate_proc`. The engine unblocks immediately; `_on_cc_crash`
   notifies the user on respawn. Prevents Claude from burning minutes
