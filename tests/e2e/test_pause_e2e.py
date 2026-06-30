@@ -132,7 +132,6 @@ async def test_resumed_processes_group(
 
 
 @pytest.mark.smoke
-@pytest.mark.slow
 async def test_pause_resume_lifecycle_group(
     hamroh_sut: Sut,
     tester_client: TelegramClient,

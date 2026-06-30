@@ -113,7 +113,6 @@ async def _assert_reports_progress(
     )
 
 
-@pytest.mark.slow
 async def test_bot_reports_progress_on_long_turn_dm(
     status_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -127,7 +126,6 @@ async def test_bot_reports_progress_on_long_turn_dm(
     await _assert_reports_progress(status_sut, tester_client, dm)
 
 
-@pytest.mark.slow
 async def test_bot_reports_progress_on_long_turn_group(
     status_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

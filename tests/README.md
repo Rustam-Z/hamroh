@@ -21,6 +21,7 @@ One-time setup (a test bot + a tester-account session) is in
 [`e2e/README.md`](e2e/README.md).
 
 ```bash
+uv run -m pytest -m "e2e and smoke"      # run smoke
 uv run -m pytest -m e2e                  # all e2e tests
 uv run -m pytest -m "e2e and not slow"   # skip the ~2-min reminder-fire test
 ```

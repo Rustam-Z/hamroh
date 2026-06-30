@@ -47,7 +47,7 @@ async def _assert_allow_adds(
         await send_and_wait(client, convo, f"/deny user {dummy}")
 
 
-@pytest.mark.slow
+@pytest.mark.smoke
 async def test_allow_command_dm(
     tester_client: TelegramClient, dm: Conversation, hamroh_sut: Sut
 ) -> None:
