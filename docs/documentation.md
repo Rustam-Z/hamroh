@@ -609,51 +609,111 @@ Implementation: parser in `hamroh/reminders_config.py`, reconciler
 
 ## Run your own agent
 
-Keep this repo as the clean framework and put your agent's identity —
-skills, memories, persona, config, reminders — in a **separate private
-repo** that you bind-mount in. None of hamroh's customization surface is
-hardcoded into the image; it's all files overlaid at runtime, so you
-never fork.
-
-Why this beats forking: framework updates stay a clean `git pull` (no
-merge conflicts, because you never touch framework files), your private
-content can't leak into the public repo, and you can run several agents
-off one framework checkout. Fork only if you also edit hamroh's Python.
+Never fork. Keep this repo as the framework, pull it into your own agent
+repo as a **git submodule**, and put your identity — persona, skills,
+memories, config — in files that bind-mount over the image at runtime.
 
 ```
-my-agent/                       # your private repo
-├── skills/                     # your custom SKILL.md playbooks
-├── memories/                   # git-tracked committed memories
-├── prompts/project.md          # bot name, language, personality
-├── plugins.json                # capability surface
-├── access.json                 # DM / group policy
-├── default-reminders.json      # custom recurring reminders
-├── .env                        # secrets — gitignore this one
-└── docker-compose.override.yml # mounts the above into the container
+my-agent/                    # your private repo
+├── framework/               # git submodule → github.com/Rustam-Z/hamroh
+├── Dockerfile         
+├── docker-compose.yml       # runs framework/, mounts the files below
+├── .env                     # bot token, owner id, model, secrets — gitignore this
+├── prompts/
+│   ├── system.md            # seeded from framework/ — required
+│   └── project.md           # bot name, language, personality
+├── skills/                  # framework playbooks (seeded) + your own
+├── memories/                # git-tracked committed memories
+├── plugins.json             # tools + MCP capability surface
+├── access.json              # DM / group policy
+└── default-reminders.json   # custom recurring reminders
 ```
 
-```yaml
-# my-agent/docker-compose.override.yml
-services:
-  hamroh:
-    env_file: ./my-agent/.env
-    volumes:
-      - ./my-agent/skills:/app/skills:ro
-      - ./my-agent/prompts:/app/prompts
-      - ./my-agent/memories:/app/memories:ro
-      - ./my-agent/plugins.json:/app/plugins.json
-      - ./my-agent/access.json:/app/access.json
-      - ./my-agent/default-reminders.json:/app/default-reminders.json:ro
-```
-
-Run it from the hamroh checkout (override volumes win over the base ones):
+Set it up once:
 
 ```bash
-docker compose -f docker-compose.yml -f ../my-agent/docker-compose.override.yml up -d --build
+git init my-agent && cd my-agent
+git submodule add https://github.com/Rustam-Z/hamroh framework
+cp framework/.env.example .env             # fill TELEGRAM_BOT_TOKEN, HAMROH_OWNER_ID, model
+cp framework/prompts/project.md.example prompts/project.md
+cp framework/prompts/system.md prompts/system.md         # required — re-copy after a framework bump
+cp -R framework/skills/. skills/                         # keep the built-ins; add your own too
+cp framework/plugins.json.example plugins.json
+cp framework/access.json.example access.json
+cp framework/default-reminders.json.example default-reminders.json
 ```
 
-Add a `.gitignore` in `my-agent/` covering `.env` so secrets stay out of
-git.
+`docker-compose.yml` — the submodule is the build context, everything else is a mount:
+
+```yaml
+services:
+  hamroh:
+    build: ./framework
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./prompts:/app/prompts
+      - ./skills:/app/skills:ro
+      - ./memories:/app/memories:ro
+      - ./plugins.json:/app/plugins.json
+      - ./access.json:/app/access.json
+      - ./default-reminders.json:/app/default-reminders.json:ro
+      - ~/.claude:/root/.claude
+      - ~/.claude.json:/root/.claude.json
+    working_dir: /app
+```
+
+Run it:
+
+```bash
+docker compose up -d --build
+docker compose logs -f hamroh
+```
+
+Notes:
+
+- **Clone with the submodule.** A plain clone leaves `framework/` empty and
+  the build fails — use `git clone --recurse-submodules`, or run
+  `git submodule update --init` after cloning.
+- **`prompts/` and `skills/` replace, they don't merge** — the mount hides the
+  image's baked `system.md` and built-in skills, which is why you seed both
+  above. Re-run those two `cp`s after a framework bump.
+- **Update the framework:** `cd framework && git pull origin main && cd .. &&
+  git add framework && git commit -m "bump framework"`.
+
+### Installing extra packages
+
+Need a system binary (ffmpeg, a font) or an extra Python dep for a custom
+tool? **Don't edit `framework/`** — that's the pinned submodule. Add your own
+`Dockerfile` in the agent repo that builds *on top of* the framework image:
+
+```dockerfile
+# my-agent/Dockerfile
+FROM hamroh-base
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+RUN /app/.venv/bin/pip install --no-cache-dir yt-dlp
+```
+
+`FROM hamroh-base` keeps everything the framework already has (Python, Node,
+Chromium, hamroh, its `ENTRYPOINT`/`CMD`); you only add the extra lines. Point
+compose at your Dockerfile instead of the submodule:
+
+```yaml
+    build: .            # was: build: ./framework
+```
+
+`FROM` needs that base image to exist first, so build the framework once, then
+your layer — put both in a `Makefile` so it's one command:
+
+```makefile
+up:
+	docker build -t hamroh-base ./framework   # build the pinned submodule
+	docker compose up -d --build              # build your layer + run
+```
+
+Run `make up`; re-run it after a framework bump to rebuild both. (An MCP that
+runs via `npx` needs none of this — that's a `plugins.json` edit, no rebuild.)
 
 ## System prompt
 
@@ -1075,7 +1135,9 @@ engine just reports the error and keeps the session for the next turn.
 
 ## What `plugins.json` controls
 
-One file, four blocks. Edit and restart to apply.
+One file, four blocks. Edit and restart to apply. 
+
+Tool groups (shell / code / subagents, off by default), external MCPs, and toggles to hide built-in tools or skills. A missing file boots locked-down; a malformed one crashes boot loudly. 
 
 - **`tool_groups`** — Claude Code's dangerous built-ins (shell / code editing / subagents). All off by default; flip to `true` to unlock.
 - **`mcps`** — external MCP servers (GitHub, Jira, Linear, Notion, your own). One array entry per server, `stdio` / `http` / `sse`, credentials pulled from `.env` via `${VAR}` references — no Python needed.

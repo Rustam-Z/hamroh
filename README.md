@@ -62,8 +62,10 @@ DM your bot. It replies.
 **On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. See [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
 
 **On Windows with Docker?** Preferably use Linux. For windows. [WSL](https://docs.microsoft.com/en-us/windows/wsl), but make sure you logged in to Claude Code inside WSL, so that there is `~/.claude/.credentials.json`.
+ 
+### No docker?
 
-**No Docker?** You need Python 3.11+ and the Claude Code CLI (`claude --version`).
+You need Python 3.11+ and the Claude Code CLI (`claude --version`).
 
 ```bash
 uv sync --extra dev
@@ -99,63 +101,24 @@ Use as an **automation layer.** Wire up MCPs and schedule agents to do real work
 
 Out of the box: messaging, memory, reminders, web, vision. Want shell access? Code editing? Plug in any other MCP server — GitHub, Jira, Notion, Slack, your own — same one-entry pattern, stdio or remote HTTP/SSE with auth headers.
 
-### Run your own agent as a separate repo
+### Customization
 
-Keep this repo as the clean framework and put your agent's identity — skills, memories, persona, config, reminders — in a separate private repo that you bind-mount in (no fork, so framework updates stay a clean `git pull`). Layout and `docker-compose.override.yml`: [docs/documentation.md](docs/documentation.md#run-your-own-agent).
+Beyond the config files, you extend the bot by dropping in files — no Python needed for most:
+
+- **Skills** — add a playbook at `skills/<name>/SKILL.md`; the bot reads it on its own initiative. [docs](docs/documentation.md#agent-skills)
+- **MCPs & tools** — capability surface, what tools, skills, and MCPs are on `plugins.json` (`stdio` or remote HTTP/SSE), with credentials pulled from `.env` via `${VAR}`. Read [docs/tools.md](docs/tools.md). [docs/documentation.md](docs/documentation.md#what-pluginsjson-controls).
+- **Reminders** — custom recurring reminders shipped with the bot are at `default-reminders.json`. [docs](docs/documentation.md#custom-reminders-default-remindersjson).
+- **Memory notes** — curate git-tracked notes under `memories/` (e.g. `memories/notes/references.md`); read as memory but read-only to the bot. [memories/README.md](memories/README.md)
+- **Persona & rules** — extend the system prompt by editing `prompts/project.md`; it's appended to the shipped `prompts/system.md`. [docs](docs/documentation.md#system-prompt). Bot name, language, house rules, owner-specific instructions; appended to the shipped `prompts/system.md`.
+- **Access** — who can DM the bot or use it in groups (hot-reloaded, no restart). [docs/documentation.md](docs/documentation.md#access-control).
+- `.env` secrets — Telegram bot token, owner id, plus any credentials your `plugins.json` entries reference via `${VAR}` (the example file's GitLab / GitHub entries demonstrate the pattern).
+
+Read more in [docs/documentation.md](docs/documentation.md#run-your-own-agent).
 
 ### Telegram @BotFather configs
 
 - Disable "Allow groups" if you don't want others to add bot in groups. 
 - Enable "Bot to bot communication" so that bot can see other bot's messages.
-
-### The setup files
-
-| File | Tracked in git? | What it controls |
-|---|---|---|
-| `.env` | no | secrets — Telegram bot token, owner id, plus any credentials your `plugins.json` entries reference via `${VAR}` (the example file's GitLab / GitHub entries demonstrate the pattern) |
-| `prompts/project.md` | no | persona — bot name, language, house rules, owner-specific instructions; appended to the shipped `prompts/system.md` |
-| `plugins.json` | no | capability surface — what tools, skills, and MCPs are on |
-| `access.json` | no | who can DM the bot or use it in groups (hot-reloaded, no restart) |
-| `default-reminders.json` | no | custom recurring reminders shipped with the bot (see below) |
-
-The `.example` versions of all five are tracked as starting points; the real files are gitignored. `access.json` auto-creates with the safest default (`owner_only`) on first run without Docker; under Docker, copy it from the example before `docker compose up` so `/allow` and `/deny` edits persist across restarts.
-
-### Add your own
-
-Beyond the config files, you extend the bot by dropping in files — no Python needed for most:
-
-- **Skills** — add a playbook at `skills/<name>/SKILL.md`; the bot reads it on its own initiative. [docs](docs/documentation.md#agent-skills)
-- **MCPs & tools** — add a server entry to `plugins.json` (`stdio` or remote HTTP/SSE), with credentials pulled from `.env` via `${VAR}`. [docs/tools.md](docs/tools.md)
-- **Reminders** — declare recurring reminders in `default-reminders.json`. [docs](docs/documentation.md#custom-reminders-default-remindersjson)
-- **Memory notes** — curate git-tracked notes under `memories/` (e.g. `memories/notes/references.md`); read as memory but read-only to the bot. [memories/README.md](memories/README.md)
-- **Persona & rules** — extend the system prompt by editing `prompts/project.md`; it's appended to the shipped `prompts/system.md`. [docs](docs/documentation.md#system-prompt)
-
-### What `plugins.json` controls
-
-One file, four blocks — tool groups (shell / code / subagents, off by default), external MCPs, and toggles to hide built-in tools or skills. A missing file boots locked-down; a malformed one crashes boot loudly. Annotated schema, transports, and per-MCP setup: [docs/documentation.md](docs/documentation.md#what-pluginsjson-controls) and [docs/tools.md](docs/tools.md).
-
-### Custom reminders
-
-`default-reminders.json` ships a fixed set of recurring reminders with the bot — version-controlled instead of set in chat, reconciled into the DB on every restart. Format and behaviour: [docs/documentation.md](docs/documentation.md#custom-reminders-default-remindersjson).
-
-### `.env`
-
-All settings come from environment variables (or `.env`). Full list in
-[hamroh/config.py](hamroh/config.py). The ones you'll touch:
-
-| Variable | Required | Notes |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | yes | from @BotFather |
-| `HAMROH_OWNER_ID` | yes | your numeric Telegram user id |
-| `HAMROH_MODEL` | yes | e.g. `claude-sonnet-4-6` |
-| `HAMROH_EFFORT` | yes | `low` / `medium` / `high` / `max` |
-
-Credentials for any external MCP you wire in live in `.env` and are
-pulled into `plugins.json` via `${VAR}` references. 
-
-### Access
-
-`access.json` (hot-reloaded) gates who can reach the bot via one `policy`: `owner_only` (default) · `allowlist` · `open`. Manage it live with owner-only commands (`/allow`, `/deny`, `/policy`, `/pause`, `/logs`, `/usage`, …). Full command list, policies, and logging: [docs/documentation.md](docs/documentation.md#access-control).
 
 ## What hamroh can do
 
@@ -169,8 +132,6 @@ A quick tour — the full per-tool surface (args, limits, rails) is in [docs/too
 - **Skills & self-edit:** operator-curated playbooks under `skills/`; the bot can append rules to `prompts/project.md` (owner-only).
 - **Opt-in:** shell, code editing, and subagents — all off by default, toggled in `plugins.json`. Plug in any external MCP server the same way.
 - **Can't:** generate images; send/read voice, video, stickers, GIFs; moderate groups; make calls.
-
-**Make it yours.** Almost every axis is pluggable without touching the core — drop a `BaseTool` into [hamroh/tools/](hamroh/tools/), append an MCP server to `plugins.json`, add a skill at `skills/<name>/SKILL.md`, reshape the persona in `prompts/project.md`, or run a fleet with separate `HAMROH_DATA_DIR` paths. Ideas for making it more proactive (webhooks, scheduled check-ins, idle-time sweeps) and full recipes: [docs/documentation.md](docs/documentation.md#adding-a-new-tool).
 
 ## Architecture
 

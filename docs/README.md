@@ -41,6 +41,7 @@ already been ruled out.
 | You want to… | Read |
 |---|---|
 | Run the bot locally | [../README.md](../README.md) |
+| Run your own customized agent (framework as a submodule) | [documentation.md](documentation.md#run-your-own-agent) |
 | Decide which tools to enable | [tools.md](tools.md) |
 | Understand a specific env var or security rule | [documentation.md](documentation.md) |
 | Deploy to a server | [deployment.md](deployment.md) |
