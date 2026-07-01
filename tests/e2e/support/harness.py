@@ -41,8 +41,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 READY_LINE = "hamroh is live"
 _READY_TIMEOUT_S = 90.0
 #: A first-ever turn is slow: the model spins up (first-token cold-start) before
-#: any reply is produced. The text itself is irrelevant — we just need one turn.
-_WARMUP_TEXT = "ping"
+#: any reply is produced. Warm-up just needs one turn and never checks the reply
+#: text — a short "reply pong" nudge keeps the turn cheap and to the point.
+_WARMUP_TEXT = "Ping... Reply with exactly one word: pong"
 _WARMUP_TIMEOUT_S = 120.0
 _LOG_RING = 400  # keep the last N output lines for failure dumps
 #: The bot runs as a subprocess; forward its output through this logger so

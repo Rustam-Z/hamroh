@@ -50,6 +50,29 @@ async def _assert_scheduled(
     )
 
 
+async def _assert_fires(sut: Sut, client: TelegramClient, convo: Conversation) -> None:
+    token = new_sentinel("FIRE")
+
+    reply = await send_and_wait(
+        client,
+        convo,
+        f"Set a reminder for 70 seconds from now with this exact text: {token}.",
+    )
+    assert_reply_within(reply, MAX_REMINDER_REPLY_S, "reminder")
+
+    seen, elapsed = await measured(
+        wait_for_message(client, convo, token, timeout=MAX_REMINDER_FIRE_S)
+    )
+    assert token in seen, f"reminder {token!r} never fired; saw {seen!r}"
+    assert_within(elapsed, MAX_REMINDER_FIRE_S, "reminder fire")
+
+    # the delivered reminder's row must flip from pending to sent
+    sent = await wait_until(
+        lambda: [r for r in reminder_rows(sut.db_path, token) if r["status"] == "sent"]
+    )
+    assert sent, f"reminder {token!r} row was not marked sent"
+
+
 @pytest.mark.smoke
 async def test_reminder_is_scheduled_dm(
     hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
@@ -76,29 +99,6 @@ async def test_reminder_is_scheduled_group(
            MAX_REMINDER_REPLY_S.
     """
     await _assert_scheduled(hamroh_sut, tester_client, group)
-
-
-async def _assert_fires(sut: Sut, client: TelegramClient, convo: Conversation) -> None:
-    token = new_sentinel("FIRE")
-
-    reply = await send_and_wait(
-        client,
-        convo,
-        f"Set a reminder for 70 seconds from now with this exact text: {token}.",
-    )
-    assert_reply_within(reply, MAX_REMINDER_REPLY_S, "reminder")
-
-    seen, elapsed = await measured(
-        wait_for_message(client, convo, token, timeout=MAX_REMINDER_FIRE_S)
-    )
-    assert token in seen, f"reminder {token!r} never fired; saw {seen!r}"
-    assert_within(elapsed, MAX_REMINDER_FIRE_S, "reminder fire")
-
-    # the delivered reminder's row must flip from pending to sent
-    sent = await wait_until(
-        lambda: [r for r in reminder_rows(sut.db_path, token) if r["status"] == "sent"]
-    )
-    assert sent, f"reminder {token!r} row was not marked sent"
 
 
 @pytest.mark.slow

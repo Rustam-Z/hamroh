@@ -35,6 +35,9 @@ access.json
 # instance repo tracks its own copy and bind-mounts it in.
 default-reminders.json
 
+# Throwaway probe skill created/removed by the e2e suite; never committed
+skills/e2e-*/
+
 # Editors
 .vscode/
 .idea/

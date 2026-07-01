@@ -30,7 +30,13 @@ from tests.e2e.support.config import (
     missing_env,
 )
 from tests.e2e.support.data import new_sentinel
-from tests.e2e.support.harness import Sut, kill_stray_suts, launch_sut, stop_sut
+from tests.e2e.support.harness import (
+    REPO_ROOT,
+    Sut,
+    kill_stray_suts,
+    launch_sut,
+    stop_sut,
+)
 from tests.e2e.support.models import Conversation
 
 log = logging.getLogger(__name__)
@@ -77,14 +83,57 @@ def _free_bot_token() -> None:
     kill_stray_suts()
 
 
+#: Throwaway reference skills written under ``skills/`` for the session. Two
+#: distinct ones so the DM and group skill-consult tests each read a *pristine*
+#: skill — the shared session caches a skill's content once read, so they can't
+#: share. None of the shipped skills are usable (consumed by other tests or
+#: sensitive), so the suite fakes its own.
+_E2E_SKILL_NAMES = ("e2e-probe-dm", "e2e-probe-group")
+
+
+def _e2e_skill_md(name: str) -> str:
+    """Minimal valid SKILL.md whose frontmatter name matches its directory."""
+    return (
+        f"---\nname: {name}\n"
+        "description: Throwaway reference skill for the e2e suite — proves the "
+        "bot reads a skill on request. No real content.\n---\n\n"
+        f"# Skill: {name}\n\n"
+        "A probe skill used only by end-to-end tests. When asked to read it, "
+        "reply with a one-line summary: the e2e probe skill was read.\n"
+    )
+
+
+@pytest.fixture(scope="session")
+def e2e_skills() -> Iterator[tuple[str, str]]:
+    """Write two pristine throwaway skills under ``skills/`` for the session.
+
+    The SUT reads skills from ``REPO_ROOT/skills`` (its cwd) with no env
+    override, so a skill-consult test needs a real file there. Created before the
+    bot launches (``hamroh_sut`` depends on this) so they land in the baked
+    skills index, and removed on teardown so they never get committed (see
+    .gitignore). Returns ``(dm_skill, group_skill)``.
+    """
+    dirs = [REPO_ROOT / "skills" / name for name in _E2E_SKILL_NAMES]
+    for skill_dir, name in zip(dirs, _E2E_SKILL_NAMES):
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(_e2e_skill_md(name), encoding="utf-8")
+    try:
+        yield _E2E_SKILL_NAMES
+    finally:
+        for skill_dir in dirs:
+            shutil.rmtree(skill_dir, ignore_errors=True)
+
+
 @pytest.fixture(scope="session")
 def hamroh_sut(
     _free_bot_token: None,
     e2e_config: E2EConfig,
+    e2e_skills: tuple[str, str],
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Sut]:
     """Launch one bot subprocess for the whole session (boot is expensive;
-    tests isolate via unique sentinels, not restarts)."""
+    tests isolate via unique sentinels, not restarts). Depends on ``e2e_skills``
+    so the throwaway probe skills exist before the bot bakes its skills index."""
     sut = launch_sut(e2e_config, tmp_path_factory.mktemp("e2e-data"))
     try:
         yield sut
