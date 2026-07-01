@@ -1,4 +1,4 @@
-"""E2E: owner read-only status commands — /health, /audit, /access.
+"""E2E: owner read-only status commands — /health, /audit, /access, /usage, /logs.
 
 Owner-only readouts (the e2e tester account is configured as owner). Each
 command is read-only (no state change), so there is no cleanup, and each is
@@ -122,3 +122,84 @@ async def test_access_command_group(
     then   the bot replies with the policy and owner id within MAX_TEXT_REPLY_S.
     """
     await _assert_access_report(tester_client, group, e2e_config)
+
+
+# --- /usage --------------------------------------------------------------
+
+
+async def _assert_usage_report(client: TelegramClient, convo: Conversation) -> None:
+    """Send /usage and assert the reply looks like a Claude Code usage report.
+
+    ``/usage`` is intercepted by the harness before Claude: it shells out to a
+    short-lived ``claude --print /usage`` and forwards the result.
+    """
+    reply = await send_and_wait(client, convo, "/usage")
+    log.info("usage reply: %s", reply.text[:200])
+    text = reply.text.lower()
+    assert "usage" in text or "used" in text, (
+        f"reply does not look like a usage report; was {reply.text!r}"
+    )
+    assert_reply_within(reply, MAX_TEXT_REPLY_S, "/usage")
+
+
+@pytest.mark.smoke
+async def test_usage_command_dm(
+    tester_client: TelegramClient, dm: Conversation
+) -> None:
+    """/usage in a DM relays Claude Code's usage report.
+
+    given  the owner
+    when   they send /usage in a DM
+    then   the bot replies with Claude Code's usage text within MAX_TEXT_REPLY_S.
+    """
+    await _assert_usage_report(tester_client, dm)
+
+
+async def test_usage_command_group(
+    tester_client: TelegramClient, group: Conversation
+) -> None:
+    """/usage in a group relays Claude Code's usage report.
+
+    given  the owner
+    when   they send /usage in a group
+    then   the bot replies with Claude Code's usage text within MAX_TEXT_REPLY_S.
+    """
+    await _assert_usage_report(tester_client, group)
+
+
+# --- /logs ---------------------------------------------------------------
+
+
+async def _assert_logs_report(client: TelegramClient, convo: Conversation) -> None:
+    """Send /logs and assert the reply tails formatted log lines.
+
+    Each line renders as ``HH:MM:SS LEVEL component | msg``, so the ``|``
+    separator is present whenever there is real log content — and there always
+    is by the time the suite has booted the bot and driven a warm-up turn.
+    """
+    reply = await send_and_wait(client, convo, "/logs")
+    assert_reply_within(reply, MAX_TEXT_REPLY_S, "/logs")
+    assert "|" in reply.text, f"/logs reply is not a log tail: {reply.text!r}"
+
+
+@pytest.mark.smoke
+async def test_logs_command_dm(tester_client: TelegramClient, dm: Conversation) -> None:
+    """/logs in a DM tails recent log lines.
+
+    given  the owner
+    when   they send /logs in a DM
+    then   the bot replies with formatted log lines within MAX_TEXT_REPLY_S.
+    """
+    await _assert_logs_report(tester_client, dm)
+
+
+async def test_logs_command_group(
+    tester_client: TelegramClient, group: Conversation
+) -> None:
+    """/logs in a group tails recent log lines.
+
+    given  the owner
+    when   they send /logs in a group
+    then   the bot replies with formatted log lines within MAX_TEXT_REPLY_S.
+    """
+    await _assert_logs_report(tester_client, group)

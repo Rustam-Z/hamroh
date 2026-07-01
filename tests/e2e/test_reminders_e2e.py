@@ -1,10 +1,13 @@
-"""E2E: the bot schedules reminders and fires them.
+"""E2E: the bot schedules reminders, fires them, and seeds committed ones.
 
 scheduled (DM and group, separate tests): "remind me in 30 minutes: TOKEN"
     -> a pending reminders row lands with a ~30-minute trigger_at.
 fires (DM and group, separate tests, @slow): "remind me in 70 seconds: TOKEN"
     -> the bot delivers an unsolicited message with TOKEN within ~2.5 min, and
     the row flips to sent.
+committed (default-reminders.json): a reminder declared in the file is seeded
+    at startup with a ``committed:`` auto_seed_key, and its recurring fire
+    (@slow) delivers to the owner while the row stays pending (never sent).
 """
 
 from __future__ import annotations
@@ -124,3 +127,64 @@ async def test_reminder_fires_group(
     then   the bot delivers it within MAX_REMINDER_FIRE_S and the row flips to sent.
     """
     await _assert_fires(hamroh_sut, tester_client, group)
+
+
+# ---------------------------------------------------------------------------
+# committed reminders declared in default-reminders.json
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.smoke
+async def test_default_reminder_is_seeded(
+    default_reminders_sut: tuple[Sut, str],
+) -> None:
+    """A reminder declared in default-reminders.json is seeded at startup.
+
+    given  a default-reminders.json holding one recurring reminder
+    when   the bot boots with it
+    then   a pending reminders row lands, tagged with a committed: auto_seed_key
+           and carrying the declared cron.
+    """
+    sut, token = default_reminders_sut
+
+    rows = await wait_until(lambda: reminder_rows(sut.db_path, token))
+
+    assert rows, f"no committed reminder row was seeded for {token!r}"
+    row = rows[0]
+    assert row["status"] == "pending", f"unexpected status {row['status']!r}"
+    assert row["auto_seed_key"] and row["auto_seed_key"].startswith("committed:"), (
+        f"a committed reminder must carry a committed: seed key, "
+        f"got {row['auto_seed_key']!r}"
+    )
+    assert row["cron_expr"] == "* * * * *", (
+        f"the declared cron must be stored on the row, got {row['cron_expr']!r}"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.smoke
+async def test_default_reminder_fires(
+    default_reminders_sut: tuple[Sut, str],
+    tester_client: TelegramClient,
+    dm: Conversation,
+) -> None:
+    """The seeded recurring reminder fires to the owner and stays pending.
+
+    given  a booted bot with a committed every-minute reminder for the owner
+    when   a poll cycle reaches its trigger time
+    then   the bot delivers the reminder text to the owner within
+           MAX_REMINDER_FIRE_S, and no row is marked sent (recurring, not one-shot).
+    """
+    sut, token = default_reminders_sut
+
+    seen, elapsed = await measured(
+        wait_for_message(tester_client, dm, token, timeout=MAX_REMINDER_FIRE_S)
+    )
+
+    assert token in seen, f"committed reminder {token!r} never fired; saw {seen!r}"
+    assert_within(elapsed, MAX_REMINDER_FIRE_S, "committed reminder fire")
+
+    rows = reminder_rows(sut.db_path, token)
+    assert rows and all(r["status"] != "sent" for r in rows), (
+        "a recurring committed reminder must return to pending, never 'sent'"
+    )

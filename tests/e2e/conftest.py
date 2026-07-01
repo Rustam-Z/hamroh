@@ -10,6 +10,7 @@ contributors who have not set up a test bot.
 from __future__ import annotations
 
 import itertools
+import json
 import logging
 import shutil
 from collections.abc import AsyncIterator, Generator, Iterator
@@ -28,6 +29,7 @@ from tests.e2e.support.config import (
     load_env,
     missing_env,
 )
+from tests.e2e.support.data import new_sentinel
 from tests.e2e.support.harness import Sut, kill_stray_suts, launch_sut, stop_sut
 from tests.e2e.support.models import Conversation
 
@@ -165,6 +167,55 @@ def draft_sut(
     )
     try:
         yield sut
+    finally:
+        stop_sut(sut)
+        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
+        hamroh_sut.proc = revived.proc
+        hamroh_sut._log = revived._log
+
+
+@pytest.fixture(scope="module")
+def default_reminders_sut(
+    hamroh_sut: Sut,
+    e2e_config: E2EConfig,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[Sut, str]]:
+    """A bot booted with a committed ``default-reminders.json`` seeded at startup.
+
+    Writes one recurring reminder (every minute, to the owner) whose text carries
+    a unique token, then launches a dedicated SUT pointed at that file via
+    ``HAMROH_REMINDERS_PATH`` — so the test never touches the repo-root copy. Same
+    stop-launch-revive swap as ``status_sut`` (only one process may poll the bot
+    token). The every-minute cron lets the @slow fire test see it deliver within
+    one poll cycle. Yields ``(sut, token)``.
+    """
+    token = new_sentinel("DEFAULTREMIND")
+    reminders_file = (
+        tmp_path_factory.mktemp("committed-reminders") / "default-reminders.json"
+    )
+    reminders_file.write_text(
+        json.dumps(
+            {
+                "reminders": [
+                    {
+                        "name": "e2e-default",
+                        "cron": "* * * * *",
+                        "chat": "owner",
+                        "text": token,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    stop_sut(hamroh_sut)
+    sut = launch_sut(
+        e2e_config,
+        tmp_path_factory.mktemp("default-reminders-data"),
+        extra_env={"HAMROH_REMINDERS_PATH": str(reminders_file)},
+    )
+    try:
+        yield sut, token
     finally:
         stop_sut(sut)
         revived = launch_sut(e2e_config, hamroh_sut.data_dir)

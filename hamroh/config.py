@@ -271,13 +271,26 @@ class Config:
             browser_headless=_bool("HAMROH_BROWSER_HEADLESS", True),
             log_level=(_env("HAMROH_LOG_LEVEL", "INFO") or "INFO").upper(),
         )
-        # access.json normally lives at the repo root (see __post_init__).
-        # The e2e harness points this at a temp file via HAMROH_ACCESS_PATH
-        # so it can authorize a test group without touching the repo copy.
+        cls._apply_env_path_overrides(cfg)
+        return cfg
+
+    @staticmethod
+    def _apply_env_path_overrides(cfg: "Config") -> None:
+        """Redirect repo-root config paths to env-specified files.
+
+        ``access.json`` and ``default-reminders.json`` normally sit at the repo
+        root (see ``__post_init__``). The e2e harness points them at temp files
+        via ``HAMROH_ACCESS_PATH`` / ``HAMROH_REMINDERS_PATH`` so a test can
+        authorize a group or seed a reminder without touching the repo copies.
+        """
         access_override = _env("HAMROH_ACCESS_PATH")
         if access_override:
             object.__setattr__(cfg, "access_path", Path(access_override).resolve())
-        return cfg
+        reminders_override = _env("HAMROH_REMINDERS_PATH")
+        if reminders_override:
+            object.__setattr__(
+                cfg, "committed_reminders_path", Path(reminders_override).resolve()
+            )
 
     @classmethod
     def for_test(cls, data_dir: Path) -> "Config":
