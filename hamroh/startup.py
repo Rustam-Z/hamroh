@@ -31,6 +31,7 @@ from .db.reminders import (
     NewReminder,
     cancel_auto_seeded,
     insert_auto_seeded_reminder,
+    pending_committed_keys,
     pending_with_auto_seed_key,
     reset_stuck_reminders,
 )
@@ -39,6 +40,12 @@ from .instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
 from .rate_limiter import RateLimitConfig, RateLimiter
+from .reminders_config import (
+    KEY_PREFIX,
+    committed_key,
+    load_declared_reminders,
+    resolve_chat,
+)
 from .skills_store import SkillsStore, render_skills_index
 from .storage.attachments import AttachmentStore
 from .storage.memory import MemoryStore
@@ -117,6 +124,51 @@ async def _ensure_self_reflection_seeded(db, config) -> None:
         "seeded default self-reflection reminder (cron=%s, next=%s UTC)",
         cron_expr,
         first_trigger.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def _next_cron_trigger(cron_expr: str) -> str:
+    """Next occurrence of ``cron_expr`` as a UTC ``%Y-%m-%d %H:%M:%S`` string."""
+    from croniter import croniter
+
+    nxt = croniter(cron_expr, datetime.now(timezone.utc)).get_next(datetime)
+    return nxt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+async def _reconcile_committed_reminders(db, config) -> None:
+    """Make the reminders table match the git-tracked ``default-reminders.json``.
+
+    Seeds a pending row for every declared reminder lacking one, and cancels
+    committed rows whose key is no longer declared (entry edited or removed).
+    A content edit shifts the key, so it reads as cancel-old + seed-new. Rows
+    from other sources — self-reflection, user-created — are never touched.
+    """
+    declared = load_declared_reminders(config.committed_reminders_path)
+    desired: dict[str, NewReminder] = {}
+    for reminder in declared:
+        key = committed_key(reminder, config.owner_id)
+        desired[key] = NewReminder(
+            chat_id=resolve_chat(reminder, config.owner_id),
+            user_id=-1,  # synthetic pseudo-user, same convention as self-reflection
+            text=reminder.text,
+            trigger_at=_next_cron_trigger(reminder.cron_expr),
+            cron_expr=reminder.cron_expr,
+        )
+
+    existing = await pending_committed_keys(db, KEY_PREFIX)
+    cancelled = 0
+    for stale_key in existing - desired.keys():
+        cancelled += await cancel_auto_seeded(db, stale_key)
+    seeded = 0
+    for key in desired.keys() - existing:
+        await insert_auto_seeded_reminder(db, desired[key], key)
+        seeded += 1
+    log.info(
+        "committed reminders: %d declared, %d seeded, %d cancelled, %d unchanged",
+        len(declared),
+        seeded,
+        cancelled,
+        len(desired.keys() & existing),
     )
 
 
@@ -348,6 +400,7 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
             re_armed,
         )
     await _seed_default_reminders(db, config)
+    await _reconcile_committed_reminders(db, config)
     return db, plugins, stores
 
 

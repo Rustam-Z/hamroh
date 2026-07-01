@@ -214,6 +214,10 @@ class Config:
     session_id_path: Path = field(init=False)
     cc_logs_dir: Path = field(init=False)
     access_path: Path = field(init=False)
+    #: Git-tracked JSON file of operator-declared reminders at the repo root.
+    #: Read-only source of truth: the startup reconciler seeds/cancels rows to
+    #: match it (see ``hamroh.reminders_config``). Sibling of ``access_path``.
+    committed_reminders_path: Path = field(init=False)
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)
     log_dir: Path = field(init=False)
@@ -231,6 +235,9 @@ class Config:
         # Committed memories live at the repo root (tracked in git), separate
         # from the gitignored runtime data/. Tests override this via for_test().
         object.__setattr__(self, "committed_memories_dir", project_root / "memories")
+        object.__setattr__(
+            self, "committed_reminders_path", project_root / "default-reminders.json"
+        )
         object.__setattr__(self, "attachments_dir", self.data_dir / "attachments")
         object.__setattr__(self, "renders_dir", self.data_dir / "renders")
         object.__setattr__(self, "log_dir", self.data_dir / "logs")
@@ -304,14 +311,22 @@ class Config:
             browser_headless=True,
             log_level="INFO",
         )
-        # Tests use isolated tmp dirs — keep access.json and the committed
-        # memories folder inside data_dir so each test gets its own copy and
-        # never touches the repo root.
-        object.__setattr__(cfg, "access_path", data_dir.resolve() / "access.json")
-        object.__setattr__(
-            cfg, "committed_memories_dir", data_dir.resolve() / "committed_memories"
-        )
+        cls._override_test_paths(cfg, data_dir.resolve())
         return cfg
+
+    @staticmethod
+    def _override_test_paths(cfg: "Config", root: Path) -> None:
+        """Point per-test file paths inside the tmp dir, off the repo root.
+
+        Tests use isolated tmp dirs, so access.json, the committed memories
+        folder, and the reminders file each get their own copy and never touch
+        the repo root.
+        """
+        object.__setattr__(cfg, "access_path", root / "access.json")
+        object.__setattr__(cfg, "committed_memories_dir", root / "committed_memories")
+        object.__setattr__(
+            cfg, "committed_reminders_path", root / "default-reminders.json"
+        )
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

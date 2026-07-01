@@ -43,6 +43,7 @@ The parts of hamroh:
 - [Self-reflection skill](#self-reflection-skill)
 - [Agent skills](#agent-skills)
 - [Reminders](#reminders)
+- [Run your own agent](#run-your-own-agent)
 - [System prompt](#system-prompt)
 - [External MCP integrations](#external-mcp-integrations)
 - [Monitoring & observability](#monitoring--observability)
@@ -537,6 +538,123 @@ All times are stored in UTC. The system prompt instructs the agent to
 ask users for their timezone and convert to UTC before setting
 reminders.
 
+### Custom reminders (`default-reminders.json`)
+
+Beyond reminders the agent sets at runtime, you can ship a fixed set of
+**recurring** reminders with the bot in a git-tracked `default-reminders.json`
+at the repo root (gitignored in this framework repo; copy
+`default-reminders.json.example` to start, or keep it in your instance repo and
+bind-mount it — see [Run your own agent](#run-your-own-agent)).
+
+```json
+{
+  "reminders": [
+    {
+      "name": "morning-trends",
+      "cron": "0 6 * * *",
+      "chat": "owner",
+      "text": "Post today's trends digest."
+    }
+  ]
+}
+```
+
+Each object: `name` (required, unique — identifies the reminder across edits),
+`cron` (required, 5-field, UTC), `text` (required), `chat` (optional: `"owner"`
+default, or a numeric chat id). JSON has no comments, so keep notes out of the
+file itself.
+
+`text` may be a plain string or a **list of strings joined with newlines** —
+handy for long, multi-paragraph prompts, since JSON has no multi-line literals.
+Both forms produce identical text (and the same seed key), so switching between
+them never triggers a reseed:
+
+```json
+{
+  "reminders": [
+    {
+      "name": "morning-brief",
+      "cron": "0 6 * * *",
+      "text": [
+        "Good morning. Put together today's brief:",
+        "",
+        "1. Top 3 AI stories.",
+        "2. Calendar conflicts this week."
+      ]
+    }
+  ]
+}
+```
+
+How it behaves:
+
+- **Reconciled at every boot.** The startup hook diffs the file against
+  the database: declared entries with no pending row are seeded, and
+  committed rows no longer in the file are cancelled.
+- **Edits apply on restart.** The seed key is content-addressed
+  (`committed:<name>:<hash of cron+text+chat>`), so editing any field
+  cancels the stale row and seeds a fresh one. Removing an entry cancels
+  it.
+- **Source of truth is the file.** Because each row carries an
+  `auto_seed_key`, the agent cannot cancel these from chat (same gate as
+  the self-reflection loop) — change the file and restart instead.
+- **Recurring only.** A one-shot would re-fire on every restart once
+  sent, so only cron reminders are accepted here; for a one-off, ask the
+  bot in chat (it uses `reminder_set`).
+- A missing file means no custom reminders; a malformed file crashes boot
+  loudly rather than silently dropping a reminder.
+
+Implementation: parser in `hamroh/reminders_config.py`, reconciler
+`_reconcile_committed_reminders` in `hamroh/startup.py`.
+
+## Run your own agent
+
+Keep this repo as the clean framework and put your agent's identity —
+skills, memories, persona, config, reminders — in a **separate private
+repo** that you bind-mount in. None of hamroh's customization surface is
+hardcoded into the image; it's all files overlaid at runtime, so you
+never fork.
+
+Why this beats forking: framework updates stay a clean `git pull` (no
+merge conflicts, because you never touch framework files), your private
+content can't leak into the public repo, and you can run several agents
+off one framework checkout. Fork only if you also edit hamroh's Python.
+
+```
+my-agent/                       # your private repo
+├── skills/                     # your custom SKILL.md playbooks
+├── memories/                   # git-tracked committed memories
+├── prompts/project.md          # bot name, language, personality
+├── plugins.json                # capability surface
+├── access.json                 # DM / group policy
+├── default-reminders.json      # custom recurring reminders
+├── .env                        # secrets — gitignore this one
+└── docker-compose.override.yml # mounts the above into the container
+```
+
+```yaml
+# my-agent/docker-compose.override.yml
+services:
+  hamroh:
+    env_file: ./my-agent/.env
+    volumes:
+      - ./my-agent/skills:/app/skills:ro
+      - ./my-agent/prompts:/app/prompts
+      - ./my-agent/memories:/app/memories:ro
+      - ./my-agent/plugins.json:/app/plugins.json
+      - ./my-agent/access.json:/app/access.json
+      - ./my-agent/default-reminders.json:/app/default-reminders.json:ro
+```
+
+Run it from the hamroh checkout (override volumes win over the base ones):
+
+```bash
+docker compose -f docker-compose.yml -f ../my-agent/docker-compose.override.yml up -d --build
+```
+
+Add a `.gitignore` in `my-agent/` covering `.env` so secrets stay out of
+git.
+
 ## System prompt
 
 The system prompt is assembled from two files:
@@ -958,6 +1076,14 @@ engine just reports the error and keeps the session for the next turn.
 ## What `plugins.json` controls
 
 One file, four blocks. Edit and restart to apply.
+
+- **`tool_groups`** — Claude Code's dangerous built-ins (shell / code editing / subagents). All off by default; flip to `true` to unlock.
+- **`mcps`** — external MCP servers (GitHub, Jira, Linear, Notion, your own). One array entry per server, `stdio` / `http` / `sse`, credentials pulled from `.env` via `${VAR}` references — no Python needed.
+- **`builtin_tools_disabled`** — hamroh built-ins to hide from the agent (e.g. `telegram_create_poll`).
+- **`skills_disabled`** — skill directories under `skills/` to hide.
+
+A missing `plugins.json` boots locked-down (no integrations, no tool groups). A malformed file crashes boot loudly. Full schema, copy-paste examples, and per-MCP setup: [docs/tools.md](docs/tools.md).
+
 
 ```jsonc
 {

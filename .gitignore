@@ -30,6 +30,11 @@ plugins.json
 # together; not tracked so deployments don't fight over the file.
 access.json
 
+# Local custom reminders — operator copies default-reminders.json.example on
+# setup, then customises. Kept out of the open-source framework repo; an agent
+# instance repo tracks its own copy and bind-mounts it in.
+default-reminders.json
+
 # Editors
 .vscode/
 .idea/

@@ -1,0 +1,15 @@
+{
+  "reminders": [
+    {
+      "name": "morning-trends",
+      "cron": "0 6 * * *",
+      "chat": "owner",
+      "text": "Post today's trends digest."
+    },
+    {
+      "name": "weekly-review",
+      "cron": "0 18 * * 5",
+      "text": "Summarize the week."
+    }
+  ]
+}

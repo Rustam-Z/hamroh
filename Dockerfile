@@ -58,6 +58,11 @@ COPY plugins.json.example plugins.json* ./
 # across restarts. The image-baked copy (if any) is the seed value.
 COPY access.json.example access.json* ./
 
+# Custom reminders — same pattern as plugins/access. The example is always
+# shipped; a real ``default-reminders.json`` is overlaid via bind mount at
+# runtime and reconciled into the DB at boot. The image-baked copy is the seed.
+COPY default-reminders.json.example default-reminders.json* ./
+
 # Data directory (mount as volume)
 VOLUME /app/data
 

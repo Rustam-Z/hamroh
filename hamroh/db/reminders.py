@@ -153,6 +153,22 @@ async def pending_with_auto_seed_key(db: Database, key: str) -> int:
     return int(row["c"]) if row is not None else 0
 
 
+async def pending_committed_keys(db: Database, prefix: str) -> set[str]:
+    """Return the distinct auto_seed_keys of pending rows under ``prefix``.
+
+    Used by the committed-reminders reconciler to diff the database against
+    ``default-reminders.json``. The prefix scopes the match to committed
+    reminders, so other auto-seeded loops (e.g. ``self-reflection-default``) and
+    user-created reminders (NULL ``auto_seed_key``) are never touched.
+    """
+    rows = await db.fetch_all(
+        "SELECT DISTINCT auto_seed_key FROM reminders "
+        "WHERE status = 'pending' AND auto_seed_key LIKE ? || '%'",
+        (prefix,),
+    )
+    return {row["auto_seed_key"] for row in rows}
+
+
 async def cancel_auto_seeded(db: Database, key: str) -> int:
     """Cancel pending reminders tagged with the given auto_seed_key.
 

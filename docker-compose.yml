@@ -20,6 +20,13 @@ services:
           cp /host/plugins.json.example /host/plugins.json
           echo "[hamroh-init] seeded plugins.json from plugins.json.example"
         fi
+
+        if [ -f /host/default-reminders.json ]; then
+          echo "[hamroh-init] default-reminders.json already present on host, leaving it alone"
+        else
+          cp /host/default-reminders.json.example /host/default-reminders.json
+          echo "[hamroh-init] seeded default-reminders.json from default-reminders.json.example"
+        fi
       '
 
   hamroh:
@@ -53,6 +60,9 @@ services:
       # Plugin config — bind-mounted so host edits apply on restart without
       # needing --build. Read once at boot. hamroh-init seeds it.
       - ./plugins.json:/app/plugins.json
+      # Custom reminders — git-tracked source of truth, reconciled into the DB
+      # at boot. Read-only; host edits apply on restart. hamroh-init seeds it.
+      - ./default-reminders.json:/app/default-reminders.json:ro
     working_dir: /app
     # Graceful shutdown: give CC subprocess time to save state
     stop_grace_period: 15s
