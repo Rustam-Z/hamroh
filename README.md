@@ -32,7 +32,8 @@ If you don't know where to run, I recommend [Hetzner](https://www.hetzner.com/cl
  
 Pre-requisite: 
 * Install Docker compose
-* Install Claude Code CLI. Login, you can use Claude Code subscription, or API
+* Install the Claude Code CLI
+* Generate a Claude auth token on your machine: `claude setup-token` (opens a browser; works with a Claude subscription or API). It prints a token starting with `sk-ant-oat01-…` — you'll paste it into `.env` below. This is the login for the bot on every OS (Linux, macOS, Windows).
 
 **Instructions for running on Linux**
 ```bash
@@ -41,6 +42,7 @@ git clone https://github.com/Rustam-Z/hamroh && cd hamroh
 cp .env.example .env && nano .env
 #   set TELEGRAM_BOT_TOKEN  (create a bot in @BotFather and copy its token here)
 #   set HAMROH_OWNER_ID  (your numeric Telegram user id, from @userinfobot)
+#   set CLAUDE_CODE_OAUTH_TOKEN  (run `claude setup-token`, paste the sk-ant-oat01-… token)
 #   update if necessary: HAMROH_MODEL and HAMROH_EFFORT
 
 cp access.json.example access.json
@@ -58,10 +60,6 @@ docker compose exec hamroh python -m hamroh.scripts.trace --follow  # [optional]
 ```
 
 DM your bot. It replies.
-
-**On macOS with Docker?** macOS stores your `claude login` token in the Keychain, which the container can't read. See [docs/deployment.md](docs/deployment.md#macos-docker-credentials).
-
-**On Windows with Docker?** Preferably use Linux. For windows. [WSL](https://docs.microsoft.com/en-us/windows/wsl), but make sure you logged in to Claude Code inside WSL, so that there is `~/.claude/.credentials.json`.
  
 ### No docker?
 

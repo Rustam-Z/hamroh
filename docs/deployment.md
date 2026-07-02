@@ -9,7 +9,7 @@ workflow.
 - A VPS with SSH access
 - A GitHub repo with your hamroh code
 - A Telegram bot token (from @BotFather)
-- A Claude Code account (for API authentication)
+- A Claude account (subscription or API) to generate a `CLAUDE_CODE_OAUTH_TOKEN`
 
 ## Initial server setup (one-time)
 
@@ -20,11 +20,16 @@ ssh root@your-server-ip
 # Install Docker
 curl -fsSL https://get.docker.com | sh
 
-# Install Node.js + Claude Code CLI and authenticate
+# Install Node.js + Claude Code CLI
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 npm install -g @anthropic-ai/claude-code
-claude   # interactive login — creates ~/.claude/
+
+# Generate a long-lived Claude auth token (interactive, opens a browser).
+# It prints a token starting with sk-ant-oat01-… — you set it as
+# CLAUDE_CODE_OAUTH_TOKEN in .env below. This is the auth path on every OS;
+# no `claude login` / Keychain / mounted credentials needed.
+claude setup-token
 
 # Clone your private repo (SSH auth — add server's public key to GitHub first)
 #   On server: ssh-keygen -t ed25519 (if no key exists)
@@ -34,7 +39,7 @@ cd ~/hamroh
 
 # Configure
 cp .env.example .env
-vim .env   # set TELEGRAM_BOT_TOKEN, HAMROH_OWNER_ID, etc.
+vim .env   # set TELEGRAM_BOT_TOKEN, HAMROH_OWNER_ID, CLAUDE_CODE_OAUTH_TOKEN, etc.
 cp prompts/project.md.example prompts/project.md
 vim prompts/project.md   # customize identity, integrations, team info
 
@@ -252,43 +257,22 @@ Common causes:
   Claude exit if any MCP server in the config fails to connect. Check
   that `uvx` and `npx` are available inside the container.
 
-### Claude Code auth expired
+### Claude Code auth failed / `Not logged in · Please run /login`
 
-SSH into the server and re-authenticate:
+The bot authenticates with the `CLAUDE_CODE_OAUTH_TOKEN` set in `.env`,
+not with `claude login` or the host's stored credentials. If you see an
+auth error, the token is missing or has been revoked. Generate a fresh
+one and restart:
 
 ```bash
 ssh root@your-server-ip
-claude   # follow the login flow
-cd ~/hamroh && docker compose restart
+cd ~/hamroh
+claude setup-token          # prints a new sk-ant-oat01-… token
+vim .env                    # set CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-…
+docker compose restart
 ```
 
-### macOS Docker credentials
-
-If you run hamroh in Docker on macOS and see `Not logged in · Please
-run /login` even though `claude login` succeeded on the host, that's
-because macOS stores the OAuth token in the Keychain — the container's
-bind mount of `~/.claude` doesn't carry it. (Linux hosts write
-`~/.claude/.credentials.json` natively, so they don't hit this.)
-
-**Easiest fix:** don't use Docker on macOS. Run with `uv` instead — the
-subprocess inherits your shell's Keychain access:
-
-```bash
-uv sync --extra dev
-uv run python -m hamroh
-```
-
-**If you really need Docker on macOS:** export the Keychain entry to a
-file once, then bring up the stack:
-
-```bash
-security find-generic-password -s "Claude Code-credentials" -w \
-  > ~/.claude/.credentials.json
-chmod 600 ~/.claude/.credentials.json
-docker compose up -d
-```
-
-The OAuth token rotates periodically. When it does, the file goes
-stale and the same error returns — re-run the export to refresh. There
-is no automated refresh, which is why the `uv` path is recommended for
-day-to-day macOS use.
+This is the same procedure on Linux, macOS, and Windows. Because the
+token comes from an env var, there is no macOS Keychain export and no
+`~/.claude/.credentials.json` to keep in sync — the old platform-specific
+workarounds no longer apply.

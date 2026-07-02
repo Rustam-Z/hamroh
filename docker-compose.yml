@@ -49,7 +49,10 @@ services:
       # a rebuild. The image also has a copy baked in (Dockerfile), this
       # overlays it.
       - ./skills:/app/skills:ro
-      # Claude Code auth + session files (pre-authenticate on host first)
+      # Claude Code session files, so conversations resume across restarts.
+      # Auth is NOT taken from here — it comes from CLAUDE_CODE_OAUTH_TOKEN
+      # in .env (see .env.example). The env-var token takes precedence over
+      # any mounted credentials, so this works the same on Linux/macOS/Windows.
       - ~/.claude:/root/.claude
       - ~/.claude.json:/root/.claude.json
       # Access policy — single-file bind mount so /allow, /deny, /dmpolicy

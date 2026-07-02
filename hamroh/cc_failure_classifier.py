@@ -63,9 +63,9 @@ CC_FAILURE_PATTERNS: tuple[CcFailurePattern, ...] = (
             "expired token",
         ),
         user_message=(
-            "⚠️ Claude authentication failed — the API key or subscription "
-            "may have expired. The operator needs to re-authenticate "
-            "(`claude login` or update the key)."
+            "⚠️ Claude authentication failed — the token may be missing or "
+            "revoked. The operator needs to regenerate it with "
+            "`claude setup-token` and update `CLAUDE_CODE_OAUTH_TOKEN` in `.env`."
         ),
     ),
     CcFailurePattern(
