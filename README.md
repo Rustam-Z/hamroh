@@ -16,7 +16,7 @@ You own everything: the memory files, the skill playbooks, the MCP connections, 
 
 Out of the box it:
 - Stays in your group chat and joins conversations when it has something useful to say
-- Runs *self-reflection* (optional, off by default) — reviews what it got wrong and proposes new rules for your approval
+- Runs *self-reflection* (on by default) — reviews what it got wrong and proposes new rules for your approval
 - Executes scheduled research tasks in background subagents while staying responsive to messages
 - Remembers context across restarts via file-based memory
 
@@ -128,7 +128,7 @@ A quick tour — the full per-tool surface (args, limits, rails) is in [docs/too
 - **Memory:** persistent markdown under `data/memories/` (list / search / read / write / append), 64 KiB/file, read-before-write, survives restarts. A second **git-tracked** `memories/` folder is read-only to the bot — you curate and commit it. See [`memories/README.md`](memories/README.md).
 - **Search & history:** web search / fetch (no internal URLs) and read-only SQL SELECTs on the chat database.
 - **Browser:** drives a real headless Chromium for pages `WebFetch` can't reach — navigate, click, fill, read, screenshot, download. On by default.
-- **Scheduling:** one-shot + cron reminders, plus git-tracked custom reminders in `default-reminders.json`. Optional daily self-reflection (off by default) that proposes durable rules for your approval.
+- **Scheduling:** one-shot + cron reminders, plus git-tracked custom reminders in `default-reminders.json`. Daily self-reflection (on by default) that proposes durable rules for your approval.
 - **Skills & self-edit:** operator-curated playbooks under `skills/`; the bot can append rules to `prompts/project.md` (owner-only).
 - **Opt-in:** shell, code editing, and subagents — all off by default, toggled in `plugins.json`. Plug in any external MCP server the same way.
 - **Can't:** generate images; send/read voice, video, stickers, GIFs; moderate groups; make calls.

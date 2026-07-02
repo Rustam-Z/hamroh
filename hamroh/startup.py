@@ -65,8 +65,8 @@ _SELF_REFLECTION_KEY = "self-reflection-default"
 async def _seed_default_reminders(db, config) -> None:
     """Reconcile the default self-reflection reminder with the config flag.
 
-    The self-reflection loop is opt-in via ``HAMROH_SELF_REFLECTION_ENABLED``
-    (off by default). This is an operator-only switch read from the
+    The self-reflection loop is controlled by ``HAMROH_SELF_REFLECTION_ENABLED``
+    (on by default). This is an operator-only switch read from the
     environment — the bot can't reach it, and while the loop is on the
     agent can't cancel it (see ``CancelReminderTool``).
 

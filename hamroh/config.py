@@ -88,11 +88,12 @@ class Config:
     #: created automatically by ``ensure_dirs``.
     #: Env var: ``HAMROH_DATA_DIR`` (default ``"./data"``).
     data_dir: Path
-    #: Whether the daily self-reflection loop runs at all. Off by default
-    #: — set this to turn it on. While on, it's seeded at startup and the
-    #: bot can't cancel it (operator-only switch). While off, no
-    #: self-reflection reminder is seeded and any existing one is cancelled.
-    #: Env var: ``HAMROH_SELF_REFLECTION_ENABLED`` (default ``False``).
+    #: Whether the daily self-reflection loop runs at all. On by default
+    #: — set this to ``false`` to turn it off. While on, it's seeded at
+    #: startup and the bot can't cancel it (operator-only switch). While
+    #: off, no self-reflection reminder is seeded and any existing one is
+    #: cancelled.
+    #: Env var: ``HAMROH_SELF_REFLECTION_ENABLED`` (default ``True``).
     self_reflection_enabled: bool
     #: When the daily self-reflection task runs, if enabled. Standard cron
     #: format, in UTC time. Only matters when ``self_reflection_enabled``.
@@ -251,7 +252,7 @@ class Config:
             effort=_required("HAMROH_EFFORT"),
             claude_code_bin=_env("CLAUDE_CODE_BIN", "claude") or "claude",
             data_dir=Path(_env("HAMROH_DATA_DIR", "./data") or "./data").resolve(),
-            self_reflection_enabled=_bool("HAMROH_SELF_REFLECTION_ENABLED", False),
+            self_reflection_enabled=_bool("HAMROH_SELF_REFLECTION_ENABLED", True),
             self_reflection_cron=(
                 _env("HAMROH_SELF_REFLECTION_CRON", "0 0 * * *") or "0 0 * * *"
             ),
