@@ -166,7 +166,7 @@ async def test_default_reminder_is_seeded(
 
 
 @pytest.mark.smoke
-async def test_disabled_default_reminder_is_not_seeded(
+async def test_default_reminder_disabled_is_not_seeded(
     default_reminders_sut: tuple[Sut, str, str],
 ) -> None:
     """A reminder with "enabled": false is skipped at startup.
