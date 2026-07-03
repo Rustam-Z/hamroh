@@ -5,9 +5,9 @@ a directory under `skills/` with a `SKILL.md` (the agent-facing spec)
 and an optional `README.md` (the human-facing overview).
 
 This directory is git-tracked and ships with the repo — the bot's
-`skills_store` reads from it directly. Memory files (`data/memories/`)
-are for run-time state; skills are for durable, repo-shipped
-reference material and playbooks.
+`skills_store` reads from it directly. Memory files (`memories/`)
+are the bot's run-time notes; skills are operator-curated,
+repo-shipped reference material and playbooks.
 
 ## Layout
 

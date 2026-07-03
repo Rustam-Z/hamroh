@@ -30,7 +30,7 @@ server. Auto-discovered from `hamroh/tools/*.py` (each tool is a
 | `telegram_create_poll` | Send a poll. Supports regular/quiz, multi-answer, anonymity toggle, auto-close (`open_period` or `close_date`), and reply-to. |
 | `telegram_stop_poll` | Close a live poll early and return final tallies. |
 | `telegram_read_attachment` | Read a photo or document the user sent. The dispatcher saves inbound attachments under `data/attachments/` and surfaces them as `[attachment: <path> ...]` markers — pass that path here. Images come back as image content blocks (you actually see them); text-like files (md/txt/log/csv/json/yaml/code) come back as UTF-8; PDFs are extracted via `pypdf` and returned as text with `--- page N ---` markers. Path traversal is rejected. GIFs/videos are unsupported. |
-| `telegram_send_memory_document` | Send a memory file (under `data/memories/`) to a chat as a downloadable document. Path-locked to memories root. Optional caption + reply-to. |
+| `telegram_send_memory_document` | Send a memory file (under `memories/`) to a chat as a downloadable document. Path-locked to the memory root. Optional caption + reply-to. |
 | `render_html` | Render an HTML snippet to PNG via headless Chromium → `data/renders/`. Use for tables/charts/diffs that markdown can't fit. Network blocked — inline any CSS/JS. Returns the relative path. |
 | `render_latex` | Render a LaTeX expression to PNG via KaTeX (loaded from `cdn.jsdelivr.net` only — narrow allow-list). Pass the LaTeX without surrounding `$$`. Optional `title`. Returns the relative path; pair with `telegram_send_photo`. |
 | `telegram_send_photo` | Send a rendered photo (from `data/renders/`) as an inline Telegram photo with preview. Pair with `render_html` or `render_latex`. |
@@ -65,34 +65,26 @@ tools in `builtin_tools_disabled`.
 | `browser_screenshot` | Screenshot the page (or one element) to a PNG under `data/renders/`; pair with `telegram_send_photo`. |
 | `browser_download` | Download the original file at a URL (typically an image) into `data/renders/` and return its path; pair with `telegram_send_photo`. Get the URL first with `browser_get_attribute`. |
 
-### Memory (`data/memories/` + committed `memories/`)
+### Memory (`memories/`)
 
 | Tool | What it does |
 |---|---|
-| `memory_list` | List existing memory files, each with its frontmatter description (progressive disclosure, like `skill_list`). Legacy files without frontmatter show just path + size. Spans both memory roots. |
-| `memory_search` | Search the text inside memory files for keywords; returns matching lines, best matches first. Spans both roots. |
-| `memory_read` | Read a memory file by relative path. Resolves across both roots (runtime first). |
-| `memory_write` | Create or overwrite a memory file. Content **must** begin with name/description frontmatter (the template); writes without it are rejected. Read-before-write rail enforced; 64 KiB cap. **Writes only ever target the runtime root.** |
-| `memory_append` | Append text to a memory file's body **and** refresh its frontmatter description (so `memory_list` stays current). Name is preserved or derived from the filename; the first append migrates a legacy file onto the template. Runtime root only. |
-| `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to the memory roots (runtime + committed). Optional caption + reply-to. |
+| `memory_list` | List existing memory files, each with its frontmatter description (progressive disclosure, like `skill_list`). Legacy files without frontmatter show just path + size. |
+| `memory_search` | Search the text inside memory files for keywords; returns matching lines, best matches first. |
+| `memory_read` | Read a memory file by relative path. |
+| `memory_write` | Create or overwrite a memory file. Content **must** begin with name/description frontmatter (the template); writes without it are rejected. Read-before-write rail enforced; 64 KiB cap. |
+| `memory_append` | Append text to a memory file's body **and** refresh its frontmatter description (so `memory_list` stays current). Name is preserved or derived from the filename; the first append migrates a legacy file onto the template. |
+| `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to the memory root. Optional caption + reply-to. |
 
-**Two stores.** The bot reads and writes memory in two places, each addressed
-by its own path prefix:
+**One store.** All memory lives in the single `memories/` folder at the repo
+root. It is git-tracked, so memories survive a volume loss and the operator can
+commit them; in Docker it's bind-mounted so runtime writes land in the host
+checkout. The bot reads, searches, writes, **and** appends here — there is no
+read-only tier. See [`memories/README.md`](../memories/README.md).
 
-- **Runtime** — `data/memories/...` — gitignored, writable, lives on the Docker
-  volume. The bot's day-to-day working memory.
-- **Committed** — `memories/...` at the repo root — git-tracked and
-  **read-only to the bot**: it reads and searches these files, but
-  `memory_write` / `memory_append` reject a `memories/...` path. The operator
-  curates and commits them by hand, so they survive a volume loss. See
-  [`memories/README.md`](../memories/README.md).
-
-Reads and searches reach **both** stores; writes and appends touch **only**
-the runtime store. Every memory is named by its full path, so the two stores
-are **separate namespaces that never collide** — `data/memories/notes/ref.md`
-and `memories/notes/ref.md` are different files, both fully visible in every
-list, search and read. The folder prefix is required; a bare path is rejected,
-so pass paths verbatim from `memory_list` / `memory_search`.
+Every memory is named by its full path starting with `memories/`. The prefix is
+required; a bare path like `notes/ref.md` is rejected, so pass paths verbatim
+from `memory_list` / `memory_search`.
 
 Memory files follow the same frontmatter protocol as skills — a `---` block
 with `name` and `description` — so the agent can scan `memory_list` and pick

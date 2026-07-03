@@ -1,7 +1,7 @@
 """Shared YAML frontmatter: parse, validate, render.
 
 Both skill playbooks (``skills/<name>/SKILL.md``) and memory files
-(``data/memories/...``) carry Agent-Skills-style frontmatter: a
+(``memories/...``) carry Agent-Skills-style frontmatter: a
 ``---``-delimited YAML block with at least ``name`` and ``description``.
 This module is the single source of truth for splitting that block,
 validating those two fields, and rendering them back out, so the two

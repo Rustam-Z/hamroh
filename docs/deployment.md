@@ -159,12 +159,12 @@ GitHub for `git pull` to work. Make sure the server's SSH key
 
 ## The `data/` directory
 
-The `data/` directory is created automatically on first run. It contains:
+The `data/` directory is created automatically on first run. It contains
+only ephemeral, server-local state — memory no longer lives here. The bot's
+memory is the git-tracked `memories/` folder at the repo root (bind-mounted
+into the container as `./memories:/app/memories`), so it travels with the
+repo and needs no migration. `data/` contains:
 
-- `data/memories/` — bot's runtime memory files (the only part of `data/`
-  worth migrating between deployments). Durable memories you want to keep
-  permanently can instead live in the git-tracked `memories/` folder at the
-  repo root, which travels with the repo and needs no migration — see below.
 - `data/hamroh.db` — SQLite database (messages, users, reminders,
   tool call logs) — starts fresh on new servers
 - `data/session_id` — Claude Code session ID for conversation continuity
@@ -178,37 +178,26 @@ provisioning step needed.
 
 **First deployment:** nothing to do — the bot creates everything.
 
-**Migrating from another server:** only copy memories:
-
-```bash
-scp -r old-server:~/hamroh/data root@new-server:~/hamroh/data
-```
-
-Don't copy `session_id` or `hamroh.db` to a new server — stale
-session IDs cause CC subprocess crashes, and the database will rebuild
-naturally from new messages.
+**Migrating from another server:** nothing in `data/` is worth copying. The
+bot's memory lives in the git-tracked `memories/` folder, so a fresh
+`git clone` (or `git pull`) brings every note with it. Don't copy `session_id`
+or `hamroh.db` to a new server — stale session IDs cause CC subprocess crashes,
+and the database will rebuild naturally from new messages.
 
 ## Syncing memories and config
 
-The gitignored runtime store (`data/memories/`) only lives on the server, so
-use the included sync script to keep it and your project config in sync between
-your local machine and the server:
+Memories travel with the repo: the `memories/` folder is tracked in git, so
+`git pull` / `git push` move it like any other code. Commit the bot's latest
+notes on the server and pull them locally (or the reverse) whenever you want a
+backup.
+
+For gitignored config that only lives on the server — such as `project.md` —
+use the included sync script:
 
 ```bash
-# Pull latest memories from server
-./scripts/sync-memories.sh pull root@your-server-ip
-
-# Push updated project.md to server
+# Push updated project.md to the server
 ./scripts/sync-memories.sh push root@your-server-ip
-
-# Both (pull memories, then push project.md)
-./scripts/sync-memories.sh sync root@your-server-ip
 ```
-
-The **committed** `memories/` folder (repo root) needs none of this — it's
-tracked in git, so `git pull` / `git push` move it like any other code. Use it
-for durable memories you want versioned and backed up; let the bot's ephemeral
-day-to-day notes stay in the runtime store.
 
 After pushing `project.md`, restart for changes to take effect:
 

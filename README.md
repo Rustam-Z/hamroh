@@ -106,7 +106,7 @@ Beyond the config files, you extend the bot by dropping in files — no Python n
 - **Skills** — add a playbook at `skills/<name>/SKILL.md`; the bot reads it on its own initiative. [docs](docs/documentation.md#agent-skills)
 - **MCPs & tools** — capability surface, what tools, skills, and MCPs are on `plugins.json` (`stdio` or remote HTTP/SSE), with credentials pulled from `.env` via `${VAR}`. Read [docs/tools.md](docs/tools.md). [docs/documentation.md](docs/documentation.md#what-pluginsjson-controls).
 - **Reminders** — custom recurring reminders shipped with the bot are at `default-reminders.json`. [docs](docs/documentation.md#custom-reminders-default-remindersjson).
-- **Memory notes** — curate git-tracked notes under `memories/` (e.g. `memories/notes/references.md`); the bot reads and searches them but is read-only here (writes only touch `data/memories/`). Addressed by full path (`memories/...`), a separate namespace from the runtime `data/memories/...`. [memories/README.md](memories/README.md)
+- **Memory notes** — the bot's notes live under `memories/` (e.g. `memories/notes/references.md`); the bot reads, searches, and writes them, and you can curate them too. Addressed by full path (`memories/...`) and git-tracked, so memories survive restarts and you can commit them. [memories/README.md](memories/README.md)
 - **Persona & rules** — extend the system prompt by editing `prompts/project.md`; it's appended to the shipped `prompts/system.md`. [docs](docs/documentation.md#system-prompt). Bot name, language, house rules, owner-specific instructions; appended to the shipped `prompts/system.md`.
 - **Access** — who can DM the bot or use it in groups (hot-reloaded, no restart). [docs/documentation.md](docs/documentation.md#access-control).
 - `.env` secrets — Telegram bot token, owner id, plus any credentials your `plugins.json` entries reference via `${VAR}` (the example file's GitLab / GitHub entries demonstrate the pattern).
@@ -123,7 +123,7 @@ Read more in [docs/documentation.md](docs/documentation.md#run-your-own-agent).
 A quick tour — the full per-tool surface (args, limits, rails) is in [docs/tools.md](docs/tools.md).
 
 - **Communication & media:** send / reply / edit / delete, reactions, polls; render HTML and LaTeX to PNG; read inbound photos (vision), text-like docs, and PDFs.
-- **Memory:** persistent markdown addressed by full path (list / search / read / write / append), 64 KiB/file, read-before-write, survives restarts. Two stores, separate namespaces: `data/memories/...` (runtime, gitignored) and a **git-tracked** `memories/...` folder — the bot reads and searches both but writes only to runtime; the committed folder is operator-curated. See [`memories/README.md`](memories/README.md).
+- **Memory:** persistent markdown addressed by full path (list / search / read / write / append), 64 KiB/file, read-before-write, survives restarts. One store: a **git-tracked** `memories/...` folder the bot reads, searches, writes, and appends to — and that you can commit and curate. See [`memories/README.md`](memories/README.md).
 - **Search & history:** web search / fetch (no internal URLs) and read-only SQL SELECTs on the chat database.
 - **Browser:** drives a real headless Chromium for pages `WebFetch` can't reach — navigate, click, fill, read, screenshot, download. On by default.
 - **Scheduling:** one-shot + cron reminders, plus git-tracked custom reminders in `default-reminders.json`. Daily self-reflection (on by default) that proposes durable rules for your approval.

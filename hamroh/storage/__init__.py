@@ -1,15 +1,15 @@
-"""Disk-backed stores for everything under ``data/``.
+"""Disk-backed stores for the bot's file state.
 
-Each module is a thin wrapper around one subdirectory of ``data/``
-(``data/memories/``, ``data/attachments/``, ``data/renders/``) that
-does path-safety hardening, size capping, and read/write helpers.
-The shape is the same everywhere: a ``Store`` class with
+Each module is a thin wrapper around one storage folder — the git-tracked
+``memories/`` at the repo root, plus ``data/attachments/`` and
+``data/renders/`` — that does path-safety hardening, size capping, and
+read/write helpers. The shape is the same everywhere: a ``Store`` class with
 ``ensure_root``, ``resolve_path``, plus per-kind read/write methods.
 
 Operator-curated content lives elsewhere — system prompt is at
 ``hamroh.instructions_store``, skill playbooks are at
 ``hamroh.skills_store`` — because those manage ``prompts/`` and
-``skills/``, not ``data/``.
+``skills/``.
 
 This package re-exports the public API so callers can keep writing
 ``from hamroh.storage import MemoryStore`` etc. without caring

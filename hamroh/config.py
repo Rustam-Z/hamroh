@@ -83,9 +83,10 @@ class Config:
     #: Name or full path of the ``claude`` program to run.
     #: Env var: ``CLAUDE_CODE_BIN`` (default ``"claude"``).
     claude_code_bin: str
-    #: Folder where the bot stores its data: the database, memory files,
-    #: claude logs, the access list, and the session ID. The folder is
-    #: created automatically by ``ensure_dirs``.
+    #: Folder where the bot stores its data: the database, claude logs, the
+    #: access list, and the session ID. The folder is created automatically
+    #: by ``ensure_dirs``. (Memory files live in ``memories/`` at the repo
+    #: root, not here — see ``memories_dir``.)
     #: Env var: ``HAMROH_DATA_DIR`` (default ``"./data"``).
     data_dir: Path
     #: Whether the daily self-reflection loop runs at all. On by default
@@ -207,14 +208,11 @@ class Config:
 
     # Derived paths
     db_path: Path = field(init=False)
+    #: The bot's memory folder: git-tracked ``memories/`` at the repo root, so
+    #: memories are committable and survive a volume loss. Defaults to
+    #: ``<repo>/memories``; ``HAMROH_MEMORIES_DIR`` redirects it (the e2e harness
+    #: points it at a temp dir for isolation).
     memories_dir: Path = field(init=False)
-    #: Git-tracked, committable memories folder at the repo root. A second
-    #: memory store alongside ``memories_dir``, addressed by the ``memories/``
-    #: path prefix (the runtime store is ``data/memories/``). Distinct
-    #: namespaces — never merged. The bot reads and searches it but is
-    #: **read-only** here: ``memory_write`` / ``memory_append`` only touch the
-    #: runtime store. The operator curates and commits these files.
-    committed_memories_dir: Path = field(init=False)
     session_id_path: Path = field(init=False)
     cc_logs_dir: Path = field(init=False)
     access_path: Path = field(init=False)
@@ -228,17 +226,15 @@ class Config:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "db_path", self.data_dir / "hamroh.db")
-        object.__setattr__(self, "memories_dir", self.data_dir / "memories")
         object.__setattr__(self, "session_id_path", self.data_dir / "session_id")
         object.__setattr__(self, "cc_logs_dir", self.data_dir / "cc_logs")
-        # access.json sits at the repo root alongside plugins.json — both
-        # are operator-edited config files, not runtime state, so they
-        # don't belong in data/. Tests override this via for_test().
+        # access.json and memories/ live at the repo root, not the gitignored
+        # data/: access.json is operator config, memories/ is git-tracked so it
+        # commits. Tests override both via for_test(); HAMROH_MEMORIES_DIR also
+        # redirects memories_dir.
         project_root = Path(__file__).resolve().parent.parent
         object.__setattr__(self, "access_path", project_root / "access.json")
-        # Committed memories live at the repo root (tracked in git), separate
-        # from the gitignored runtime data/. Tests override this via for_test().
-        object.__setattr__(self, "committed_memories_dir", project_root / "memories")
+        object.__setattr__(self, "memories_dir", project_root / "memories")
         object.__setattr__(
             self, "committed_reminders_path", project_root / "default-reminders.json"
         )
@@ -282,10 +278,11 @@ class Config:
     def _apply_env_path_overrides(cfg: "Config") -> None:
         """Redirect repo-root config paths to env-specified files.
 
-        ``access.json`` and ``default-reminders.json`` normally sit at the repo
-        root (see ``__post_init__``). The e2e harness points them at temp files
-        via ``HAMROH_ACCESS_PATH`` / ``HAMROH_REMINDERS_PATH`` so a test can
-        authorize a group or seed a reminder without touching the repo copies.
+        ``access.json``, ``default-reminders.json`` and ``memories/`` normally
+        sit at the repo root (see ``__post_init__``). The e2e harness points
+        them at temp paths via ``HAMROH_ACCESS_PATH`` / ``HAMROH_REMINDERS_PATH``
+        / ``HAMROH_MEMORIES_DIR`` so a test can authorize a group, seed a
+        reminder or write a memory without touching the repo copies.
         """
         access_override = _env("HAMROH_ACCESS_PATH")
         if access_override:
@@ -295,6 +292,9 @@ class Config:
             object.__setattr__(
                 cfg, "committed_reminders_path", Path(reminders_override).resolve()
             )
+        memories_override = _env("HAMROH_MEMORIES_DIR")
+        if memories_override:
+            object.__setattr__(cfg, "memories_dir", Path(memories_override).resolve())
 
     @classmethod
     def for_test(cls, data_dir: Path) -> "Config":
@@ -335,12 +335,12 @@ class Config:
     def _override_test_paths(cfg: "Config", root: Path) -> None:
         """Point per-test file paths inside the tmp dir, off the repo root.
 
-        Tests use isolated tmp dirs, so access.json, the committed memories
-        folder, and the reminders file each get their own copy and never touch
-        the repo root.
+        Tests use isolated tmp dirs, so access.json, the memories folder, and
+        the reminders file each get their own copy and never touch the repo
+        root.
         """
         object.__setattr__(cfg, "access_path", root / "access.json")
-        object.__setattr__(cfg, "committed_memories_dir", root / "committed_memories")
+        object.__setattr__(cfg, "memories_dir", root / "memories")
         object.__setattr__(
             cfg, "committed_reminders_path", root / "default-reminders.json"
         )

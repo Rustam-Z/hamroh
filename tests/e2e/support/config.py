@@ -133,6 +133,9 @@ def child_env(
     if extra_env:
         env.update(extra_env)
     env["HAMROH_DATA_DIR"] = str(data_dir)
+    # memories/ defaults to the real repo folder; redirect it into the isolated
+    # data dir so test writes never touch it.
+    env["HAMROH_MEMORIES_DIR"] = str(data_dir / "memories")
     return env
 
 

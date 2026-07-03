@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Sync hamroh data between local and remote server.
+# Sync hamroh's gitignored server state (project.md, the SQLite DB) between
+# local and remote. Memories are NOT synced here — the `memories/` folder is
+# tracked in git, so it travels with `git pull` / `git push`.
 #
 # Usage:
 #   ./scripts/sync-memories.sh pull user@server                  # default ssh
@@ -19,13 +21,13 @@ usage() {
     echo "Usage: $0 {pull|push} user@server [--key <path> | --password]"
     echo ""
     echo "Commands:"
-    echo "  pull   Pull project.md, memories, DB from server to local"
-    echo "  push   Push project.md, memories, DB from local to server"
+    echo "  pull   Pull project.md, DB from server to local"
+    echo "  push   Push project.md, DB from local to server"
     echo ""
     echo "Auth (optional, default = standard ssh / agent):"
     echo "  --key <path>   Use this private key file (ssh -i)"
     echo "  --password     Force password auth; ssh prompts inline."
-    echo "                 NOTE: prompts 3x per run (one per rsync call)."
+    echo "                 NOTE: prompts once per rsync call."
     echo ""
     echo "Environment:"
     echo "  REMOTE_DIR     Remote hamroh directory (default: ~/hamroh)"
@@ -61,11 +63,6 @@ pull() {
         "$SERVER:$REMOTE_DIR/prompts/project.md" \
         "$LOCAL_DIR/prompts/project.md"
 
-    echo "  memories..."
-    rsync -avz --delete "${RSYNC_E[@]}" \
-        "$SERVER:$REMOTE_DIR/data/memories/" \
-        "$LOCAL_DIR/data/memories/"
-
     echo "  database..."
     rsync -avz "${RSYNC_E[@]}" \
         "$SERVER:$REMOTE_DIR/data/hamroh.db" \
@@ -81,11 +78,6 @@ push() {
     rsync -avz "${RSYNC_E[@]}" \
         "$LOCAL_DIR/prompts/project.md" \
         "$SERVER:$REMOTE_DIR/prompts/project.md"
-
-    echo "  memories..."
-    rsync -avz "${RSYNC_E[@]}" \
-        "$LOCAL_DIR/data/memories/" \
-        "$SERVER:$REMOTE_DIR/data/memories/"
 
     echo "  database..."
     rsync -avz "${RSYNC_E[@]}" \

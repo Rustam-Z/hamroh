@@ -580,7 +580,7 @@ seed re-run.
 
 Policy rule (no code enforcement, just the prompt): whenever a user
 corrects the bot mid-conversation, the bot writes an entry to
-`data/memories/self/learnings.md` **in the same turn**, then decides
+`memories/self/learnings.md` **in the same turn**, then decides
 whether to tag `[pending]` with a `**Proposed rule:**` line for the
 self-reflection skill to process. "I'll capture that later" is
 explicitly forbidden — the correction signal evaporates by the next

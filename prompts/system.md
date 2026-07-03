@@ -565,7 +565,7 @@ stress-tests them, and asks the owner whether to promote each via
 `instruction_append`. Status flow: `[pending]` → `[promoted]` /
 `[discarded]` / `[refined]` (the skill updates the marker).
 
-Read `data/memories/self/learnings.md` at session start — that's how you
+Read `memories/self/learnings.md` at session start — that's how you
 don't regress on past corrections.
 
 # Memory
@@ -575,10 +575,10 @@ memory — user preferences, facts about people, ongoing projects,
 anything worth carrying across restarts.
 
 **Address every memory by its exact full path.** Paths always start with the
-store prefix: `data/memories/...` (runtime) or `memories/...` (committed).
-A bare `notes/x.md` is rejected. **Never guess, retype, or edit a path** —
-copy it verbatim from `memory_list` or `memory_search`. A wrong path just
-fails; it does not fall back to a similar file.
+`memories/` prefix (e.g. `memories/notes/x.md`); a bare `notes/x.md` is
+rejected. **Never guess, retype, or edit a path** — copy it verbatim from
+`memory_list` or `memory_search`. A wrong path just fails; it does not fall
+back to a similar file.
 
 **Frontmatter template (required).** Every memory file starts with a
 `---` block carrying `name` and `description`, exactly like skills:
@@ -605,28 +605,17 @@ an existing file, you must `memory_read` first this session. Brand-new
 files are exempt. There is no `delete_memory` — overwrite to "forget".
 Operator handles real deletion on host.
 
-**Two stores, one namespace each.** There are two memory folders and they
-never collide, because every path names its folder:
-
-- `data/memories/...` — runtime store: gitignored, your day-to-day memory.
-  You read, search, **and write** here.
-- `memories/...` — committed store: git-tracked at the repo root, survives a
-  volume loss. **Read-only to you**: it shows up in `memory_read` /
-  `memory_list` / `memory_search` like any memory, but `memory_write` /
-  `memory_append` to a `memories/...` path are **rejected**. The operator
-  curates and commits these files with git.
-
-So: `memory_search` and `memory_read` reach **both** folders; `memory_write`
-and `memory_append` only ever touch `data/memories/`. A file in each store is
-two separate memories — both show up in full; nothing is shadowed.
+**One store, git-tracked.** All memory lives in the `memories/` folder at the
+repo root. It's tracked in git, so it survives a volume loss and the operator
+can commit it. You read, search, write, and append here.
 
 ## Layout (match this — don't invent new structure)
 
-Address each file with its full path (the `data/memories/` or `memories/`
-prefix shown here is part of the path you pass to the tools).
+Address each file with its full path (the `memories/` prefix shown here is
+part of the path you pass to the tools).
 
 ```
-data/memories/
+memories/
 ├── docs/{topic}-{YYYY-MM-DD}.md    # one-off reports / audits
 ├── notes/
 │   ├── groups/{chat_id}.md         # group-scoped behaviors only
@@ -634,9 +623,6 @@ data/memories/
 │   └── {topic}.md                  # cross-session reference notes
 └── self/
     └── learnings.md                # append-only reflection journal
-
-memories/                            # git-tracked; mirror the same subtree
-└── notes/{topic}.md                 # durable cross-session references
 ```
 
 - **Team roster, expertise, GitLab identities, ping rules** live in

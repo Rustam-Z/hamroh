@@ -305,7 +305,7 @@ Edit `access.json` directly if you prefer — changes are hot-reloaded.
 
 ## Memory
 
-`data/memories/*.md` is where the bot keeps its notes. It has six tools:
+`memories/*.md` is where the bot keeps its notes. It has six tools:
 
 - `memory_list` — list the files
 - `memory_search` — search the text inside files for keywords, best matches first
@@ -313,7 +313,7 @@ Edit `access.json` directly if you prefer — changes are hot-reloaded.
 - `memory_write` — create or overwrite a file (max 64 KiB)
 - `memory_append` — add text to an existing file
 - `telegram_send_memory_document` — send a memory file to a chat as a Telegram
-  document (path-locked to `data/memories/`, optional caption + reply-to)
+  document (path-locked to `memories/`, optional caption + reply-to)
 
 **Read before write.** To overwrite or append to a file that already
 exists, the bot has to read it first in the same session. Brand-new files
@@ -324,42 +324,28 @@ you wrote but it never read.
 
 **No delete tool, on purpose.** If the bot wants to "forget" something,
 it has to overwrite the file. Actually deleting a file is up to you:
-`rm data/memories/<file>` on the host.
+`rm memories/<file>` on the host.
 
-You can also seed memory yourself by putting markdown files into
-`data/memories/` while the bot is running. It will see them on the next
-`memory_list` call.
+### One store: `memories/`
 
-### Two memory stores: runtime and committed
+All memory lives in the single `memories/` folder at the repo root — one store,
+no read-only tier. The bot reads, searches, writes, and appends here; you can
+seed a file yourself and it shows up on the next `memory_list`.
 
-The bot reads and writes memory in two places, each addressed by its own path
-prefix:
+The folder is **git-tracked**, so memories carry full history and survive a
+lost volume, rebuild, or new machine. In Docker it's bind-mounted
+(`./memories:/app/memories`), so runtime writes land in your checkout, ready to
+`git commit`.
 
-- **Runtime — `data/memories/...`** — gitignored, writable by the bot, lives on
-  the Docker volume. Its day-to-day working memory.
-- **Committed — `memories/...`** (at the repo root) — git-tracked and
-  **read-only to the bot**: it reads and searches these files, but writes and
-  appends to a `memories/...` path are rejected. You author and edit these
-  files by hand and commit them with `git`, so important memories live in the
-  repo with full history and survive a lost volume, server rebuild, or move to
-  a new machine.
-
-Reads and searches reach both stores; `memory_write` / `memory_append` only
-ever touch the runtime `data/memories/`. Every memory is named by its **full
-project path**, so the two stores are separate namespaces that never collide:
-`data/memories/notes/ref.md` and `memories/notes/ref.md` are different files
-and both show up, in full, in every `memory_list` / `memory_search` /
-`memory_read`. The prefix is required — a bare `notes/ref.md` is rejected.
-Nothing here is loaded into the system prompt;
-memories are read on demand. To add a committed memory, drop a markdown file
-under `memories/` (with `name`/`description` frontmatter), then
-`git add memories/ && git commit`. See
-[`memories/README.md`](../memories/README.md) for the full how-to.
+Every memory is named by its **full path** starting with `memories/` — a bare
+`notes/ref.md` is rejected, so pass paths verbatim from `memory_list` /
+`memory_search`. See [`memories/README.md`](../memories/README.md) for the
+full how-to.
 
 ### Learning — `self/learnings.md`
 
 Mistakes, corrections, and patterns the bot wants to carry forward live
-in `data/memories/self/learnings.md`. Conventions (enforced by the system
+in `memories/self/learnings.md`. Conventions (enforced by the system
 prompt):
 
 - **On correction, same-turn capture.** When a user corrects the bot, or
@@ -644,7 +630,7 @@ my-agent/                    # your private repo
 │   ├── system.md            # seeded from framework/ — required
 │   └── project.md           # bot name, language, personality
 ├── skills/                  # framework playbooks (seeded) + your own
-├── memories/                # git-tracked committed memories
+├── memories/                # the bot's memory (git-tracked)
 ├── plugins.json             # tools + MCP capability surface
 ├── access.json              # DM / group policy
 └── default-reminders.json   # custom recurring reminders
@@ -1120,7 +1106,7 @@ are load-bearing — keep them.
 Once configured, you should be able to:
 
 1. DM the bot, see the bot reply via `telegram_send_message`.
-2. Drop `data/memories/user_preferences.md` containing "Alice prefers
+2. Drop `memories/user_preferences.md` containing "Alice prefers
    Russian", ask "what do you know about me?", watch it call
    `memory_list` → `memory_read` and reply in Russian.
 3. Send 5 messages in 2 seconds, see them batched into one turn
@@ -1242,12 +1228,11 @@ hamroh/
 │   └── render-style/           # reference-mode: render_html style guide
 │       ├── SKILL.md            #     tokens + 3 HTML skeletons
 │       └── README.md
-├── memories/                   # committed memories (git-tracked, addressed as memories/...; bot reads, operator writes)
-│   └── README.md               #   how to add committed memory files
+├── memories/                   # the bot's memory (git-tracked, addressed as memories/...; bot reads + writes, bind-mounted in Docker)
+│   └── README.md               #   how the memory store works
 ├── data/                       # gitignored
 │   ├── hamroh.db            # SQLite (messages, users, tool_calls, ...)
 │   ├── session_id              # CC session id for --resume
-│   ├── memories/               # the agent's runtime working memory (writable)
 │   ├── attachments/            # inbound photos/docs the dispatcher saves
 │   ├── renders/                # outbound PNGs from render_html
 │   ├── prompt_backups/         # auto-backups before instruction_append writes

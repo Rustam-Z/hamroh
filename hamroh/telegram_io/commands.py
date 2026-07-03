@@ -265,7 +265,7 @@ class OwnerCommandsMixin:
                 if mem_dir.exists()
                 else 0
             )
-            return [f"*memory footprint:* {total_bytes:,} bytes under `data/memories/`"]
+            return [f"*memory footprint:* {total_bytes:,} bytes under `memories/`"]
         except Exception as exc:
             return [f"*memory footprint:* error ({exc})"]
 

@@ -30,16 +30,14 @@ class ListMemoriesArgs(BaseModel):
 class ListMemoriesTool(BaseTool[ListMemoriesArgs]):
     name = "memory_list"
     description = (
-        "List every memory file, each shown by its FULL project path — "
-        "'data/memories/...' (runtime store) or 'memories/...' (committed "
-        "store) — with its frontmatter description, enough to decide which "
-        "memory is relevant without reading the whole file (the same "
-        "progressive-disclosure protocol skill_list uses). The two stores are "
-        "separate namespaces: a file in each is listed as two distinct paths. "
-        "Pass a path from this list verbatim to memory_read/write/append. "
-        "Memories carry name/description frontmatter; legacy files without it "
-        "show just their path and size. To find files by their CONTENTS "
-        "rather than their summaries, use memory_search instead."
+        "List every memory file, each shown by its FULL project path "
+        "('memories/...') with its frontmatter description, enough to decide "
+        "which memory is relevant without reading the whole file (the same "
+        "progressive-disclosure protocol skill_list uses). Pass a path from "
+        "this list verbatim to memory_read/write/append. Memories carry "
+        "name/description frontmatter; legacy files without it show just their "
+        "path and size. To find files by their CONTENTS rather than their "
+        "summaries, use memory_search instead."
     )
     args_model = ListMemoriesArgs
 
@@ -90,12 +88,11 @@ class SearchMemoryTool(BaseTool[SearchMemoryArgs]):
     name = "memory_search"
     description = (
         "Search the TEXT INSIDE memory files (not just their names) for "
-        "keywords, across ALL folders — both 'data/memories/' (runtime) and "
-        "'memories/' (committed). Case-insensitive. Returns matching lines as "
-        "'path:line: text', best matches first, where 'path' is the full "
-        "project path. Faster than memory_list plus reading every file: search "
-        "first, then memory_read the most relevant file by copying its exact "
-        "path from these results."
+        "keywords, across all 'memories/' files. Case-insensitive. Returns "
+        "matching lines as 'path:line: text', best matches first, where 'path' "
+        "is the full project path. Faster than memory_list plus reading every "
+        "file: search first, then memory_read the most relevant file by copying "
+        "its exact path from these results."
     )
     args_model = SearchMemoryArgs
 
@@ -120,8 +117,7 @@ class ReadMemoryArgs(BaseModel):
         description=(
             "EXACT full project path, copied verbatim from memory_list or "
             "memory_search — do not retype or guess it. Starts with "
-            "'data/memories/' (runtime) or 'memories/' (committed). The folder "
-            "prefix is REQUIRED. No '..', no absolute paths."
+            "'memories/'. The prefix is REQUIRED. No '..', no absolute paths."
         ),
     )
 
@@ -129,10 +125,9 @@ class ReadMemoryArgs(BaseModel):
 class ReadMemoryTool(BaseTool[ReadMemoryArgs]):
     name = "memory_read"
     description = (
-        "Read ONE memory file by its full project path — reads from BOTH stores, "
-        "'data/memories/...' (runtime) and 'memories/...' (committed). Pass the "
-        "exact path from memory_list/memory_search; a wrong path just fails, it "
-        "does not fall back. To read several files, call this once per path "
+        "Read ONE memory file by its full project path ('memories/...'). Pass "
+        "the exact path from memory_list/memory_search; a wrong path just fails, "
+        "it does not fall back. To read several files, call this once per path "
         "(the calls can run in parallel). UTF-8; files over 64 KiB are "
         "truncated. Reading a file unlocks writing/appending to it this session."
     )
@@ -152,10 +147,9 @@ class ReadMemoryTool(BaseTool[ReadMemoryArgs]):
 class WriteMemoryArgs(BaseModel):
     path: str = Field(
         description=(
-            "Full project path under 'data/memories/' — writes go ONLY to the "
-            "runtime store. The 'data/memories/' prefix is REQUIRED; a "
-            "'memories/...' (committed) or bare path is rejected. No '..', no "
-            "absolute paths. Parent directories are created automatically."
+            "Full project path under 'memories/'. The 'memories/' prefix is "
+            "REQUIRED; a bare path is rejected. No '..', no absolute paths. "
+            "Parent directories are created automatically."
         ),
     )
     content: str = Field(
@@ -170,18 +164,15 @@ class WriteMemoryArgs(BaseModel):
 class WriteMemoryTool(BaseTool[WriteMemoryArgs]):
     name = "memory_write"
     description = (
-        "Create or fully overwrite a memory file. Max 64 KiB. Content MUST "
-        "start with name/description frontmatter (the template) — writes "
-        "without it are rejected — so memory_list can show what the file is "
-        "about. Rewrite the description whenever the content changes. "
-        "If the file already exists you MUST call memory_read on it first "
-        "in the same session — a safety rail against destroying operator-"
-        "curated notes. New files can be created without a prior read. Writes "
-        "go ONLY to the runtime store 'data/memories/...'; the committed "
-        "'memories/...' store is READ-ONLY to you (a 'memories/' path is "
-        "rejected — the operator edits it via git). Writes to local storage "
-        "only — to send a memory file to the user, use "
-        "telegram_send_memory_document."
+        "Create or fully overwrite a memory file under 'memories/...'. Max "
+        "64 KiB. Content MUST start with name/description frontmatter (the "
+        "template) — writes without it are rejected — so memory_list can show "
+        "what the file is about. Rewrite the description whenever the content "
+        "changes. If the file already exists you MUST call memory_read on it "
+        "first in the same session — a safety rail against destroying notes "
+        "whose content you never saw. New files can be created without a prior "
+        "read. Writes to local storage only — to send a memory file to the "
+        "user, use telegram_send_memory_document."
     )
     args_model = WriteMemoryArgs
 
@@ -202,10 +193,8 @@ class WriteMemoryTool(BaseTool[WriteMemoryArgs]):
 class AppendMemoryArgs(BaseModel):
     path: str = Field(
         description=(
-            "Full project path under 'data/memories/' — appends go ONLY to the "
-            "runtime store. The 'data/memories/' prefix is REQUIRED; a "
-            "'memories/...' (committed) or bare path is rejected. No '..', no "
-            "absolute paths."
+            "Full project path under 'memories/'. The 'memories/' prefix is "
+            "REQUIRED; a bare path is rejected. No '..', no absolute paths."
         ),
     )
     content: str = Field(
@@ -228,10 +217,8 @@ class AppendMemoryTool(BaseTool[AppendMemoryArgs]):
         "latest content. The file's name is preserved (or derived from the "
         "filename for a new/legacy file — the first append adds frontmatter). "
         "New total must stay under 64 KiB. If the file already exists you MUST "
-        "call memory_read on it first in the same session. Appends go ONLY to "
-        "the runtime store 'data/memories/...'; the committed 'memories/...' "
-        "store is read-only to you. Useful for journals, running notes, "
-        "conversation logs."
+        "call memory_read on it first in the same session. Appends go to "
+        "'memories/...'. Useful for journals, running notes, conversation logs."
     )
     args_model = AppendMemoryArgs
 

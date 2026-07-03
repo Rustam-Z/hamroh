@@ -39,11 +39,12 @@ The pointer to read this skill before rendering lives in
 
 ## Why a skill (not a memory file)
 
-Skills are git-tracked under `skills/`; memory files live under
-`data/memories/` which is gitignored. Style guides should ship with
-the repo, survive `data/` resets, and be visible to anyone reviewing
-the codebase. Skills are also discoverable through `skill_list` so
-the bot can find them without operator priming.
+Skills are operator-curated playbooks under `skills/`; memory files
+under `memories/` are the bot's own run-time notes. A style guide is
+reference material that should ship with the repo and be visible to
+anyone reviewing the codebase, so it belongs in `skills/`, not memory.
+Skills are also discoverable through `skill_list` so the bot can find
+them without operator priming.
 
 ## Editing
 

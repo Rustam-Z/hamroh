@@ -84,14 +84,9 @@ class Sut:
 
     @property
     def memories_dir(self) -> Path:
+        # The isolated memory store: HAMROH_MEMORIES_DIR points the SUT here
+        # (see child_env), off the real repo ``memories/`` folder.
         return self.data_dir / "memories"
-
-    @property
-    def committed_memories_dir(self) -> Path:
-        # The git-tracked committed memories folder. The SUT derives it from its
-        # cwd (REPO_ROOT), NOT from the isolated HAMROH_DATA_DIR — so this is the
-        # real ``memories/`` at the repo root. A test seeding here must clean up.
-        return REPO_ROOT / "memories"
 
     @property
     def renders_dir(self) -> Path:

@@ -37,8 +37,11 @@ services:
       hamroh-init:
         condition: service_completed_successfully
     volumes:
-      # Persistent data: SQLite, memories, session_id, cc_logs
+      # Persistent data: SQLite, session_id, cc_logs
       - ./data:/app/data
+      # Memory files. Bind-mounted so runtime writes land in the git-tracked
+      # host checkout — durable across redeploys and committable.
+      - ./memories:/app/memories
       # Prompt files. Mounted as a directory (not a single-file mount)
       # so the bot's `append_instructions` tool can rename(2)-replace
       # project.md atomically — single-file bind mounts return EBUSY

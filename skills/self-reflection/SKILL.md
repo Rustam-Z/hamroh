@@ -107,7 +107,7 @@ to fill a quota.
 
 For each selected candidate:
 
-1. `memory_read("data/memories/self/learnings.md")` first (read-before-write rail).
+1. `memory_read("memories/self/learnings.md")` first (read-before-write rail).
 2. Decide the candidate's status marker:
    - `[pending]` if it's a likely durable rule ("I should default to
      X when Y").
@@ -147,7 +147,7 @@ phase B will handle all proposals in one batch.
 
 ### Step 1 — gather pending lessons
 
-Read `data/memories/self/learnings.md` via `memory_read`.
+Read `memories/self/learnings.md` via `memory_read`.
 
 Parse the h2 headers (`## YYYY-MM-DD — topic [marker]`). Collect every
 entry whose marker is exactly `[pending]`. Entries without a marker,
@@ -214,7 +214,7 @@ land. Two sinks, picked by what the lesson *is*:
   that should govern *how you behave* in every session ("default to
   the lead on assignment", "never reply in English to an Uzbek
   message"). Effective only after the operator restarts.
-- **Memory** (`data/memories/...`) — a **fact or context**, not a
+- **Memory** (`memories/...`) — a **fact or context**, not a
   behavioral rule: a user preference → `notes/users/<user_id>.md`, a
   group quirk → `notes/groups/<chat_id>.md`, a cross-session
   reference → `notes/<topic>.md`. Effective immediately, no restart.
@@ -228,7 +228,7 @@ final call in Step 5 and can redirect it.
 ### Step 3 — save the audit log
 
 Write the per-run reasoning to
-`data/memories/self/reflections/<YYYY-MM-DD>.md` via `memory_write`
+`memories/self/reflections/<YYYY-MM-DD>.md` via `memory_write`
 (create parents automatically — just pass the full relative path).
 Start the file with the required frontmatter, then the body:
 
@@ -264,7 +264,7 @@ Daily reflection — <N> candidate(s).
 5. [ambiguous] <one-line>, need your judgment (fit <X>%, concern: …).
 
 Reply e.g. "approve 1, 3; send 2 to memory; reject 4" or free-form.
-Full reasoning saved at data/memories/self/reflections/<date>.md.
+Full reasoning saved at memories/self/reflections/<date>.md.
 ```
 
 Every promote/refine line names its **suggested target** (`→ project`
@@ -289,7 +289,7 @@ lands, overriding your suggestion:
 
 - "send 2 to memory" / "1 to project instead" — change the sink.
 - "2 to memory: notes/users/123.md" — owner names the exact file; use
-  it verbatim (must resolve under `data/memories/`).
+  it verbatim (must resolve under `memories/`).
 - "approve 1 to memory" — approval and target in one breath.
 
 If the owner approves a memory-bound item but names no file and your
@@ -329,13 +329,13 @@ compact the `learnings.md` entry. Two target branches:
    current). No restart needed — memory is read live.
 
 **Then, for either branch, compact the source entry** in
-`data/memories/self/learnings.md` **in one write** — the lesson now
+`memories/self/learnings.md` **in one write** — the lesson now
 lives at its target and the full reasoning lives in the audit log
 (`self/reflections/<date>.md`), so the entry's prose is redundant the
 moment it resolves. Don't leave the full body behind to be swept
 "later" — that's exactly what let the file grow unbounded.
 
-- `memory_read("data/memories/self/learnings.md")` first (read-before-write).
+- `memory_read("memories/self/learnings.md")` first (read-before-write).
 - Flip the marker to `[promoted]` (or `[refined]` if the owner
   dictated narrower wording) **and** replace the entry's body with a
   one-line tombstone naming where it went, in one edit:
@@ -347,7 +347,7 @@ moment it resolves. Don't leave the full body behind to be swept
 
   Use `[promoted → project]` or `[promoted → memory]` (likewise
   `[refined → …]`) so the tombstone records the sink.
-- `memory_write("data/memories/self/learnings.md", <full updated content>)`.
+- `memory_write("memories/self/learnings.md", <full updated content>)`.
 
 For each rejected item: same compaction, marker `[discarded]`, with a
 one-line summary of *why* it was dropped so it isn't re-proposed.
@@ -386,13 +386,13 @@ One-line summary. (compacted YYYY-MM-DD)
 
 ### C.2 — the sweep
 
-1. `memory_read("data/memories/self/learnings.md")` (already done in phase B —
+1. `memory_read("memories/self/learnings.md")` (already done in phase B —
    re-use the content).
 2. Identify any resolved entry whose body is still multi-line.
 3. For each, preserve the h2 header + marker, replace the body with
    the one-line summary + `(compacted YYYY-MM-DD)` footer.
 4. If nothing needs compacting, skip the write entirely.
-5. `memory_write("data/memories/self/learnings.md", <new content>)`.
+5. `memory_write("memories/self/learnings.md", <new content>)`.
 
 Report the compaction in the step-7 confirmation message: "Done. N
 rule(s) promoted. Compacted M old entries." If no compaction
