@@ -95,7 +95,6 @@ async def _assert_drives_browser(
 
 
 @pytest.mark.smoke
-@pytest.mark.slow
 async def test_bot_google_images_screenshot_dm(
     hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -141,7 +140,6 @@ async def test_bot_google_images_screenshot_group(
 
 
 @pytest.mark.smoke
-@pytest.mark.slow
 async def test_bot_clicks_link_and_screenshots_dm(
     hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:
