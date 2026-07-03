@@ -342,7 +342,7 @@ def test_invariant_3_read_before_write_enforced(tmp_path: Path) -> None:
     (store.root / "operator_note.md").write_text("CRITICAL")
     templated = "---\nname: note\ndescription: d\n---\n\ndestroyed"
     with pytest.raises(MemoryPathError, match="read-before-write"):
-        store.write("operator_note.md", templated)
+        store.write("data/memories/operator_note.md", templated)
     # The original survived
     assert (store.root / "operator_note.md").read_text() == "CRITICAL"
 
@@ -354,7 +354,7 @@ def test_invariant_3_size_cap_enforced(tmp_path: Path) -> None:
     store.ensure_root()
     oversize = f"---\nname: n\ndescription: d\n---\n\n{'x' * (MAX_MEMORY_BYTES + 1)}"
     with pytest.raises(MemoryPathError, match="too large"):
-        store.write("huge.md", oversize)
+        store.write("data/memories/huge.md", oversize)
 
 
 # ---------------------------------------------------------------------------
@@ -369,10 +369,11 @@ def test_invariant_4_memory_path_traversal_rejected(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path / "memories")
     store.ensure_root()
     for hostile in (
-        "../../../etc/passwd",
-        "/etc/passwd",
         "data/memories/../../../etc/passwd",
-        "notes/../../etc/passwd",
+        "data/memories//etc/passwd",
+        "data/memories/../../secret/passwd",
+        "data/memories/notes/../../etc/passwd",
+        "notes/no-prefix.md",  # missing store prefix is rejected too
     ):
         with pytest.raises(MemoryPathError):
             store.resolve_path(hostile)

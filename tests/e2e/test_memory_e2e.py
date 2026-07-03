@@ -5,9 +5,10 @@ write+read (DM and group, separate tests): remember a codeword, confirm it
 search (DM and group, separate tests): seed a fact under an unhelpful filename,
     ask a content question, and confirm the bot answers it AND actually called
     ``memory_search`` to find it (not list + read-everything).
-both roots (DM only): seed one doc in the git-tracked committed ``memories/``
+both stores (DM only): seed one doc in the git-tracked committed ``memories/``
     folder and one in the runtime ``data/memories/`` store, then confirm the bot
-    reads the fact out of EACH — proving ``memory_read`` spans both roots.
+    reads the fact out of EACH by its full project path — proving ``memory_read``
+    reaches both stores.
 reset (DM only): the codeword survives ``/reset_session`` — proving
     cross-session persistence, not just in-context recall. The reset is an
     owner command, kept in a DM to avoid group command-addressing quirks.
@@ -49,19 +50,24 @@ _READ_DOC = (
 )
 
 
-def _seed_memory_doc(memories_dir: Path, codeword: str, launch_date: str) -> str:
+def _seed_memory_doc(
+    memories_dir: Path, prefix: str, codeword: str, launch_date: str
+) -> tuple[str, str]:
     """Write a templated doc holding ``launch_date`` under ``memories_dir``.
 
-    Returns the relative path (``notes/{codeword}.md``) the bot reads by.
+    ``prefix`` is the store's project-path prefix (``data/memories`` or
+    ``memories``). Returns ``(project_path, subpath)`` — the full path the bot
+    reads by (``{prefix}/notes/{codeword}.md``) and the store-relative subpath
+    for cleanup.
     """
-    relative = f"notes/{codeword}.md"
-    path = memories_dir / relative
+    subpath = f"notes/{codeword}.md"
+    path = memories_dir / subpath
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"---\nname: {codeword}\ndescription: e2e read probe for {codeword}\n---\n\n"
         f"Project {codeword} launch date: {launch_date}\n"
     )
-    return relative
+    return f"{prefix}/{subpath}", subpath
 
 
 async def _assert_write_and_read(
@@ -168,13 +174,13 @@ def committed_doc(hamroh_sut: Sut) -> Iterator[tuple[str, str]]:
     """
     codeword = new_sentinel("COMMITTED")
     launch_date = "2027-03-14"
-    relative = _seed_memory_doc(
-        hamroh_sut.committed_memories_dir, codeword, launch_date
+    project_path, subpath = _seed_memory_doc(
+        hamroh_sut.committed_memories_dir, "memories", codeword, launch_date
     )
     try:
-        yield relative, launch_date
+        yield project_path, launch_date
     finally:
-        (hamroh_sut.committed_memories_dir / relative).unlink(missing_ok=True)
+        (hamroh_sut.committed_memories_dir / subpath).unlink(missing_ok=True)
 
 
 async def test_memory_read_from_committed_and_runtime_dm(
@@ -187,15 +193,15 @@ async def test_memory_read_from_committed_and_runtime_dm(
 
     given  one doc in the git-tracked committed ``memories/`` folder and one in
            the runtime ``data/memories/`` store, each with a distinct launch date
-    when   the owner asks the bot to read each file by path in a DM
-    then   the bot returns both dates and used memory_read — proving reads span
-           both roots, within MAX_MEMORY_REPLY_S each.
+    when   the owner asks the bot to read each file by its full project path in a DM
+    then   the bot returns both dates and used memory_read — proving reads reach
+           both stores, within MAX_MEMORY_REPLY_S each.
     """
     # given — the committed doc (fixture) plus a runtime doc with its own date
     committed_rel, committed_date = committed_doc
     runtime_date = "2028-09-22"
-    runtime_rel = _seed_memory_doc(
-        hamroh_sut.memories_dir, new_sentinel("RUNTIME"), runtime_date
+    runtime_rel, _ = _seed_memory_doc(
+        hamroh_sut.memories_dir, "data/memories", new_sentinel("RUNTIME"), runtime_date
     )
     since = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 

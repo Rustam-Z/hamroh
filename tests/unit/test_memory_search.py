@@ -30,7 +30,9 @@ def test_search_finds_match_with_path_and_line(store: MemoryStore) -> None:
     hits = store.search("budget")
 
     assert len(hits) == 1, "exactly one line should match 'budget'"
-    assert hits[0].relative_path == "notes.md", "hit must report the file path"
+    assert hits[0].relative_path == "data/memories/notes.md", (
+        "hit must report the file path"
+    )
     assert hits[0].line_number == 2, "match is on the second line"
     assert hits[0].line == "the budget was approved", "hit carries the matched line"
 
@@ -42,7 +44,9 @@ def test_search_spans_multiple_files(store: MemoryStore) -> None:
 
     paths = {hit.relative_path for hit in store.search("auth")}
 
-    assert paths == {"a.md", "b.md"}, "both files mentioning 'auth' must appear"
+    assert paths == {"data/memories/a.md", "data/memories/b.md"}, (
+        "both files mentioning 'auth' must appear"
+    )
 
 
 def test_search_is_case_insensitive(store: MemoryStore) -> None:
@@ -111,10 +115,12 @@ def test_search_does_not_unlock_read_before_write(store: MemoryStore) -> None:
 
     store.search("config")  # matches policy.md but is not a "read"
 
-    assert "policy.md" not in store.read_paths_snapshot, "search must not credit a read"
+    assert (store.root / "policy.md") not in store.read_paths_snapshot, (
+        "search must not credit a read"
+    )
     templated = "---\nname: policy\ndescription: config\n---\n\noverwritten"
     with pytest.raises(MemoryPathError, match="read-before-write"):
-        store.write("policy.md", templated)
+        store.write("data/memories/policy.md", templated)
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +137,12 @@ async def test_memory_search_tool_happy_path(store: MemoryStore) -> None:
     result = await tool.run(SearchMemoryArgs(query="acme deadline"))
 
     assert result.is_error is False, "a successful search is not an error"
-    assert result.content.startswith("n.md:1: acme deadline today"), (
+    assert result.content.startswith("data/memories/n.md:1: acme deadline today"), (
         "output lists the best match first as path:line: text"
     )
-    assert result.data == {"hits": ["n.md", "n.md"]}, "data carries the hit paths"
+    assert result.data == {"hits": ["data/memories/n.md", "data/memories/n.md"]}, (
+        "data carries the hit paths"
+    )
 
 
 @pytest.mark.asyncio

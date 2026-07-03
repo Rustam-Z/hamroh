@@ -34,11 +34,13 @@ def _mock_bot(message_id: int = 999) -> MagicMock:
 @pytest.mark.asyncio
 async def test_happy_path_sends_document(store: MemoryStore) -> None:
     content = "---\nname: report\ndescription: a report\n---\n\n# Report\nbody"
-    store.write("notes/report.md", content)
+    store.write("data/memories/notes/report.md", content)
     bot = _mock_bot(message_id=42)
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(SendMemoryDocumentArgs(chat_id=123, path="notes/report.md"))
+    result = await tool.run(
+        SendMemoryDocumentArgs(chat_id=123, path="data/memories/notes/report.md")
+    )
 
     assert result.is_error is False
     assert "message_id=42" in result.content
@@ -46,7 +48,7 @@ async def test_happy_path_sends_document(store: MemoryStore) -> None:
         "message_id": 42,
         "chat_id": 123,
         "filename": "report.md",
-        "path": "notes/report.md",
+        "path": "data/memories/notes/report.md",
     }
     bot.send_document.assert_awaited_once()
     kwargs = bot.send_document.await_args.kwargs
@@ -59,13 +61,16 @@ async def test_happy_path_sends_document(store: MemoryStore) -> None:
 
 @pytest.mark.asyncio
 async def test_caption_and_reply_to_passed_through(store: MemoryStore) -> None:
-    store.write("a.md", "---\nname: a\ndescription: d\n---\n\nx")
+    store.write("data/memories/a.md", "---\nname: a\ndescription: d\n---\n\nx")
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
     await tool.run(
         SendMemoryDocumentArgs(
-            chat_id=7, path="a.md", caption="here you go", reply_to_message_id=55
+            chat_id=7,
+            path="data/memories/a.md",
+            caption="here you go",
+            reply_to_message_id=55,
         )
     )
 
@@ -79,7 +84,9 @@ async def test_path_traversal_rejected(store: MemoryStore) -> None:
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="../etc/passwd"))
+    result = await tool.run(
+        SendMemoryDocumentArgs(chat_id=1, path="data/memories/../etc/passwd")
+    )
 
     assert result.is_error is True
     assert "MemoryPathError" in result.content
@@ -102,7 +109,9 @@ async def test_missing_file_returns_error_without_upload(store: MemoryStore) -> 
     bot = _mock_bot()
     tool = TelegramSendMemoryDocumentTool(ToolContext(bot=bot, memory_store=store))
 
-    result = await tool.run(SendMemoryDocumentArgs(chat_id=1, path="does/not/exist.md"))
+    result = await tool.run(
+        SendMemoryDocumentArgs(chat_id=1, path="data/memories/does/not/exist.md")
+    )
 
     assert result.is_error is True
     assert "not found" in result.content
@@ -128,7 +137,7 @@ async def test_no_memory_store_returns_error() -> None:
 
 @pytest.mark.asyncio
 async def test_on_chat_replied_invoked_after_send(store: MemoryStore) -> None:
-    store.write("note.md", "---\nname: note\ndescription: d\n---\n\nhi")
+    store.write("data/memories/note.md", "---\nname: note\ndescription: d\n---\n\nhi")
     bot = _mock_bot()
     seen: list[int] = []
     ctx = ToolContext(
@@ -136,6 +145,6 @@ async def test_on_chat_replied_invoked_after_send(store: MemoryStore) -> None:
     )
     tool = TelegramSendMemoryDocumentTool(ctx)
 
-    await tool.run(SendMemoryDocumentArgs(chat_id=999, path="note.md"))
+    await tool.run(SendMemoryDocumentArgs(chat_id=999, path="data/memories/note.md"))
 
     assert seen == [999]

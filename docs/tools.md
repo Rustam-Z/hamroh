@@ -76,17 +76,23 @@ tools in `builtin_tools_disabled`.
 | `memory_append` | Append text to a memory file's body **and** refresh its frontmatter description (so `memory_list` stays current). Name is preserved or derived from the filename; the first append migrates a legacy file onto the template. Runtime root only. |
 | `telegram_send_memory_document` | Deliver a memory file to a chat as a downloadable Telegram document. Path-locked to the memory roots (runtime + committed). Optional caption + reply-to. |
 
-**Two roots.** The bot reads memory from two places, overlaid:
+**Two stores.** The bot reads and writes memory in two places, each addressed
+by its own path prefix:
 
-- **Runtime** — `data/memories/` — gitignored, writable, lives on the Docker
+- **Runtime** — `data/memories/...` — gitignored, writable, lives on the Docker
   volume. The bot's day-to-day working memory.
-- **Committed** — `memories/` at the repo root — git-tracked and **read-only
-  to the bot**. The operator curates and commits it by hand, so durable
-  memories survive a volume loss. See [`memories/README.md`](../memories/README.md).
+- **Committed** — `memories/...` at the repo root — git-tracked and
+  **read-only to the bot**: it reads and searches these files, but
+  `memory_write` / `memory_append` reject a `memories/...` path. The operator
+  curates and commits them by hand, so they survive a volume loss. See
+  [`memories/README.md`](../memories/README.md).
 
-Reads, searches and listings span both; if the same relative path exists in
-both, the runtime copy wins. Writes and appends only ever touch the runtime
-root — the bot never mutates committed files.
+Reads and searches reach **both** stores; writes and appends touch **only**
+the runtime store. Every memory is named by its full path, so the two stores
+are **separate namespaces that never collide** — `data/memories/notes/ref.md`
+and `memories/notes/ref.md` are different files, both fully visible in every
+list, search and read. The folder prefix is required; a bare path is rejected,
+so pass paths verbatim from `memory_list` / `memory_search`.
 
 Memory files follow the same frontmatter protocol as skills — a `---` block
 with `name` and `description` — so the agent can scan `memory_list` and pick

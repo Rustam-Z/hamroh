@@ -21,17 +21,17 @@ def store(tmp_path: Path) -> MemoryStore:
 
 def test_rejects_dotdot_traversal(store: MemoryStore) -> None:
     with pytest.raises(MemoryPathError):
-        store.resolve_path("../../../etc/passwd")
+        store.resolve_path("data/memories/data/memories/../../../etc/passwd")
 
 
 def test_rejects_absolute_path(store: MemoryStore) -> None:
     with pytest.raises(MemoryPathError):
-        store.resolve_path("/etc/passwd")
+        store.resolve_path("data/memories//etc/passwd")
 
 
 def test_rejects_dotdot_inside_subdir(store: MemoryStore) -> None:
     with pytest.raises(MemoryPathError):
-        store.resolve_path("notes/../../etc/passwd")
+        store.resolve_path("data/memories/notes/../../etc/passwd")
 
 
 def test_rejects_nested_traversal_out_of_root(store: MemoryStore) -> None:
@@ -46,7 +46,7 @@ def test_rejects_symlink_at_root(store: MemoryStore, tmp_path: Path) -> None:
     link = store.root / "escape"
     os.symlink(target, link)
     with pytest.raises(MemoryPathError):
-        store.resolve_path("escape/secret.txt")
+        store.resolve_path("data/memories/escape/secret.txt")
 
 
 def test_rejects_nested_symlink_chain(store: MemoryStore, tmp_path: Path) -> None:
@@ -58,7 +58,7 @@ def test_rejects_nested_symlink_chain(store: MemoryStore, tmp_path: Path) -> Non
     link = store.root / "evil"
     os.symlink(intermediate, link)
     with pytest.raises(MemoryPathError):
-        store.resolve_path("evil/file.md")
+        store.resolve_path("data/memories/evil/file.md")
 
 
 def test_rejects_symlinked_file_inside_root(store: MemoryStore, tmp_path: Path) -> None:
@@ -67,18 +67,18 @@ def test_rejects_symlinked_file_inside_root(store: MemoryStore, tmp_path: Path) 
     link = store.root / "shortcut.md"
     os.symlink(outside, link)
     with pytest.raises(MemoryPathError):
-        store.resolve_path("shortcut.md")
+        store.resolve_path("data/memories/shortcut.md")
 
 
 def test_rejects_empty_path(store: MemoryStore) -> None:
     with pytest.raises(MemoryPathError):
-        store.resolve_path("")
+        store.resolve_path("data/memories/")
 
 
 def test_accepts_legitimate_path(store: MemoryStore) -> None:
     target = store.root / "user_preferences.md"
     target.write_text("Alice prefers Russian")
-    resolved = store.resolve_path("user_preferences.md")
+    resolved = store.resolve_path("data/memories/user_preferences.md")
     assert resolved == target.resolve()
 
 
@@ -86,19 +86,19 @@ def test_accepts_nested_legitimate_path(store: MemoryStore) -> None:
     sub = store.root / "people" / "alice"
     sub.mkdir(parents=True)
     (sub / "notes.md").write_text("loves cats")
-    resolved = store.resolve_path("people/alice/notes.md")
+    resolved = store.resolve_path("data/memories/people/alice/notes.md")
     assert resolved.exists()
 
 
 def test_read_round_trip(store: MemoryStore) -> None:
     (store.root / "fact.md").write_text("the sky is blue")
-    assert "blue" in store.read("fact.md")
+    assert "blue" in store.read("data/memories/fact.md")
 
 
 def test_read_truncates_large_files(store: MemoryStore) -> None:
     big = "x" * 200_000
     (store.root / "big.md").write_text(big)
-    out = store.read("big.md", max_bytes=1024)
+    out = store.read("data/memories/big.md", max_bytes=1024)
     assert "[truncated to 1024 bytes]" in out
 
 
@@ -109,9 +109,9 @@ def test_list_skips_dotfiles_and_symlinks(store: MemoryStore, tmp_path: Path) ->
     outside.write_text("c")
     os.symlink(outside, store.root / "link.md")
     listed = {f.relative_path for f in store.list()}
-    assert "real.md" in listed
-    assert ".hidden" not in listed
-    assert "link.md" not in listed
+    assert "data/memories/real.md" in listed
+    assert "data/memories/.hidden" not in listed
+    assert "data/memories/link.md" not in listed
 
 
 def test_memory_store_surface() -> None:

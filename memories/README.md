@@ -12,9 +12,15 @@ survives a volume loss, a server rebuild, or a move to a new machine, and it
 has full git history.
 
 The bot reads this folder **as memory**, exactly like the runtime store:
-`memory_list`, `memory_search`, and `memory_read` span both. It is **read-only
-to the bot** — the bot never writes here. You (the operator) curate these files
-by hand and commit them with `git`.
+`memory_read`, `memory_list`, and `memory_search` all reach it. But it is
+**read-only to the bot** — `memory_write` / `memory_append` only ever touch
+the runtime `data/memories/` store, and a `memories/...` write is rejected.
+You (the operator) curate these files and commit them with `git`.
+
+Every memory is addressed by its full path: files in this folder are
+`memories/<path>`, files in the runtime store are `data/memories/<path>`. The
+two are **separate namespaces** — a file in each is two distinct memories and
+both are always fully visible; nothing is shadowed.
 
 Nothing in here is loaded into the system prompt. Memories are read on demand,
 the same as the runtime store.
@@ -60,11 +66,14 @@ memories/
 
 | | `data/memories/` (runtime) | `memories/` (this folder) |
 |---|---|---|
+| Path prefix | `data/memories/...` | `memories/...` |
 | Tracked in git | No (gitignored) | Yes |
 | Survives volume loss | No | Yes |
-| Bot can write | Yes | No (operator-curated) |
-| Read as memory | Yes | Yes |
+| Bot can read / search | Yes | Yes |
+| Bot can write / append | Yes | No (rejected) |
+| Files added by | The bot | The operator (commits them) |
 
-If the same relative path exists in both, the **runtime** copy wins (it's the
-live one). Use this folder for knowledge you want to keep permanently in the
-repo; let the bot's own day-to-day notes live in the runtime store.
+The two folders are **distinct namespaces** addressed by their path prefix, so
+they never collide — `data/memories/notes/ref.md` and `memories/notes/ref.md`
+are different files and both are fully visible. Use this folder for knowledge
+you want to keep permanently in the repo.

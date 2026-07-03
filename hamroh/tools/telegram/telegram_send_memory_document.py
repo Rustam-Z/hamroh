@@ -1,8 +1,9 @@
 """``telegram_send_memory_document`` — send a memory file to a chat as a document.
 
-The narrow, secure first cut of "send a file out": locked to
-``data/memories/`` via :meth:`MemoryStore.resolve_path`, so the agent
-can only ship its own memory back — never an arbitrary path on disk.
+The narrow, secure first cut of "send a file out": locked to the memory
+stores via :meth:`MemoryStore.resolve_readable`, so the agent can only ship
+a memory file (``data/memories/...`` or ``memories/...``) back — never an
+arbitrary path on disk.
 """
 
 from __future__ import annotations
@@ -35,8 +36,9 @@ class SendMemoryDocumentArgs(BaseModel):
     )
     path: str = Field(
         description=(
-            "Relative path under data/memories/ — same shape as "
-            "memory_read. No '..', no absolute paths, no symlinks."
+            "Full project path to the memory — same shape as memory_read: "
+            "'data/memories/<path>' or 'memories/<path>'. The prefix is "
+            "required. No '..', no absolute paths, no symlinks."
         ),
     )
     caption: str | None = Field(
@@ -56,8 +58,9 @@ class SendMemoryDocumentArgs(BaseModel):
 class TelegramSendMemoryDocumentTool(BaseTool[SendMemoryDocumentArgs]):
     name = "telegram_send_memory_document"
     description = (
-        "Send a memory file (from data/memories/) to a chat as a downloadable "
-        "document. Use when the user asks for a memory file as an attachment "
+        "Send a memory file (data/memories/... or memories/...) to a chat as a "
+        "downloadable document. Use when the user asks for a memory file as an "
+        "attachment "
         "rather than pasted text — handy for csv/log/large markdown. For a "
         "rendered image use telegram_send_photo; for plain text use "
         "telegram_send_message. Path-locked to the memories root (same "

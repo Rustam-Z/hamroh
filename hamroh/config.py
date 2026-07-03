@@ -208,9 +208,12 @@ class Config:
     # Derived paths
     db_path: Path = field(init=False)
     memories_dir: Path = field(init=False)
-    #: Git-tracked, committable memories folder at the repo root. Read-only
-    #: overlay on top of the runtime ``memories_dir``: the bot reads it as
-    #: memory but never writes there — the operator curates and commits it.
+    #: Git-tracked, committable memories folder at the repo root. A second
+    #: memory store alongside ``memories_dir``, addressed by the ``memories/``
+    #: path prefix (the runtime store is ``data/memories/``). Distinct
+    #: namespaces — never merged. The bot reads and searches it but is
+    #: **read-only** here: ``memory_write`` / ``memory_append`` only touch the
+    #: runtime store. The operator curates and commits these files.
     committed_memories_dir: Path = field(init=False)
     session_id_path: Path = field(init=False)
     cc_logs_dir: Path = field(init=False)

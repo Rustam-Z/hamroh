@@ -107,7 +107,7 @@ to fill a quota.
 
 For each selected candidate:
 
-1. `memory_read("self/learnings.md")` first (read-before-write rail).
+1. `memory_read("data/memories/self/learnings.md")` first (read-before-write rail).
 2. Decide the candidate's status marker:
    - `[pending]` if it's a likely durable rule ("I should default to
      X when Y").
@@ -335,7 +335,7 @@ lives at its target and the full reasoning lives in the audit log
 moment it resolves. Don't leave the full body behind to be swept
 "later" — that's exactly what let the file grow unbounded.
 
-- `memory_read("self/learnings.md")` first (read-before-write).
+- `memory_read("data/memories/self/learnings.md")` first (read-before-write).
 - Flip the marker to `[promoted]` (or `[refined]` if the owner
   dictated narrower wording) **and** replace the entry's body with a
   one-line tombstone naming where it went, in one edit:
@@ -347,7 +347,7 @@ moment it resolves. Don't leave the full body behind to be swept
 
   Use `[promoted → project]` or `[promoted → memory]` (likewise
   `[refined → …]`) so the tombstone records the sink.
-- `memory_write("self/learnings.md", <full updated content>)`.
+- `memory_write("data/memories/self/learnings.md", <full updated content>)`.
 
 For each rejected item: same compaction, marker `[discarded]`, with a
 one-line summary of *why* it was dropped so it isn't re-proposed.
@@ -386,13 +386,13 @@ One-line summary. (compacted YYYY-MM-DD)
 
 ### C.2 — the sweep
 
-1. `memory_read("self/learnings.md")` (already done in phase B —
+1. `memory_read("data/memories/self/learnings.md")` (already done in phase B —
    re-use the content).
 2. Identify any resolved entry whose body is still multi-line.
 3. For each, preserve the h2 header + marker, replace the body with
    the one-line summary + `(compacted YYYY-MM-DD)` footer.
 4. If nothing needs compacting, skip the write entirely.
-5. `memory_write("self/learnings.md", <new content>)`.
+5. `memory_write("data/memories/self/learnings.md", <new content>)`.
 
 Report the compaction in the step-7 confirmation message: "Done. N
 rule(s) promoted. Compacted M old entries." If no compaction
