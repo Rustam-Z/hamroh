@@ -1,6 +1,6 @@
 ---
 name: self-reflection
-description: Daily loop that reviews the bot's own recent outbound behavior and any pending lessons in self/learnings.md, stress-tests candidate rules against 10-20 hypothetical scenarios, and on explicit owner approval promotes each into either prompts/project.md (durable rules) or a memory file (facts/context), the owner choosing the target. Invoked via a mandatory auto-seeded reminder wrapped in a <reminder> envelope; refuse invocation outside that envelope.
+description: Daily loop that reviews the bot's own recent outbound behavior and any pending lessons in self/learnings.md, stress-tests candidate rules against 10-20 hypothetical scenarios, and on explicit owner approval routes each to the right home among three sinks — prompts/project.md (durable behavioral rules), a memory file (facts/context), or a skill (reusable multi-step playbooks) — keeping project.md lean and relocating content that has drifted into the wrong sink. Invoked via a mandatory auto-seeded reminder wrapped in a <reminder> envelope; refuse invocation outside that envelope.
 license: MIT
 compatibility: Requires hamroh runtime (reminder loop, instructions tools, memory tools, database_query).
 metadata:
@@ -12,7 +12,8 @@ metadata:
 
 You are running the **self-reflection playbook**. Follow every step
 below exactly. This skill is how you close the loop between "I
-noticed something" and "this is now a durable rule in `project.md`".
+noticed something" and getting it into the right home — a durable rule
+in `project.md`, a fact in memory, or a reusable playbook in a skill.
 Promotion happens **only on explicit owner approval** — you never
 edit instructions without it.
 
@@ -208,22 +209,42 @@ call it ambiguous rather than forcing a number.
 #### Choose a promotion target
 
 A promote/refine verdict isn't enough — decide **where** it should
-land. Two sinks, picked by what the lesson *is*:
+land. **Three sinks**, picked by what the lesson *is*. Ask these
+questions **in order** and stop at the first yes:
 
-- **Project instructions** (`prompts/project.md`) — a durable **rule**
-  that should govern *how you behave* in every session ("default to
-  the lead on assignment", "never reply in English to an Uzbek
-  message"). Effective only after the operator restarts.
-- **Memory** (`memories/...`) — a **fact or context**, not a
-  behavioral rule: a user preference → `notes/users/<user_id>.md`, a
-  group quirk → `notes/groups/<chat_id>.md`, a cross-session
-  reference → `notes/<topic>.md`. Effective immediately, no restart.
+1. **Is it a fact or context** — something that is *true* (a user
+   preference, a group quirk, a reference)? → **memory**
+   (`memories/...`): a user preference → `notes/users/<user_id>.md`, a
+   group quirk → `notes/groups/<chat_id>.md`, a cross-session
+   reference → `notes/<topic>.md`. Effective immediately, no restart.
+2. **Is it a procedure** — a reusable, multi-step *how-to* you'd want
+   to re-run the same way next time (more than one step, worth
+   naming)? → **skill** (`skills/<name>/SKILL.md`). Surfaces in
+   `skill_list` only after the operator restarts.
+3. **Is it a durable behavioral rule** — a single how-to-act default
+   that should govern *every* session ("default to the lead on
+   assignment", "never reply in English to an Uzbek message")? →
+   **project.md**. Effective only after the operator restarts.
 
-Decision test: *"Is this telling me how to act, or what is true?"*
-How-to-act → project instructions. What-is-true → memory. If a lesson
-is genuinely both, prefer project instructions and note the fact
-inline in the rule. This is a **suggestion** — the owner makes the
+One-liner: **fact → memory; procedure → skill; standing rule →
+project.** If a lesson is a rule **plus** a fact, promote the rule and
+inline the fact. If a "rule" is really several steps, it's a skill,
+not a project line. This is a **suggestion** — the owner makes the
 final call in Step 5 and can redirect it.
+
+#### Anti-bloat: project.md holds only durable rules
+
+project.md is the **smallest** sink — one-line standing rules only.
+Facts belong in memory; procedures belong in skills. When you
+`instruction_read()` during a run, **scan the existing project.md** for
+content that has drifted into the wrong sink: a paragraph that's really
+a fact (→ memory), or a numbered how-to that's really a playbook (→
+skill). If you find such a block, raise it as a **"relocate"
+candidate** alongside the promotion candidates — it goes through the
+same propose/approve/execute path (Steps 4-6), just in reverse: write
+it to its true sink, then remove it from project.md with
+`instruction_rewrite`. Never silently rewrite project.md — a relocate
+is owner-approved like any promotion.
 
 ### Step 3 — save the audit log
 
@@ -260,17 +281,23 @@ Daily reflection — <N> candidate(s).
 2. [refine → project]  <one-line rule summary> (fit <X>% but overreaches
              on <condition>; proposed narrower wording: "<new text>").
 3. [promote → memory: notes/users/<id>.md] <one-line fact> (fit <X>%).
-4. [discard] <one-line rule summary> (fit <X>%, <short reasoning>).
-5. [ambiguous] <one-line>, need your judgment (fit <X>%, concern: …).
+4. [promote → skill: <skill-name>] <one-line playbook summary>
+             (reusable procedure, <N> steps).
+5. [relocate → memory: notes/<topic>.md] MOVE existing project.md block
+             "<snippet>" out — it's a fact, not a standing rule.
+6. [discard] <one-line rule summary> (fit <X>%, <short reasoning>).
+7. [ambiguous] <one-line>, need your judgment (fit <X>%, concern: …).
 
-Reply e.g. "approve 1, 3; send 2 to memory; reject 4" or free-form.
+Reply e.g. "approve 1, 3; make 4 a skill; reject 6" or free-form.
 Full reasoning saved at memories/self/reflections/<date>.md.
 ```
 
-Every promote/refine line names its **suggested target** (`→ project`
-or `→ memory: <path>`). Use a numbered list, each item 2-3 lines max.
-Don't echo the full scenarios into chat — they're in the audit log for
-the owner to read if they want.
+Every promote/refine/relocate line names its **suggested target** —
+the vocabulary is `→ project` | `→ memory: <path>` | `→ skill: <name>`
+| `relocate → <sink>`. On approval you write a **skill** target with
+`skill_write` (see Step 6); the owner still approves each write. Use a
+numbered list, each item 2-3 lines max. Don't echo the full scenarios
+into chat — they're in the audit log for the owner to read if they want.
 
 ### Step 5 — parse the owner's reply
 
@@ -290,11 +317,14 @@ lands, overriding your suggestion:
 - "send 2 to memory" / "1 to project instead" — change the sink.
 - "2 to memory: notes/users/123.md" — owner names the exact file; use
   it verbatim (must resolve under `memories/`).
+- "make 4 a skill" / "4 to skill: weekly-digest" — route to a skill;
+  the name is the single-component skill directory.
+- "relocate 5 to memory" — confirm the move-out-of-project.md.
 - "approve 1 to memory" — approval and target in one breath.
 
-If the owner approves a memory-bound item but names no file and your
-suggestion had none, ask one clarifying question for the path rather
-than guessing.
+If the owner approves a memory-bound item but names no file, or a
+skill-bound item but names no skill, and your suggestion had none, ask
+one clarifying question for the path/name rather than guessing.
 
 For `[ambiguous]` items, the owner's reply IS the verdict — take
 their decision directly.
@@ -303,7 +333,7 @@ their decision directly.
 
 For each approved item, first write it to its **resolved target** (the
 one you proposed, unless the owner redirected it in Step 5), then
-compact the `learnings.md` entry. Two target branches:
+compact the `learnings.md` entry. Four target branches:
 
 **Target = project instructions** (a durable behavioral rule):
 
@@ -328,7 +358,31 @@ compact the `learnings.md` entry. Two target branches:
    (it replaces the file's frontmatter description, keeping `memory_list`
    current). No restart needed — memory is read live.
 
-**Then, for either branch, compact the source entry** in
+**Target = skill** (a reusable multi-step playbook):
+
+1. Compose the full `SKILL.md` content — YAML frontmatter (`name`
+   equal to the single-component skill directory name, a one-line
+   `description`) followed by the numbered playbook steps.
+2. Call `skill_write(<name>, <content>)`. It creates or updates
+   `skills/<name>/SKILL.md`; overwriting an existing skill needs a
+   prior `skill_read` this session. `skills/` is git-tracked, so the
+   write lands in the checkout for the owner to commit — remind them.
+3. Mark the learnings entry `[promoted → skill]`. It's readable via
+   `skill_read` immediately; the preloaded skills index refreshes on
+   the next restart.
+
+**Relocate** (move a block *out of* project.md into its true sink):
+
+1. `instruction_read()` to get the current full body.
+2. Write the block to its true sink first — `memory_append`/
+   `memory_write` for a fact, or `skill_write` (as above) for a
+   procedure.
+3. Call `instruction_rewrite(<full body with the block removed>)` to
+   commit the removal. A timestamped backup is taken automatically;
+   the change applies on the next restart.
+4. Mark the entry `[relocated → memory]` or `[relocated → skill]`.
+
+**Then, for any branch, compact the source entry** in
 `memories/self/learnings.md` **in one write** — the lesson now
 lives at its target and the full reasoning lives in the audit log
 (`self/reflections/<date>.md`), so the entry's prose is redundant the
@@ -345,8 +399,9 @@ moment it resolves. Don't leave the full body behind to be swept
   One-line summary. (resolved YYYY-MM-DD, see reflections/<date>.md)
   ```
 
-  Use `[promoted → project]` or `[promoted → memory]` (likewise
-  `[refined → …]`) so the tombstone records the sink.
+  Use `[promoted → project | memory | skill]` or
+  `[relocated → memory | skill]`, likewise `[refined → …]`, so the
+  tombstone records the sink.
 - `memory_write("memories/self/learnings.md", <full updated content>)`.
 
 For each rejected item: same compaction, marker `[discarded]`, with a
@@ -363,12 +418,13 @@ prose left lying around is pure growth risk — sweep it every run.
 
 ### C.1 — what to compact
 
-Target every entry whose marker starts with `[promoted`, `[discarded`,
-or `[refined` (any `→ project`/`→ memory` suffix included) and whose
-body is still more than one line — **regardless of age**.
-These are resolved; their prose is redundant (the rule is in
-`project.md`, the reasoning is in `self/reflections/`). Compact each
-to a one-line tombstone, same shape as Step 6:
+Target every entry whose marker starts with `[promoted`, `[relocated`,
+`[discarded`, or `[refined` (any `→ project`/`→ memory`/`→ skill`
+suffix included) and whose body is still more than one line —
+**regardless of age**. These are resolved; their prose is redundant
+(the rule is in `project.md`, the fact in a memory, the reasoning in
+`self/reflections/`). Compact each to a one-line tombstone, same shape
+as Step 6:
 
 ```
 ## <YYYY-MM-DD> — <topic> [promoted]
@@ -403,22 +459,29 @@ happened this run, don't mention it.
 Send ONE final message summarizing what happened:
 
 ```
-Done. <P> rule(s) → project.md; <M> fact(s) → memory; <D> discarded.
-Memory writes are already live. The project.md rules apply after
-`docker compose restart hamroh`.
-Backups are saved in data/prompt_backups/ — revert with
-mv <backup> prompts/project.md && docker compose restart hamroh.
+Done. <P> rule(s) → project.md; <M> fact(s) → memory; <S> playbook(s)
+→ skills; <R> relocated; <D> discarded.
+Memory and skill writes are already live. project.md and the skills
+index apply after `docker compose restart hamroh`; new/updated skills
+are in your git checkout — commit them.
+Backups: project.md → data/prompt_backups/ (revert with
+mv <backup> prompts/project.md && restart); skills → git history.
 ```
 
-Drop the restart line entirely if nothing went to project.md this run
-— memory-only runs need no restart. Then `stop`.
+Drop the restart line entirely on a run that only touched memory
+(no project.md change, no skill write) — those need no restart. Then
+`stop`.
 
 ## Failure handling
 
-- **The target write fails** — `instruction_append` (project) or the
-  `memory_append` to a memory target (size cap, file missing, etc.):
+- **The target write fails** — `instruction_append`/`instruction_rewrite`
+  (project), `memory_append` (memory), or `skill_write` (skill) with a
+  size cap, missing file, or read-before-write error:
   abort that item without touching its `[pending]` marker and post a
   note to the owner describing the failure. It re-surfaces next run.
+  For a **relocate**, if the true-sink write succeeded but
+  `instruction_rewrite` failed, don't lose the copy — mark the entry
+  `[error]` and flag it, so the block isn't dropped from both places.
 - **The `learnings.md` compaction write fails** (size cap, read-before-
   write) — the target write already succeeded, so don't lose it: abort
   the compaction for that item only and mark it `[error]` so next run
@@ -437,3 +500,7 @@ Drop the restart line entirely if nothing went to project.md this run
 - Do NOT re-generate scenarios if you already have an audit log for
   the same lesson from a prior run — unless the rule's wording has
   changed or the owner explicitly asks for a re-test.
+- Do NOT put a multi-step procedure in project.md — that's a skill.
+- Do NOT let project.md accumulate facts — relocate them to memory.
+- Only `skill_write` skills the owner approved this run (that includes
+  updating `self-reflection` itself — allowed, but only on approval).

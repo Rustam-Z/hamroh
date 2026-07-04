@@ -1,4 +1,4 @@
-"""MCP skill tools — skill_list and skill_read surface."""
+"""MCP skill tools — skill_list, skill_read, and skill_write surfaces."""
 
 from __future__ import annotations
 
@@ -13,7 +13,13 @@ from hamroh.tools.skills import (
     ListSkillsTool,
     ReadSkillArgs,
     ReadSkillTool,
+    WriteSkillArgs,
+    WriteSkillTool,
 )
+
+
+def _new_skill(name: str) -> str:
+    return f"---\nname: {name}\ndescription: A freshly written test skill.\n---\n\n# {name}\n\nBody.\n"
 
 
 _VALID = """---
@@ -102,3 +108,39 @@ async def test_tools_handle_missing_store(tmp_path: Path) -> None:
     assert r1.is_error is True
     r2 = await ReadSkillTool(ctx).run(ReadSkillArgs(name="x"))
     assert r2.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_skill_write_creates_and_reports_bytes(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    ctx = _ctx(store)
+    content = _new_skill("weekly-digest")
+
+    result = await WriteSkillTool(ctx).run(
+        WriteSkillArgs(name="weekly-digest", content=content)
+    )
+
+    assert result.is_error is False
+    assert "skills/weekly-digest/SKILL.md" in result.content
+    assert result.data == {"name": "weekly-digest", "bytes": len(content.encode())}
+    assert store.read("weekly-digest") == content
+
+
+@pytest.mark.asyncio
+async def test_skill_write_bad_frontmatter_is_error(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    ctx = _ctx(store)
+    result = await WriteSkillTool(ctx).run(
+        WriteSkillArgs(name="weekly-digest", content="# no frontmatter\n")
+    )
+    assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_skill_write_missing_store_is_error() -> None:
+    ctx = ToolContext(skills_store=None)
+    result = await WriteSkillTool(ctx).run(
+        WriteSkillArgs(name="weekly-digest", content=_new_skill("weekly-digest"))
+    )
+    assert result.is_error is True
+    assert "unavailable" in result.content

@@ -1,4 +1,4 @@
-"""MCP instruction tools — read + append project.md.
+"""MCP instruction tools — read + append + rewrite project.md.
 
 The owner-only policy lives in the system prompt; these tests just
 cover the tool wrappers' happy path and basic error surfacing.
@@ -17,6 +17,8 @@ from hamroh.tools.instructions import (
     AppendInstructionsTool,
     ReadInstructionsArgs,
     ReadInstructionsTool,
+    RewriteInstructionsArgs,
+    RewriteInstructionsTool,
 )
 
 
@@ -62,3 +64,26 @@ async def test_read_surfaces_missing_file_error(tmp_path: Path) -> None:
     result = await ReadInstructionsTool(_ctx(store)).run(ReadInstructionsArgs())
     assert result.is_error is True
     assert "not present" in result.content
+
+
+@pytest.mark.asyncio
+async def test_rewrite_replaces_file_and_returns_backup(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    result = await RewriteInstructionsTool(_ctx(store)).run(
+        RewriteInstructionsArgs(content="PROJECT v2 only\n")
+    )
+    assert result.is_error is False
+    assert store.path.read_text() == "PROJECT v2 only\n"
+    assert result.data is not None
+    backup_path = result.data.get("backup")
+    assert backup_path is not None
+    assert Path(backup_path).read_text() == "PROJECT v1\n"
+
+
+@pytest.mark.asyncio
+async def test_rewrite_missing_store_is_error() -> None:
+    result = await RewriteInstructionsTool(ToolContext()).run(
+        RewriteInstructionsArgs(content="whatever\n")
+    )
+    assert result.is_error is True
+    assert "unavailable" in result.content

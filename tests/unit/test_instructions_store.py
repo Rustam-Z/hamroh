@@ -1,5 +1,5 @@
-"""InstructionsStore unit tests — read, append, size cap, atomic write,
-backup-before-append."""
+"""InstructionsStore unit tests — read, append, rewrite, size cap, atomic
+write, backup-before-mutate."""
 
 from __future__ import annotations
 
@@ -96,4 +96,57 @@ def test_append_falls_back_when_rename_hits_ebusy(
     assert backup is not None
     assert store.path.read_text() == "PROJECT v1\nline 2\n"
     # Tmp must be cleaned up by the fallback path.
+    assert list(store.path.parent.glob("*.tmp")) == []
+
+
+def test_rewrite_replaces_body_and_returns_size(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    new_size, backup = store.rewrite("PROJECT v2\n")
+    assert store.path.read_text() == "PROJECT v2\n"
+    assert new_size == len(b"PROJECT v2\n")
+    assert backup is not None
+
+
+def test_rewrite_backup_holds_old_body(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    _, backup = store.rewrite("something completely new\n")
+    assert backup.read_text() == "PROJECT v1\n"
+
+
+def test_rewrite_raises_when_missing(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.path.unlink()
+    with pytest.raises(InstructionsError, match="not present"):
+        store.rewrite("anything\n")
+
+
+def test_rewrite_rejects_over_cap(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    with pytest.raises(InstructionsError, match="would exceed cap"):
+        store.rewrite("z" * (MAX_INSTRUCTION_BYTES + 1))
+
+
+def test_rewrite_is_atomic_leaves_no_tmp(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.rewrite("PROJECT v2\n")
+    assert list(store.path.parent.glob("*.tmp")) == []
+
+
+def test_rewrite_falls_back_when_rename_hits_ebusy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rewrite shares the atomic-write path; the EBUSY fallback applies."""
+    import errno
+
+    store = _make_store(tmp_path)
+    original_replace = Path.replace
+
+    def replace_raising_ebusy(self: Path, target: Path) -> Path:
+        if target == store.path:
+            raise OSError(errno.EBUSY, "Device or resource busy")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", replace_raising_ebusy)
+    store.rewrite("PROJECT v2\n")
+    assert store.path.read_text() == "PROJECT v2\n"
     assert list(store.path.parent.glob("*.tmp")) == []

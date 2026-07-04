@@ -13,6 +13,7 @@ import itertools
 import json
 import logging
 import shutil
+import uuid
 from collections.abc import AsyncIterator, Generator, Iterator
 from pathlib import Path
 
@@ -124,6 +125,23 @@ def e2e_skills() -> Iterator[tuple[str, str]]:
     finally:
         for skill_dir in dirs:
             shutil.rmtree(skill_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def e2e_created_skill() -> Iterator[str]:
+    """A unique, gitignored skill name the bot is free to create then update.
+
+    The name starts with ``e2e-`` so it matches the ``.gitignore`` throwaway
+    pattern (``skills/e2e-*/``) and never gets committed, and it's lowercase-
+    hyphen so it satisfies the skill-name spec. Function-scoped: each test gets
+    a fresh, never-before-seen name (so the read-before-write gate is exercised
+    honestly) and the directory is removed on teardown.
+    """
+    name = f"e2e-created-{uuid.uuid4().hex[:8]}"
+    try:
+        yield name
+    finally:
+        shutil.rmtree(REPO_ROOT / "skills" / name, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")

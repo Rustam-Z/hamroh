@@ -1,8 +1,9 @@
-"""SkillsStore — read-only, path-hardened, Agent Skills spec-compliant.
+"""SkillsStore — read + write, path-hardened, Agent Skills spec-compliant.
 
 Covers spec conformance (frontmatter required, name/description rules,
 directory/name match) plus the hamroh-specific hardening (path
-traversal, symlinks, size cap).
+traversal, symlinks, size cap) and the write() rails (frontmatter,
+cap, read-before-write gate).
 """
 
 from __future__ import annotations
@@ -258,3 +259,79 @@ def test_render_skills_index_empty_when_no_skills(tmp_path: Path) -> None:
     store.ensure_root()
 
     assert render_skills_index(store) == "", "no skills → no dangling header"
+
+
+# ---------------------------------------------------------------------------
+# write() — create / update with the same rails
+# ---------------------------------------------------------------------------
+
+
+def test_write_creates_new_skill_and_is_immediately_readable(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    content = _VALID_FRONTMATTER.format(name="weekly-digest")
+
+    written = store.write("weekly-digest", content)
+
+    assert written == len(content.encode("utf-8")), "returns bytes written"
+    assert store.read("weekly-digest") == content, "readable live, no restart"
+    assert "weekly-digest" in [f.name for f in store.list()], "listed live"
+
+
+def test_write_rejects_name_mismatch(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    content = _VALID_FRONTMATTER.format(name="something-else")
+    with pytest.raises(SkillsError, match="must match parent directory"):
+        store.write("weekly-digest", content)
+
+
+def test_write_rejects_missing_frontmatter(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    with pytest.raises(SkillsError, match="frontmatter"):
+        store.write("weekly-digest", "# no frontmatter here\n")
+
+
+def test_write_rejects_over_cap(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    content = _VALID_FRONTMATTER.format(name="big") + "z" * MAX_SKILL_BYTES
+    with pytest.raises(SkillsError, match="exceeds cap"):
+        store.write("big", content)
+
+
+def test_write_allows_self_reflection(tmp_path: Path) -> None:
+    # No skill is off-limits: the bot may overwrite self-reflection too,
+    # subject only to the normal read-before-write gate.
+    store = _make_store(tmp_path)
+    content = _VALID_FRONTMATTER.format(name="self-reflection")
+    store.read("self-reflection")
+    assert store.write("self-reflection", content) == len(content.encode("utf-8"))
+
+
+def test_overwrite_requires_prior_read(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    content = _VALID_FRONTMATTER.format(name="another")
+
+    # 'another' already exists and hasn't been read this session.
+    with pytest.raises(SkillsError, match="call skill_read"):
+        store.write("another", content)
+
+    # After a read, the overwrite is allowed.
+    store.read("another")
+    assert store.write("another", content) == len(content.encode("utf-8"))
+
+
+def test_write_rejects_traversal(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    with pytest.raises(SkillsError, match="may not contain"):
+        store.write("../evil", "anything")
+
+
+def test_write_rejects_nested_name(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    with pytest.raises(SkillsError, match="single directory"):
+        store.write("nested/SKILL.md", "anything")
+
+
+def test_write_rejects_absolute_name(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    with pytest.raises(SkillsError, match="must be relative"):
+        store.write("/etc/passwd", "anything")

@@ -1,10 +1,13 @@
-"""Read and append the project prompt at ``prompts/project.md``.
+"""Read, append, and rewrite the project prompt at ``prompts/project.md``.
 
 system.md is intentionally not exposed: it's git-tracked, so any bot
 edit there would land as a working-tree diff and pollute the repo.
 All operator-driven customisations accumulate in project.md
 (gitignored), which is concatenated after system.md to form the full
 prompt.
+
+``append`` grows the overlay; ``rewrite`` replaces it wholesale so a
+rule that belongs elsewhere can be removed. Both share the same rails.
 
 The owner-only policy is enforced in the system prompt, not here.
 Code-level rails: file must already exist, 128 KiB cap, atomic write,
@@ -53,15 +56,33 @@ class InstructionsStore:
         """Append ``content`` to project.md. Returns (new_total_bytes, backup_path)."""
         if not self._path.exists():
             raise InstructionsError(f"project.md not present at {self._path}")
-        existing = self._path.read_bytes()
-        encoded = content.encode("utf-8")
-        new_size = len(existing) + len(encoded)
+        new_bytes = self._path.read_bytes() + content.encode("utf-8")
+        return self._commit(new_bytes, "append")
+
+    def rewrite(self, content: str) -> tuple[int, Path]:
+        """Replace project.md wholesale. Returns (new_total_bytes, backup_path).
+
+        The remove counterpart to :meth:`append`: read the body, drop a
+        block, write the rest back. Same rails as append (file must exist,
+        capped, backed up first). Takes effect on the next container restart.
+        """
+        if not self._path.exists():
+            raise InstructionsError(f"project.md not present at {self._path}")
+        return self._commit(content.encode("utf-8"), "rewrite")
+
+    def _commit(self, new_bytes: bytes, op: str) -> tuple[int, Path]:
+        """Cap-check, back up, then atomically write. Returns (size, backup)."""
+        new_size = len(new_bytes)
         if new_size > MAX_INSTRUCTION_BYTES:
             raise InstructionsError(
-                f"append would exceed cap: {new_size} bytes > {MAX_INSTRUCTION_BYTES}"
+                f"{op} would exceed cap: {new_size} bytes > {MAX_INSTRUCTION_BYTES}"
             )
         backup = self._backup()
-        new_bytes = existing + encoded
+        self._atomic_write(new_bytes)
+        return new_size, backup
+
+    def _atomic_write(self, new_bytes: bytes) -> None:
+        """Atomically replace project.md with ``new_bytes`` (bind-mount safe)."""
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         tmp.write_bytes(new_bytes)
         try:
@@ -70,12 +91,11 @@ class InstructionsStore:
             # Docker bind-mounted single files can't be replaced via
             # rename(2) — the destination is a mount point, kernel
             # returns EBUSY. Fall back to in-place truncate+write; the
-            # backup taken above covers crash-mid-write recovery.
+            # backup taken by the caller covers crash-mid-write recovery.
             if exc.errno != errno.EBUSY:
                 raise
             self._path.write_bytes(new_bytes)
             tmp.unlink(missing_ok=True)
-        return new_size, backup
 
     def _backup(self) -> Path:
         self._backup_dir.mkdir(parents=True, exist_ok=True)

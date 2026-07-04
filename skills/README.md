@@ -78,5 +78,9 @@ no `..`, no symlinks, must stay inside `skills/`.
 5. Restart the bot — the skills store re-scans on startup and the new
    skill becomes available via `skill_list` immediately.
 
-The bot **never writes** to `skills/`. The store is read-only by
-design; operators curate this directory by hand or via PR.
+The bot can **create or update** any skill via the `skill_write` tool,
+on owner approval (e.g. through the `self-reflection` loop when a lesson
+is really a reusable procedure) — including `self-reflection` itself.
+This mirrors the `memories/` store: `skills/` is git-tracked, so the
+write lands in the checkout and git history is the backup — the owner
+commits it. Operators still edit any skill by hand or via PR.

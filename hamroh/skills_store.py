@@ -1,4 +1,4 @@
-"""Read-only access to agent skill playbooks at ``skills/<name>/SKILL.md``.
+"""Read and write agent skill playbooks at ``skills/<name>/SKILL.md``.
 
 **Spec compliance:** this store implements the Agent Skills
 specification (https://agentskills.io/specification). Every SKILL.md
@@ -12,7 +12,9 @@ tools — either through explicit invocation (a reminder-envelope
 `<skill name="...">run</skill>` directive) or agent-side discovery
 using the ``description`` metadata.
 
-This store is **read-only** — the bot never writes to `skills/`.
+The bot can **create or update** skills via :meth:`SkillsStore.write`,
+mirroring :class:`MemoryStore`: ``skills/`` is git-tracked, so git
+history is the backup. Existing skills obey a read-before-write gate.
 The layout is strict:
 
 - Only first-level directories directly under ``skills/`` count as
@@ -97,6 +99,10 @@ class SkillsStore:
         #: Filtered out before the SKILL.md is even read, so a malformed
         #: disabled skill never blocks the rest of the catalogue.
         self._disabled = disabled
+        #: Names read this session — the read-before-write gate for
+        #: :meth:`write`. Mirrors :class:`MemoryStore`'s ``_read_paths``;
+        #: resets on restart.
+        self._read_names: set[str] = set()
 
     @property
     def root(self) -> Path:
@@ -210,9 +216,36 @@ class SkillsStore:
         # broken skill).
         metadata, _ = _parse_frontmatter(text)
         _validate_skill_metadata(metadata, name)
+        # Credit the read-before-write gate only on a fully valid read.
+        self._read_names.add(name)
         if truncated:
             text += f"\n\n[truncated to {max_bytes} bytes]"
         return text
+
+    def write(self, name: str, content: str) -> int:
+        """Create or overwrite ``skills/<name>/SKILL.md``. Returns bytes written.
+
+        Mirrors :meth:`MemoryStore.write`: frontmatter required (its ``name``
+        must equal ``name`` and match the spec regex), body capped at
+        :data:`MAX_SKILL_BYTES`, and overwriting an existing skill needs a
+        prior :meth:`read` this session. Plain write — git history is the
+        backup. Visible to :meth:`list`/:meth:`read` at once; the preloaded
+        index refreshes on restart.
+        """
+        path = self._resolve_skill_md(name)
+        metadata, _ = _parse_frontmatter(content)
+        _validate_skill_metadata(metadata, name)
+        encoded = content.encode("utf-8")
+        if len(encoded) > MAX_SKILL_BYTES:
+            raise SkillsError(
+                f"content exceeds cap: {len(encoded)} bytes > {MAX_SKILL_BYTES}"
+            )
+        if path.exists() and name not in self._read_names:
+            raise SkillsError(f"call skill_read('{name}') before overwriting it")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(encoded)
+        self._read_names.add(name)
+        return len(encoded)
 
 
 def render_skills_index(store: SkillsStore) -> str:
