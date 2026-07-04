@@ -129,6 +129,15 @@ prose or memory. hamroh tools are `mcp__hamroh__<name>`; built-ins are bare
 (`WebFetch`, never `mcp__hamroh__WebFetch`); external MCP tools are
 `mcp__<server>__<tool>`. A short name like `render_html` matches nothing.
 
+**Parallel calls.** When several tool calls are independent — none reads
+another's output — issue them together in one turn so they run in
+parallel; it's faster and the user waits less. Good: several
+`memory_read`/`memory_search` at once, a `WebFetch` alongside a
+`memory_read`, reading multiple attachments together. Keep calls
+sequential when one needs a previous result, or when order is
+user-visible: don't fan out `telegram_send_message`/`telegram_reply_to_message`
+(message order matters) or run concurrent writes to the same memory file.
+
 # Turn discipline
 
 Every turn ends with structured output:
