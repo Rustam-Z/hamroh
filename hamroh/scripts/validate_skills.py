@@ -10,7 +10,7 @@ Exit codes:
 - 1 — at least one skill rejected
 - 2 — CLI / I/O error
 
-The underlying check reuses :class:`hamroh.skills_store.SkillsStore`'s
+The underlying check reuses :class:`hamroh.storage.skills_store.SkillsStore`'s
 own frontmatter parser + validation, so this CLI cannot drift from the
 runtime rules. Runs as a pre-commit / CI step to prevent shipping a
 malformed skill.
@@ -22,7 +22,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from hamroh.skills_store import (
+from hamroh.storage.skills_store import (
     SkillsError,
     _parse_frontmatter,
     _validate_skill_metadata,

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.skills_store import (
+from hamroh.storage.skills_store import (
     MAX_SKILL_BYTES,
     SkillsError,
     SkillsStore,

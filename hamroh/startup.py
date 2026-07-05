@@ -36,7 +36,7 @@ from .db.reminders import (
     reset_stuck_reminders,
 )
 from .engine import Engine, EngineOptions, ErrorNotify, TypingAction
-from .instructions_store import InstructionsStore
+from .storage.instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
 from .rate_limiter import RateLimitConfig, RateLimiter
@@ -46,7 +46,7 @@ from .reminders_config import (
     load_declared_reminders,
     resolve_chat,
 )
-from .skills_store import SkillsStore, render_skills_index
+from .storage.skills_store import SkillsStore, render_skills_index
 from .storage.attachments import AttachmentStore
 from .storage.memory import MemoryStore
 from .storage.render import RenderStore

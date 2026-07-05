@@ -174,7 +174,7 @@ class CcSpawnSpec:
     #: appended to the system prompt so the agent always knows what
     #: playbooks exist without calling ``skill_list`` — Agent Skills
     #: "level 1" metadata. Built at startup from
-    #: :func:`hamroh.skills_store.render_skills_index`; empty string means
+    #: :func:`hamroh.storage.skills_store.render_skills_index`; empty string means
     #: nothing is appended (no skills, or feature off).
     skills_index: str = ""
     #: Exact names of the enabled hamroh MCP tools (bare, without the

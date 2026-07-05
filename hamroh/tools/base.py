@@ -28,10 +28,10 @@ from ..transcript import ChatRef, MsgRef, log_outbound
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..storage.attachments import AttachmentStore
     from ..db.database import Database
-    from ..instructions_store import InstructionsStore
+    from ..storage.instructions_store import InstructionsStore
     from ..storage.memory import MemoryStore
     from ..storage.render import RenderStore
-    from ..skills_store import SkillsStore
+    from ..storage.skills_store import SkillsStore
     from .browser import BrowserManager, BrowserSession
 
 

@@ -1,19 +1,18 @@
 """Disk-backed stores for the bot's file state.
 
 Each module is a thin wrapper around one storage folder — the git-tracked
-``memories/`` at the repo root, plus ``data/attachments/`` and
-``data/renders/`` — that does path-safety hardening, size capping, and
-read/write helpers. The shape is the same everywhere: a ``Store`` class with
-``ensure_root``, ``resolve_path``, plus per-kind read/write methods.
+``memories/`` at the repo root, plus ``data/attachments/``,
+``data/renders/``, the operator-curated ``skills/`` (``skills_store``) and
+``prompts/`` (``instructions_store``) — that does path-safety hardening,
+size capping, and read/write helpers. The shape is the same everywhere: a
+``Store`` class with ``ensure_root``, ``resolve_path``, plus per-kind
+read/write methods.
 
-Operator-curated content lives elsewhere — system prompt is at
-``hamroh.instructions_store``, skill playbooks are at
-``hamroh.skills_store`` — because those manage ``prompts/`` and
-``skills/``.
-
-This package re-exports the public API so callers can keep writing
-``from hamroh.storage import MemoryStore`` etc. without caring
-which submodule actually houses each class.
+The core stores re-export their public API here so callers can write
+``from hamroh.storage import MemoryStore`` etc. without caring which
+submodule houses each class. ``skills_store`` and ``instructions_store``
+are imported from their submodule directly (``from hamroh.storage.skills_store
+import SkillsStore``).
 """
 
 from __future__ import annotations

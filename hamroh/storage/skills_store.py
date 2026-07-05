@@ -35,8 +35,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .storage.frontmatter import parse_frontmatter, require_name_and_description
-from .storage.path_safety import resolve_under_root
+from .frontmatter import parse_frontmatter, require_name_and_description
+from .path_safety import resolve_under_root
 
 
 class SkillsError(ValueError):

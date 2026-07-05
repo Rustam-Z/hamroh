@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.instructions_store import (
+from hamroh.storage.instructions_store import (
     MAX_INSTRUCTION_BYTES,
     InstructionsError,
     InstructionsStore,

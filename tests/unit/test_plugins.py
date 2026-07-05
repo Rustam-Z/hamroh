@@ -20,7 +20,7 @@ from hamroh.plugins import (
     PluginsConfigError,
     load_plugins,
 )
-from hamroh.skills_store import SkillsStore
+from hamroh.storage.skills_store import SkillsStore
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +513,7 @@ def test_builtin_tools_disabled_unknown_name_crashes(tmp_path: Path) -> None:
 def test_skills_disabled_blocks_read(tmp_path: Path) -> None:
     """A disabled skill must not be readable either, so envelope-driven
     invocation (`<skill name="...">`) can't bypass the toggle."""
-    from hamroh.skills_store import SkillsError
+    from hamroh.storage.skills_store import SkillsError
 
     skills_root = tmp_path / "skills"
     skills_root.mkdir()

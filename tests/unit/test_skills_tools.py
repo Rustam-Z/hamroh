@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.skills_store import SkillsStore
+from hamroh.storage.skills_store import SkillsStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.skills import (
     ListSkillsArgs,

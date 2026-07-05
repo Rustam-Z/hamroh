@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.instructions_store import InstructionsStore
+from hamroh.storage.instructions_store import InstructionsStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.instructions import (
     AppendInstructionsArgs,

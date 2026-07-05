@@ -4,7 +4,7 @@ Skills are curated markdown playbooks under ``skills/<name>/SKILL.md``.
 ``skill_list`` and ``skill_read`` are public reference reads — no owner
 gate. ``skill_write`` creates or updates a skill and is **owner-gated by
 system-prompt policy** (not enforced in code), like ``instruction_append``.
-Access goes through :class:`hamroh.skills_store.SkillsStore`, which is
+Access goes through :class:`hamroh.storage.skills_store.SkillsStore`, which is
 path-hardened; writes land in the git-tracked ``skills/`` checkout.
 
 The intended use: when a reminder injects a message of the form
