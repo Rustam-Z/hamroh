@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hamroh-logo.jpg" alt="hamroh">
+  <img src="assets/hamroh-logo.jpg" alt="hamroh" width="700">
 </p>
 
 <p align="center">
