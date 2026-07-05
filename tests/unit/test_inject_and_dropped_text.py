@@ -12,15 +12,16 @@ from pathlib import Path
 from hamroh.cc_worker import TurnResult
 from hamroh.config import Config
 from hamroh.engine import Engine, EngineOptions
+from hamroh.engine.engine import SILENT_STOP_NUDGE
 from hamroh.models import ChatMessage, ControlAction
 
 
 _CFG = Config.for_test(Path("/tmp"))
 
 
-def _msg(text: str, mid: int) -> ChatMessage:
+def _msg(text: str, mid: int, chat_id: int = -100) -> ChatMessage:
     return ChatMessage(
-        chat_id=-100,
+        chat_id=chat_id,
         message_id=mid,
         user_id=42,
         username="alice",
@@ -131,6 +132,68 @@ async def test_dropped_text_classified_failure_surfaces_error() -> None:
         assert "hamroh_model" in text.lower(), "classified guidance shown to user"
         assert "claude-sonnet-4-7" in text, "diagnostic snippet preserved for the user"
         assert len(worker.sent) == 1, "no retry turn kicked into the worker"
+    finally:
+        await eng.stop()
+
+
+def _silent_stop() -> TurnResult:
+    """A ``stop`` that delivered nothing — no text block, no user-visible tool
+    call. The model narrated its intent in ``reason`` but sent nothing."""
+    return TurnResult(
+        text_blocks=[],
+        control=ControlAction(action="stop", reason="will reply pong"),
+        user_visible_action=False,
+        dropped_text=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_silent_stop_in_dm_reengages_once() -> None:
+    """A DM turn that ends ``stop`` with no reply and no text is re-engaged
+    once with the corrective nudge — and only once, so a still-silent model
+    can't loop."""
+    worker = FakeWorker()
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
+    await eng.start()
+    try:
+        # Given a direct message (chat_id > 0) that starts a turn
+        await eng.submit(_msg("ping", mid=1, chat_id=42))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1, "the user turn was handed to the worker"
+
+        # When the turn ends stop having delivered nothing
+        worker.feed(_silent_stop())
+        await asyncio.sleep(0.05)
+
+        # Then the model is re-engaged exactly once with the corrective nudge
+        assert len(worker.sent) == 2, "silent stop in a DM must re-engage the model"
+        assert worker.sent[1] == SILENT_STOP_NUDGE, "corrective nudge was sent"
+
+        # And when it stays silent, the turn finishes without a second retry
+        worker.feed(_silent_stop())
+        await asyncio.sleep(0.05)
+        assert len(worker.sent) == 2, "re-engagement is bounded to a single retry"
+    finally:
+        await eng.stop()
+
+
+@pytest.mark.asyncio
+async def test_silent_stop_in_group_does_not_reengage() -> None:
+    """Silence is legitimate in a group (chatter not addressed to the bot), so
+    a silent ``stop`` there must not trigger a corrective nudge."""
+    worker = FakeWorker()
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
+    await eng.start()
+    try:
+        # Given a group message (chat_id < 0) that starts a turn
+        await eng.submit(_msg("hi all", mid=1, chat_id=-100))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1
+
+        # When the turn ends stop with no reply, the turn finishes clean
+        worker.feed(_silent_stop())
+        await asyncio.sleep(0.05)
+        assert len(worker.sent) == 1, "group silence must not re-engage the model"
     finally:
         await eng.stop()
 

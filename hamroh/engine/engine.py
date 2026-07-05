@@ -62,6 +62,19 @@ HEARTBEAT_CONTINUE_NUDGE = (
     'Return action "stop" only once it is actually done.</system>'
 )
 
+#: Corrective nudge sent once when a turn ended ``stop`` without delivering
+#: anything (no ``telegram_send_message`` call, no text block) while a DM user
+#: was waiting. The model narrated its intent in the control ``reason`` — which
+#: the user never sees — so nothing reached them. This re-engages the same
+#: session to send the reply for real. Bounded to one retry in
+#: ``_handle_turn_result`` so a persistently silent model can't loop.
+SILENT_STOP_NUDGE = (
+    "<system>You ended the turn without sending a message, but the user is "
+    "waiting for a reply. Send it now via telegram_send_message or "
+    "telegram_reply_to_message. The reason field is internal and never shown "
+    "to the user.</system>"
+)
+
 
 def _trim_snippet(text: str, limit: int = 400) -> str:
     """Trim diagnostic text to fit comfortably in a Telegram message."""
@@ -111,6 +124,11 @@ class TurnState:
     #: ``_handle_turn_result`` so a model that always returns ``heartbeat``
     #: can't spin the control loop forever.
     heartbeat_count: int = 0
+    #: True once this turn has been re-engaged for a silent ``stop`` (ended
+    #: with no delivered message and no text while a DM user waited). Reset on
+    #: each ``_kick``; bounds the corrective nudge to a single retry so a
+    #: persistently silent model can't loop.
+    silent_stop_retried: bool = False
 
 
 @dataclass
@@ -311,6 +329,7 @@ class Engine(TypingIndicatorMixin):
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []
         self._turn.heartbeat_count = 0
+        self._turn.silent_stop_retried = False
         restore = self._restore_context
         self._restore_context = None
         self._turn.had_restored_context = restore is not None
@@ -688,7 +707,54 @@ class Engine(TypingIndicatorMixin):
             await self._continue_after_heartbeat()
             return
 
+        await self._finish_or_retry_stop(result, action)
+
+    async def _finish_or_retry_stop(
+        self, result: "TurnResult", action: str | None
+    ) -> None:
+        """Finish a stop turn — but re-engage once if it silently dropped a DM
+        reply, and warn if it stays silent even after that single retry."""
+        if self._is_silent_stop(result, action):
+            await self._retry_silent_stop()
+            return
+        if self._turn.silent_stop_retried and not result.user_visible_action:
+            log.warning("silent stop persisted after re-engagement — user got no reply")
         await self._finish_clean_turn(result, action)
+
+    def _is_silent_stop(self, result: "TurnResult", action: str | None) -> bool:
+        """A ``stop`` that delivered nothing while a DM user was waiting.
+
+        The model ended the turn with no ``telegram_send_message`` call and no
+        text block, so the dropped-text net (which forwards orphaned text) has
+        nothing to catch — yet a direct-message user is waiting on a reply.
+        Group silence is legitimate (chatter not addressed to the bot), so this
+        fires only for DMs (``chat_id > 0``) and only once per turn.
+        """
+        return (
+            action == "stop"
+            and not result.dropped_text
+            and not result.text_blocks
+            and not result.user_visible_action
+            and not self._turn.silent_stop_retried
+            and any(chat_id > 0 for chat_id in self._turn.active_chats)
+        )
+
+    async def _retry_silent_stop(self) -> None:
+        """Re-engage CC once to deliver the reply it silently dropped.
+
+        Mirrors :meth:`_continue_after_heartbeat`'s minimal-nudge path: keep
+        the turn alive, resume typing, and hand the model a corrective nudge.
+        Bounded to a single retry via ``silent_stop_retried``; if the model is
+        still silent afterwards the turn finishes clean (a warning is logged in
+        ``_handle_turn_result``), with no user-facing apology since nothing failed.
+        """
+        self._turn.silent_stop_retried = True
+        log.warning(
+            "silent stop with a DM waiting — re-engaging CC to deliver the reply"
+        )
+        self._is_processing.set()
+        await self._start_typing(set(self._turn.active_chats))
+        await self._worker.send(SILENT_STOP_NUDGE)
 
     async def _notify_stderr_failure(self, result: "TurnResult") -> None:
         """Surface a targeted message if stderr names the failure mode
