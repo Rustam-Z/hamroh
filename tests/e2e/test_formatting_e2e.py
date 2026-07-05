@@ -55,9 +55,6 @@ _EXPECTED_ENTITIES = {
 
 
 async def _assert_formats(client: TelegramClient, convo: Conversation) -> None:
-    # warm-up turn pays the one-time startup cost; not measured
-    await send_and_wait(client, convo, "Hello, are you there?")
-
     reply = await send_and_wait(client, convo, _SHOWCASE_REQUEST, timeout=120)
     log.info(
         "formatting reply: first=%.2fs complete=%.2fs entities=%s",

@@ -25,9 +25,6 @@ log = logging.getLogger(__name__)
 
 
 async def _assert_prompt_reply(client: TelegramClient, convo: Conversation) -> None:
-    # warm-up turn pays the one-time startup cost; not measured
-    await send_and_wait(client, convo, "Hello, are you there?")
-
     question, token = recall_prompt()
     reply = await send_and_wait(client, convo, question)
     log.info(
@@ -68,9 +65,6 @@ def _each_token_in_own_message(
 async def _assert_multi_message_reply(
     client: TelegramClient, convo: Conversation
 ) -> None:
-    # warm-up turn pays the one-time startup cost; not measured
-    await send_and_wait(client, convo, "Hello, are you there?")
-
     question, tokens = split_message_prompt()
     reply = await send_and_wait_for_chunks(client, convo, question, len(tokens))
     log.info(

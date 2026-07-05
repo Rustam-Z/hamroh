@@ -51,7 +51,6 @@ async def test_eval_dm(
     then   the latency table is logged and the pass-rate stays >= E2E_EVAL_MIN_PASS.
     """
     # warm-up turn pays the one-time startup cost off the clock
-    await send_and_wait(tester_client, dm, "Hello, are you there?")
     await _eval_chat(tester_client, dm, hamroh_sut.db_path)
 
 

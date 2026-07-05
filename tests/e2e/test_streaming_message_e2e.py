@@ -41,8 +41,6 @@ async def test_progress_draft_does_not_break_reply_dm(
     then   the bot returns the token in a single reply within MAX_TEXT_REPLY_S —
            the per-turn draft streaming hasn't broken or slowed the answer.
     """
-    # Arrange: warm-up turn pays the one-time startup cost; not measured.
-    await send_and_wait(tester_client, dm, "Hello, are you there?")
     question, token = recall_prompt()
 
     # Act: ask the timed question on the draft-enabled bot.
