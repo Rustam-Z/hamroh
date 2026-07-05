@@ -7,8 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ...formatting import chunk_text, markdown_to_telegram_html
-from ...transcript import ChatRef, MsgRef, log_outbound
+from ...utils.formatting import chunk_text, markdown_to_telegram_html
+from ...helpers.transcript import ChatRef, MsgRef, log_outbound
 from ..base import (
     BaseTool,
     OutboundRecord,

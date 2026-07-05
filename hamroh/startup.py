@@ -40,16 +40,16 @@ from .storage.instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
 from .rate_limiter import RateLimitConfig, RateLimiter
-from .reminders_config import (
+from .reminders.reminders_config import (
     KEY_PREFIX,
     committed_key,
     load_declared_reminders,
     resolve_chat,
 )
 from .storage.skills_store import SkillsStore, render_skills_index
-from .storage.attachments import AttachmentStore
-from .storage.memory import MemoryStore
-from .storage.render import RenderStore
+from .storage.attachments_store import AttachmentStore
+from .storage.memory_store import MemoryStore
+from .storage.render_store import RenderStore
 from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.storage.render import RenderStore
+from hamroh.storage.render_store import RenderStore
 from hamroh.tools import render_html as render_html_mod
 from hamroh.tools.base import ToolContext
 from hamroh.tools.render_latex import (

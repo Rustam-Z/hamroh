@@ -28,7 +28,7 @@ from ..cc_worker.cc_failure_classifier import (
 )
 from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
-from ..formatting import chunk_text
+from ..utils.formatting import chunk_text
 from ..models import ChatMessage
 from .format import format_messages_with_context
 from .restore import build_restored_context

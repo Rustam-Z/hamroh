@@ -17,7 +17,7 @@ from ..base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from ...storage.render import RenderStore
+    from ...storage.render_store import RenderStore
 
 log = logging.getLogger(__name__)
 

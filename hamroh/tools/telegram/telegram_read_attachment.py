@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from ..base import BaseTool, ToolResult
 
 if TYPE_CHECKING:
-    from ...storage.attachments import AttachmentStore
+    from ...storage.attachments_store import AttachmentStore
 
 
 class ReadAttachmentArgs(BaseModel):

@@ -28,7 +28,7 @@ from typing import Awaitable, Callable
 
 from ..config import Config
 from ..tools.base import Heartbeat
-from ..transcript import log_cc_user
+from ..helpers.transcript import log_cc_user
 from .event_handlers import CcEventHandlerMixin
 from .events import CrashLoop, TurnResult
 from .raw_capture import RawCapture

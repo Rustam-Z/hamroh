@@ -18,7 +18,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable
 
 from ..models import ControlAction
-from ..transcript import (
+from ..helpers.transcript import (
     log_cc_result,
     log_cc_text,
     log_cc_tool_result,

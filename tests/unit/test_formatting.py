@@ -1,6 +1,6 @@
-"""Tests for hamroh.formatting — Markdown → Telegram HTML conversion."""
+"""Tests for hamroh.utils.formatting — Markdown → Telegram HTML conversion."""
 
-from hamroh.formatting import markdown_to_telegram_html
+from hamroh.utils.formatting import markdown_to_telegram_html
 
 
 def test_bold():

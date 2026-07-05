@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.storage.frontmatter import DESCRIPTION_MAX
-from hamroh.storage.memory import MemoryPathError, MemoryStore
+from hamroh.utils.frontmatter import DESCRIPTION_MAX
+from hamroh.storage.memory_store import MemoryPathError, MemoryStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.memory import ListMemoriesArgs, ListMemoriesTool
 

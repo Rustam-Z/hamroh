@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from .config import Config
+    from ..config import Config
 
 #: Console format — unchanged from the original ``_setup_logging``.
 _TEXT_FORMAT = "%(asctime)s %(levelname)-5s %(name)-22s %(message)s"

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from hamroh.config import Config
-from hamroh.logging_setup import (
+from hamroh.helpers.logging_setup import (
     JsonLogFormatter,
     _component,
     format_log_line,

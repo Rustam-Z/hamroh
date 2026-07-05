@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hamroh.input_normalizer import (
+from hamroh.utils.input_normalizer import (
     FLAG_BIDI,
     FLAG_NFKC,
     FLAG_ZERO_WIDTH,

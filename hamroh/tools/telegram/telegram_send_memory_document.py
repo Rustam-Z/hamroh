@@ -18,7 +18,7 @@ from ..base import BaseTool, OutboundDelivery, ToolResult, deliver_bookkeeping
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from ...storage.memory import MemoryStore
+    from ...storage.memory_store import MemoryStore
 
 log = logging.getLogger(__name__)
 

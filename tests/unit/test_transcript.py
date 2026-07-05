@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from hamroh.transcript import (
+from hamroh.helpers.transcript import (
     ChatRef,
     MsgRef,
     UserRef,

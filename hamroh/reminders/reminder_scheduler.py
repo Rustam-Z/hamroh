@@ -15,15 +15,15 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
-from .db.database import Database
-from .db.reminders import (
+from ..db.database import Database
+from ..db.reminders import (
     advance_recurring_reminder,
     claim_reminder,
     fetch_due_reminders,
     mark_reminder_sent,
     revert_reminder,
 )
-from .engine import Engine
+from ..engine import Engine
 
 log = logging.getLogger("hamroh.reminder")
 
@@ -85,7 +85,7 @@ async def _fire_one_reminder(db: Database, engine: Engine, row: dict) -> None:
     advances/closes it after CC consumes the turn; ``on_failure`` reverts
     the claim so a crash/reset before then re-fires it next tick (#22).
     """
-    from .models import ChatMessage
+    from ..models import ChatMessage
 
     if not await claim_reminder(db, row["id"]):
         log.info("reminder #%d already claimed; skipping", row["id"])

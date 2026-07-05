@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.storage.render import RenderStore
+from hamroh.storage.render_store import RenderStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.browser.browser_click import BrowserClickArgs, BrowserClickTool
 from hamroh.tools.browser.browser_fill import BrowserFillArgs, BrowserFillTool

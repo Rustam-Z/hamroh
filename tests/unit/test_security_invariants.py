@@ -335,7 +335,7 @@ def test_invariant_3_memory_write_safety_rails() -> None:
 
 def test_invariant_3_read_before_write_enforced(tmp_path: Path) -> None:
     """The MemoryStore itself rejects overwrites of files it hasn't read."""
-    from hamroh.storage.memory import MemoryPathError, MemoryStore
+    from hamroh.storage.memory_store import MemoryPathError, MemoryStore
 
     store = MemoryStore(tmp_path / "memories")
     store.ensure_root()
@@ -348,7 +348,11 @@ def test_invariant_3_read_before_write_enforced(tmp_path: Path) -> None:
 
 
 def test_invariant_3_size_cap_enforced(tmp_path: Path) -> None:
-    from hamroh.storage.memory import MAX_MEMORY_BYTES, MemoryPathError, MemoryStore
+    from hamroh.storage.memory_store import (
+        MAX_MEMORY_BYTES,
+        MemoryPathError,
+        MemoryStore,
+    )
 
     store = MemoryStore(tmp_path / "memories")
     store.ensure_root()
@@ -364,7 +368,7 @@ def test_invariant_3_size_cap_enforced(tmp_path: Path) -> None:
 
 
 def test_invariant_4_memory_path_traversal_rejected(tmp_path: Path) -> None:
-    from hamroh.storage.memory import MemoryPathError, MemoryStore
+    from hamroh.storage.memory_store import MemoryPathError, MemoryStore
 
     store = MemoryStore(tmp_path / "memories")
     store.ensure_root()
@@ -522,7 +526,7 @@ def test_invariant_8_database_query_select_only_when_present() -> None:
 # Invariant 9: inbound text is normalized and obfuscation is surfaced
 #
 # Zero-width / bidi / NFKC tricks are stripped at the dispatcher boundary
-# (``hamroh.input_normalizer.normalize_inbound``). When stripping fires,
+# (``hamroh.utils.input_normalizer.normalize_inbound``). When stripping fires,
 # the resulting ``ChatMessage.input_flags`` is non-empty AND the rendered
 # ``<msg>`` envelope carries a ``flags=`` attribute. The system prompt
 # keys off these flag names — if the contract drifts, the model loses its
@@ -534,7 +538,7 @@ def test_invariant_9_obfuscated_input_flagged_end_to_end() -> None:
     from datetime import datetime, timezone
 
     from hamroh.engine.format import format_messages_as_xml
-    from hamroh.input_normalizer import normalize_inbound
+    from hamroh.utils.input_normalizer import normalize_inbound
     from hamroh.models import ChatMessage
 
     # Zero-width split inside "ignore"

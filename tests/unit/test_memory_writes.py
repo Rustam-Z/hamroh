@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.storage.memory import MAX_MEMORY_BYTES, MemoryPathError, MemoryStore
+from hamroh.storage.memory_store import MAX_MEMORY_BYTES, MemoryPathError, MemoryStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.memory import (
     AppendMemoryArgs,

@@ -39,11 +39,11 @@ from ..db.messages import (
     upsert_user,
 )
 from ..db.unauthorized import chat_has_refusal, insert_unauthorized_message
-from ..input_normalizer import normalize_inbound
+from ..utils.input_normalizer import normalize_inbound
 from ..models import ChatMessage
 from ..rate_limiter import RateLimitExceeded, RateLimiter
-from ..secrets_scrubber import contains_secret, scrub
-from ..transcript import ChatRef, MsgRef, UserRef, log_inbound, log_inbound_edit
+from ..utils.secrets_scrubber import contains_secret, scrub
+from ..helpers.transcript import ChatRef, MsgRef, UserRef, log_inbound, log_inbound_edit
 from .attachments import _process_attachments
 from .commands import OwnerCommandsMixin
 

@@ -1,7 +1,7 @@
 """File-backed read-only store for inbound Telegram attachments.
 
 Scoped strictly to ``data/attachments/``. Path resolution mirrors
-:class:`hamroh.storage.memory.MemoryStore` — same traversal-hardened rules
+:class:`hamroh.storage.memory_store.MemoryStore` — same traversal-hardened rules
 (no ``..``, no absolute paths outside the root, no symlinks). The dispatcher
 in :mod:`hamroh.telegram_io` is the *only* writer; the model only ever
 reads through :class:`AttachmentStore`.
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .path_safety import resolve_under_root
+from ..utils.path_safety import resolve_under_root
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from pypdf import PdfReader
@@ -152,7 +152,7 @@ class AttachmentStore:
     def resolve_path(self, relative: str) -> Path:
         """Resolve ``relative`` inside the attachments root, hardened.
 
-        See :func:`hamroh.storage.path_safety.resolve_under_root` for
+        See :func:`hamroh.utils.path_safety.resolve_under_root` for
         the rules; any failure raises :class:`AttachmentPathError`.
         """
         return resolve_under_root(

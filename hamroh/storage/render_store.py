@@ -1,7 +1,7 @@
 """File-backed store for HTML→PNG renders under ``data/renders/``.
 
-Same path-traversal hardening as :class:`hamroh.storage.memory.MemoryStore`
-and :class:`hamroh.storage.attachments.AttachmentStore`: no ``..``, no
+Same path-traversal hardening as :class:`hamroh.storage.memory_store.MemoryStore`
+and :class:`hamroh.storage.attachments_store.AttachmentStore`: no ``..``, no
 absolute paths, no symlinks, must stay inside the renders root.
 
 Writers: ``render_html`` tool only. Reader: ``telegram_send_photo`` tool only.
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .path_safety import resolve_under_root
+from ..utils.path_safety import resolve_under_root
 
 
 class RenderPathError(ValueError):
@@ -56,7 +56,7 @@ class RenderStore:
     def resolve_path(self, relative: str) -> Path:
         """Resolve ``relative`` inside the renders root, hardened.
 
-        See :func:`hamroh.storage.path_safety.resolve_under_root` for
+        See :func:`hamroh.utils.path_safety.resolve_under_root` for
         the rules; any failure raises :class:`RenderPathError`.
         """
         return resolve_under_root(self._root, relative, RenderPathError, "render")

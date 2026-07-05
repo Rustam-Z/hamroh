@@ -2,7 +2,7 @@
 
 This module is the **only** place in ``hamroh/tools/`` allowed to touch
 the filesystem (security invariant 5). All four tools route through
-:class:`hamroh.storage.memory.MemoryStore`, which enforces:
+:class:`hamroh.storage.memory_store.MemoryStore`, which enforces:
 
 - path traversal protection (no ``..``, no absolute paths, no symlinks)
 - 64 KiB per-file cap
@@ -19,7 +19,7 @@ import asyncio
 
 from pydantic import BaseModel, Field
 
-from ..storage.memory import MEMORY_TEMPLATE, MemoryFile
+from ..storage.memory_store import MEMORY_TEMPLATE, MemoryFile
 from .base import BaseTool, ToolResult
 
 

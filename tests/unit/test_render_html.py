@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hamroh.storage.render import RenderPathError, RenderStore
+from hamroh.storage.render_store import RenderPathError, RenderStore
 from hamroh.tools import render_html as render_html_mod
 from hamroh.tools.base import ToolContext
 from hamroh.tools.render_html import RenderHtmlArgs, RenderHtmlTool

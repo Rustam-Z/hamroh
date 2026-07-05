@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hamroh.storage.memory import MemoryStore
+from hamroh.storage.memory_store import MemoryStore
 from hamroh.tools.base import ToolContext
 from hamroh.tools.telegram.telegram_send_memory_document import (
     SendMemoryDocumentArgs,

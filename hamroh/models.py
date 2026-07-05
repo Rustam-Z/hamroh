@@ -33,7 +33,7 @@ class ChatMessage(BaseModel):
     received_at_monotonic: float | None = Field(default=None, exclude=True)
     #: Names of input-normalization transforms that fired on this message
     #: (e.g. ``"zero_width_stripped"``, ``"bidi_stripped"``,
-    #: ``"nfkc_changed"`` from :mod:`hamroh.input_normalizer`). Surfaced
+    #: ``"nfkc_changed"`` from :mod:`hamroh.utils.input_normalizer`). Surfaced
     #: to the model via the ``flags=`` attribute on the rendered ``<msg>``
     #: envelope so it can refuse obfuscated requests on-character. Not
     #: persisted — lives only in-memory between dispatcher and engine.

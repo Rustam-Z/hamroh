@@ -17,7 +17,7 @@ import logging
 
 from .cc_worker import CcWorker, WorkerHooks
 from .config import Config
-from .reminder_scheduler import _reminder_loop
+from .reminders.reminder_scheduler import _reminder_loop
 from .startup import (
     _acquire_instance_lock,
     _App,
@@ -34,7 +34,7 @@ from .startup import (
     _seed_default_reminders,
     _start_mcp_server,
 )
-from .logging_setup import setup_logging
+from .helpers.logging_setup import setup_logging
 
 __all__ = ["main", "_seed_default_reminders"]
 

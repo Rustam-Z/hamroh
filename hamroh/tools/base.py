@@ -23,14 +23,14 @@ from pydantic import BaseModel
 
 from ..db.messages import insert_message
 from ..models import ChatMessage
-from ..transcript import ChatRef, MsgRef, log_outbound
+from ..helpers.transcript import ChatRef, MsgRef, log_outbound
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ..storage.attachments import AttachmentStore
+    from ..storage.attachments_store import AttachmentStore
     from ..db.database import Database
     from ..storage.instructions_store import InstructionsStore
-    from ..storage.memory import MemoryStore
-    from ..storage.render import RenderStore
+    from ..storage.memory_store import MemoryStore
+    from ..storage.render_store import RenderStore
     from ..storage.skills_store import SkillsStore
     from .browser import BrowserManager, BrowserSession
 

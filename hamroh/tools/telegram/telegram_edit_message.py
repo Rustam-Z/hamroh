@@ -5,8 +5,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ...db.messages import mark_edited
-from ...formatting import markdown_to_telegram_html
-from ...transcript import log_edit
+from ...utils.formatting import markdown_to_telegram_html
+from ...helpers.transcript import log_edit
 from ..base import BaseTool, ToolResult
 
 

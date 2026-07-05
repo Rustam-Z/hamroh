@@ -20,8 +20,8 @@ from telegram.ext import Application, ContextTypes
 from ..access import load_access, save_access
 from ..config import Config
 from ..db.database import Database
-from ..formatting import chunk_text
-from ..logging_setup import format_log_line, tail_log
+from ..utils.formatting import chunk_text
+from ..helpers.logging_setup import format_log_line, tail_log
 
 if TYPE_CHECKING:
     from .dispatcher import EnginePort

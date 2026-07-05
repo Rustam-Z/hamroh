@@ -17,20 +17,20 @@ import SkillsStore``).
 
 from __future__ import annotations
 
-from .attachments import (
+from .attachments_store import (
     MAX_TEXT_BYTES,
     AttachmentPathError,
     AttachmentStore,
     ImageAttachment,
     TextAttachment,
 )
-from .memory import (
+from .memory_store import (
     MAX_MEMORY_BYTES,
     MemoryFile,
     MemoryPathError,
     MemoryStore,
 )
-from .render import Render, RenderPathError, RenderStore
+from .render_store import Render, RenderPathError, RenderStore
 
 __all__ = [
     "MAX_MEMORY_BYTES",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ...db.messages import mark_deleted
-from ...transcript import log_delete
+from ...helpers.transcript import log_delete
 from ..base import BaseTool, ToolResult
 
 

@@ -35,8 +35,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .frontmatter import parse_frontmatter, require_name_and_description
-from .path_safety import resolve_under_root
+from ..utils.frontmatter import parse_frontmatter, require_name_and_description
+from ..utils.path_safety import resolve_under_root
 
 
 class SkillsError(ValueError):
@@ -61,7 +61,7 @@ _NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split a SKILL.md's YAML frontmatter from its body.
 
-    Thin wrapper over :func:`hamroh.storage.frontmatter.parse_frontmatter`
+    Thin wrapper over :func:`hamroh.utils.frontmatter.parse_frontmatter`
     that pins the skill-specific error type and wording.
     """
     return parse_frontmatter(text, error_cls=SkillsError, label="SKILL.md")

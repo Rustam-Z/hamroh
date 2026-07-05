@@ -22,7 +22,7 @@ from pathlib import Path
 from telegram import Message
 
 from ..config import Config
-from ..secrets_scrubber import scrub
+from ..utils.secrets_scrubber import scrub
 
 log = logging.getLogger("hamroh.telegram_io")
 

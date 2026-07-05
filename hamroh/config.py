@@ -218,7 +218,7 @@ class Config:
     access_path: Path = field(init=False)
     #: Git-tracked JSON file of operator-declared reminders at the repo root.
     #: Read-only source of truth: the startup reconciler seeds/cancels rows to
-    #: match it (see ``hamroh.reminders_config``). Sibling of ``access_path``.
+    #: match it (see ``hamroh.reminders.reminders_config``). Sibling of ``access_path``.
     committed_reminders_path: Path = field(init=False)
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)

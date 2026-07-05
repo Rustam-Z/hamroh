@@ -21,12 +21,12 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .frontmatter import (
+from ..utils.frontmatter import (
     parse_frontmatter,
     render_frontmatter,
     require_name_and_description,
 )
-from .path_safety import resolve_under_root
+from ..utils.path_safety import resolve_under_root
 
 
 class MemoryPathError(ValueError):
@@ -155,7 +155,7 @@ class MemoryStore:
         """Resolve a project-root memory path to its file, hardened.
 
         Strips the ``memories/`` prefix, then resolves the remainder inside
-        the store root. See :func:`hamroh.storage.path_safety.resolve_under_root`
+        the store root. See :func:`hamroh.utils.path_safety.resolve_under_root`
         for the traversal rules; any failure raises :class:`MemoryPathError`.
         """
         subpath = self._strip_prefix(relative)

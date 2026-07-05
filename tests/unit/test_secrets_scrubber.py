@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hamroh.secrets_scrubber import REDACTION, contains_secret, scrub
+from hamroh.utils.secrets_scrubber import REDACTION, contains_secret, scrub
 
 
 def test_bearer_token_redacted() -> None:
