@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
