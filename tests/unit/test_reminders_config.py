@@ -1,6 +1,6 @@
 """Parsing and validation of the git-tracked ``default-reminders.json`` file.
 
-Pins the contract of :mod:`hamroh.reminders.reminders_config`: a well-formed file parses
+Pins the contract of :mod:`hamroh.scheduler.reminders_config`: a well-formed file parses
 into validated reminders, a missing file is empty, malformed input fails fast,
 and the content-addressed seed key is stable yet edit-sensitive.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.reminders.reminders_config import (
+from hamroh.scheduler.reminders_config import (
     DeclaredReminder,
     ReminderConfigError,
     committed_key,

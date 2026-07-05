@@ -17,7 +17,7 @@ import logging
 
 from .cc_worker import CcWorker, WorkerHooks
 from .config import Config
-from .reminders.reminder_scheduler import _reminder_loop
+from .scheduler.reminder_scheduler import _reminder_loop
 from .startup import (
     _acquire_instance_lock,
     _App,

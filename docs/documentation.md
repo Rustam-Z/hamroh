@@ -611,7 +611,7 @@ How it behaves:
 - A missing file means no custom reminders; a malformed file crashes boot
   loudly rather than silently dropping a reminder.
 
-Implementation: parser in `hamroh/reminders_config.py`, reconciler
+Implementation: parser in `hamroh/scheduler/reminders_config.py`, reconciler
 `_reconcile_committed_reminders` in `hamroh/startup.py`.
 
 ## Run your own agent

@@ -40,7 +40,7 @@ from .storage.instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
 from .rate_limiter import RateLimitConfig, RateLimiter
-from .reminders.reminders_config import (
+from .scheduler.reminders_config import (
     KEY_PREFIX,
     committed_key,
     load_declared_reminders,
