@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`hamroh.cc_failure_classifier`.
+"""Unit tests for :mod:`hamroh.cc_worker.cc_failure_classifier`.
 
 Data-driven classifier: matches CC stderr / text blocks against known
 failure keywords and returns a user-facing message. These tests pin the
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from hamroh.cc_failure_classifier import (
+from hamroh.cc_worker.cc_failure_classifier import (
     CC_FAILURE_PATTERNS,
     CcFailureClassification,
     CcFailurePattern,

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.cc_schema import CONTROL_ACTION_SCHEMA, schema_json
+from hamroh.cc_worker.cc_schema import CONTROL_ACTION_SCHEMA, schema_json
 from hamroh.cc_worker import (
     CcSpawnSpec,
     CcWorker,

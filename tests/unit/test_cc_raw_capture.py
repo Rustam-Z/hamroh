@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from hamroh.cc_schema import schema_json
+from hamroh.cc_worker.cc_schema import schema_json
 from hamroh.cc_worker import CcSpawnSpec, CcWorker
 from hamroh.config import Config
 

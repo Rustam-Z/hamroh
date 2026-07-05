@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import IO
 
 from .access import AccessConfig, load_access, save_access
-from .cc_schema import schema_json
+from .cc_worker.cc_schema import schema_json
 from .cc_worker import CcSpawnSpec, CcWorker
 from .config import Config
 from .db.database import Database

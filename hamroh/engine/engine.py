@@ -22,7 +22,10 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Awaitable, Callable
 
-from ..cc_failure_classifier import CcFailureClassification, classify_cc_failure
+from ..cc_worker.cc_failure_classifier import (
+    CcFailureClassification,
+    classify_cc_failure,
+)
 from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
 from ..formatting import chunk_text
