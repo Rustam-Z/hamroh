@@ -43,20 +43,28 @@ class ChatMessage(BaseModel):
 class ControlAction(BaseModel):
     """Structured output the CC subprocess returns at the end of every turn.
 
-    ``reason`` is required only when ``action == "stop"`` — a forcing
+    ``stop`` means "done — a reply was delivered this turn"; ``skip`` means
+    "done — deliberately sending nothing" (group chatter not addressed to
+    the bot, an explicit no-reply request). The split lets the engine tell
+    an intentional silence from an accidental one and re-engage only on the
+    latter. ``reason`` is required on both terminal actions — a forcing
     function so the model doesn't drop conversations reflexively. For
     ``sleep`` / ``heartbeat`` (provisional, non-terminal) it's optional.
     """
 
-    action: Literal["stop", "sleep", "heartbeat"]
+    action: Literal["stop", "skip", "sleep", "heartbeat"]
     reason: str | None = Field(
         default=None,
-        description="Terse justification (≤10 words). Required on stop.",
+        description="Terse justification (≤10 words). Required on stop/skip.",
     )
     sleep_ms: int | None = None
 
     @model_validator(mode="after")
-    def _reason_required_on_stop(self) -> "ControlAction":
-        if self.action == "stop" and not (self.reason and self.reason.strip()):
-            raise ValueError("reason is required (non-empty) when action == 'stop'")
+    def _reason_required_on_terminal(self) -> "ControlAction":
+        if self.action in ("stop", "skip") and not (
+            self.reason and self.reason.strip()
+        ):
+            raise ValueError(
+                "reason is required (non-empty) when action is 'stop' or 'skip'"
+            )
         return self

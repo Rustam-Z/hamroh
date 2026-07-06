@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
-from tests.e2e.support.client import send_and_wait
 from tests.e2e.support.eval import chat_label, run_eval
 from tests.e2e.support.harness import Sut
 from tests.e2e.support.models import Conversation

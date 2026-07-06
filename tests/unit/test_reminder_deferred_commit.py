@@ -94,6 +94,7 @@ async def test_on_success_fires_after_clean_turn_end() -> None:
         worker.feed(
             TurnResult(
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )

@@ -215,18 +215,21 @@ def test_control_schema_is_strict() -> None:
     assert CONTROL_ACTION_SCHEMA["properties"]["reason"]["maxLength"] > 0
 
 
-def test_control_action_requires_reason_only_on_stop() -> None:
+def test_control_action_requires_reason_only_on_terminal_actions() -> None:
     from hamroh.models import ControlAction
     import pytest
 
-    # stop without reason → rejected
+    # stop / skip without reason → rejected (terminal actions)
     with pytest.raises(ValueError, match="reason is required"):
         ControlAction(action="stop")
     with pytest.raises(ValueError, match="reason is required"):
         ControlAction(action="stop", reason="   ")
+    with pytest.raises(ValueError, match="reason is required"):
+        ControlAction(action="skip")
 
-    # stop with reason → ok
+    # stop / skip with reason → ok
     ControlAction(action="stop", reason="replied to user")
+    ControlAction(action="skip", reason="group chatter, not for me")
 
     # sleep / heartbeat without reason → ok (provisional, not terminal)
     ControlAction(action="sleep")

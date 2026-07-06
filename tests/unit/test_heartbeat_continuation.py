@@ -68,9 +68,12 @@ def _heartbeat() -> TurnResult:
 
 
 def _stop() -> TurnResult:
+    # user_visible_action=True: a clean stop implies the model delivered its
+    # reply via telegram_send_message — otherwise the silent-stop nudge fires.
     return TurnResult(
         text_blocks=[],
         control=ControlAction(action="stop", reason="done"),
+        user_visible_action=True,
         dropped_text=False,
     )
 

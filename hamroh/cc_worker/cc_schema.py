@@ -21,11 +21,13 @@ CONTROL_ACTION_SCHEMA: dict = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["stop", "sleep", "heartbeat"],
+            "enum": ["stop", "skip", "sleep", "heartbeat"],
             "description": (
                 "What to do after this turn. 'stop' is valid only after a "
                 "reply was delivered via telegram_send_message or telegram_reply_to_message — "
-                "plain text blocks are never shown to the user."
+                "plain text blocks are never shown to the user. "
+                "'skip' means deliberately sending nothing (group chatter not "
+                "addressed to you, or the user explicitly asked for no reply)."
             ),
         },
         "reason": {
@@ -33,7 +35,7 @@ CONTROL_ACTION_SCHEMA: dict = {
             "maxLength": REASON_MAX_LENGTH,
             "description": (
                 "Terse justification (≤10 words). "
-                "REQUIRED non-empty when action == 'stop'. "
+                "REQUIRED non-empty when action is 'stop' or 'skip'. "
                 "Optional (may be omitted) when action is 'sleep' or 'heartbeat'."
             ),
         },

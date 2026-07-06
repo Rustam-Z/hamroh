@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Literal
 
 import pytest
 
@@ -12,6 +13,7 @@ from pathlib import Path
 from hamroh.cc_worker import TurnResult
 from hamroh.config import Config
 from hamroh.engine import Engine, EngineOptions
+from hamroh.engine.engine import SILENT_STOP_NUDGE
 from hamroh.models import ChatMessage, ControlAction
 
 
@@ -135,11 +137,54 @@ async def test_dropped_text_classified_failure_surfaces_error() -> None:
         await eng.stop()
 
 
+def _silent(action: Literal["stop", "skip"], reason: str) -> TurnResult:
+    """A terminal turn that delivered nothing — no text block, no
+    user-visible tool call."""
+    return TurnResult(
+        text_blocks=[],
+        control=ControlAction(action=action, reason=reason),
+        user_visible_action=False,
+        dropped_text=False,
+    )
+
+
 @pytest.mark.asyncio
-async def test_silent_stop_in_dm_finishes_clean() -> None:
-    """A DM turn that ends ``stop`` with no text and no delivered message is a
-    legitimate outcome (e.g. the user asked for no reply) — the engine must
-    finish the turn clean, not re-engage the model to force a reply."""
+async def test_silent_stop_in_dm_reengages_once() -> None:
+    """A DM turn that ends ``stop`` having delivered nothing is a premature
+    turn end (``stop`` promises a reply was sent) — the engine re-engages
+    once with the corrective nudge, and only once, so a persistently silent
+    model can't loop."""
+    worker = FakeWorker()
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
+    await eng.start()
+    try:
+        # Given a direct message (chat_id > 0) that starts a turn
+        await eng.submit(_msg("ping", mid=1, chat_id=42))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1, "the user turn was handed to the worker"
+
+        # When the turn ends stop having delivered nothing
+        worker.feed(_silent("stop", "need to reply first"))
+        await asyncio.sleep(0.05)
+
+        # Then the model is re-engaged exactly once with the corrective nudge
+        assert len(worker.sent) == 2, "silent stop in a DM must re-engage the model"
+        assert worker.sent[1] == SILENT_STOP_NUDGE, "corrective nudge was sent"
+
+        # And when it stays silent, the turn finishes without a second retry
+        worker.feed(_silent("stop", "still nothing"))
+        await asyncio.sleep(0.05)
+        assert len(worker.sent) == 2, "re-engagement is bounded to a single retry"
+        assert eng.turn_elapsed_s is None, "turn must finish clean after the retry"
+    finally:
+        await eng.stop()
+
+
+@pytest.mark.asyncio
+async def test_skip_in_dm_finishes_clean() -> None:
+    """``skip`` is the model's explicit "deliberately not replying" signal
+    (e.g. the user asked for no reply) — the engine must finish the turn
+    clean without re-engaging, even in a DM."""
     worker = FakeWorker()
     eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
     await eng.start()
@@ -149,20 +194,69 @@ async def test_silent_stop_in_dm_finishes_clean() -> None:
         await asyncio.sleep(0.08)
         assert len(worker.sent) == 1, "the user turn was handed to the worker"
 
-        # When the turn ends stop having delivered nothing
-        worker.feed(
-            TurnResult(
-                text_blocks=[],
-                control=ControlAction(action="stop", reason="user asked no reply"),
-                user_visible_action=False,
-                dropped_text=False,
-            )
-        )
+        # When the turn ends with a deliberate skip
+        worker.feed(_silent("skip", "user asked no reply"))
         await asyncio.sleep(0.05)
 
         # Then the turn finishes clean — silence is respected, no retry turn
-        assert len(worker.sent) == 1, "silent stop must not re-engage the model"
-        assert eng.turn_elapsed_s is None, "turn must finish clean after silent stop"
+        assert len(worker.sent) == 1, "skip must not re-engage the model"
+        assert eng.turn_elapsed_s is None, "turn must finish clean after skip"
+    finally:
+        await eng.stop()
+
+
+@pytest.mark.asyncio
+async def test_silent_stop_in_group_reengages_once() -> None:
+    """A silent ``stop`` in a group is the same contract violation as in a
+    DM (``stop`` promises a reply was sent; deliberate silence is ``skip``)
+    — the model gets the one-shot nudge, and a ``skip`` answer finishes the
+    turn clean without forcing a reply onto group chatter."""
+    worker = FakeWorker()
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
+    await eng.start()
+    try:
+        # Given a group message (chat_id < 0) that starts a turn
+        await eng.submit(_msg("hi all", mid=1, chat_id=-100))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1
+
+        # When the turn ends stop having delivered nothing
+        worker.feed(_silent("stop", "group chatter"))
+        await asyncio.sleep(0.05)
+
+        # Then the model is re-engaged exactly once with the corrective nudge
+        assert len(worker.sent) == 2, "silent stop in a group must re-engage"
+        assert worker.sent[1] == SILENT_STOP_NUDGE, "corrective nudge was sent"
+
+        # And a skip answer to the nudge finishes the turn clean
+        worker.feed(_silent("skip", "chatter, nothing to add"))
+        await asyncio.sleep(0.05)
+        assert len(worker.sent) == 2, "skip after the nudge must end the turn"
+        assert eng.turn_elapsed_s is None, "turn must finish clean after skip"
+    finally:
+        await eng.stop()
+
+
+@pytest.mark.asyncio
+async def test_skip_in_group_finishes_clean() -> None:
+    """Group chatter the model deliberately ignores ends with ``skip`` —
+    the turn finishes clean, no nudge, no forced reply."""
+    worker = FakeWorker()
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20))
+    await eng.start()
+    try:
+        # Given a group message that starts a turn
+        await eng.submit(_msg("hi all", mid=1, chat_id=-100))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1
+
+        # When the turn ends with a deliberate skip
+        worker.feed(_silent("skip", "group chatter, not for me"))
+        await asyncio.sleep(0.05)
+
+        # Then the turn finishes clean — no corrective nudge
+        assert len(worker.sent) == 1, "skip must not re-engage the model"
+        assert eng.turn_elapsed_s is None, "turn must finish clean after skip"
     finally:
         await eng.stop()
 
@@ -186,6 +280,7 @@ async def test_health_introspection_accessors() -> None:
             TurnResult(
                 text_blocks=[],
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )
@@ -226,11 +321,12 @@ async def test_inject_drained_between_turns_when_pending() -> None:
         joined = "\n".join(worker.injected)
         assert "mid-a" in joined and "mid-b" in joined
 
-        # Turn finishes cleanly with stop
+        # Turn finishes cleanly with stop (a reply was delivered)
         worker.feed(
             TurnResult(
                 text_blocks=[],
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )

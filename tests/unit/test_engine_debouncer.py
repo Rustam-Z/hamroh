@@ -152,6 +152,7 @@ async def test_typing_indicator_stops_when_turn_ends() -> None:
             TurnResult(
                 text_blocks=[],
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )
@@ -384,6 +385,7 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
             TurnResult(
                 text_blocks=[],
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )
@@ -410,6 +412,7 @@ async def test_typing_fires_on_two_consecutive_turns() -> None:
             TurnResult(
                 text_blocks=[],
                 control=ControlAction(action="stop", reason="ok"),
+                user_visible_action=True,
                 dropped_text=False,
             )
         )
