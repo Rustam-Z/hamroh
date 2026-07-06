@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Memory files are append-mostly notes edited both by the bot (on the
+# server) and by hand (locally). On conflict, keep both sides' lines
+# instead of emitting conflict markers.
+memories/**/*.md merge=union
