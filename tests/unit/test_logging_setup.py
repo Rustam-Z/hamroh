@@ -146,6 +146,33 @@ def test_setup_logging_writes_json_file_and_is_idempotent(tmp_path: Path) -> Non
         root.setLevel(saved_level)
 
 
+def test_setup_logging_applies_transcript_mode(tmp_path: Path) -> None:
+    # Given a config asking for full transcript rendering
+    from hamroh.helpers.transcript import set_cc_render_mode
+    import hamroh.helpers.transcript as transcript
+
+    cfg = Config.for_test(tmp_path)
+    object.__setattr__(cfg, "log_transcript", "full")
+    cfg.ensure_dirs()
+    root = logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    try:
+        # When logging is set up
+        setup_logging(cfg)
+
+        # Then the [CC.*] renderer runs in full mode
+        assert transcript._cc_render_mode == "full", (
+            "setup_logging must hand the configured mode to the transcript"
+        )
+    finally:
+        set_cc_render_mode("compact")
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+        for handler in saved_handlers:
+            root.addHandler(handler)
+        root.setLevel(saved_level)
+
+
 # ----------------------------------------------------------------------
 # tail_log / format_log_line
 # ----------------------------------------------------------------------

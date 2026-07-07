@@ -158,10 +158,44 @@ def log_reaction(
 #: from the inbound/outbound conversation transcript.
 cc_log = logging.getLogger("hamroh.cc")
 
+#: How the ``[CC.*]`` lines below render their bodies. ``compact`` keeps the
+#: original one-truncated-line-per-event style; ``full`` prints complete
+#: multi-line bodies (with tool-result previews) so the log reads like a
+#: Claude Code transcript. Set once at startup from ``HAMROH_LOG_TRANSCRIPT``.
+_cc_render_mode = "compact"
+
+#: In ``full`` mode, a tool result shows at most this many lines before a
+#: ``(+N more lines)`` marker.
+TOOL_RESULT_PREVIEW_LINES = 10
+
+
+def set_cc_render_mode(mode: str) -> None:
+    """Choose how ``[CC.*]`` lines render: ``"full"`` or ``"compact"``."""
+    global _cc_render_mode
+    _cc_render_mode = mode
+
+
+def _render(text: str | None) -> str:
+    """The body verbatim in ``full`` mode, one truncated line otherwise."""
+    if _cc_render_mode == "full":
+        return text or ""
+    return _truncate(text)
+
+
+def _render_preview(text: str | None) -> str:
+    """First lines + ``(+N more lines)`` in ``full`` mode, one line otherwise."""
+    if _cc_render_mode != "full":
+        return _truncate(text)
+    lines = (text or "").splitlines()
+    if len(lines) <= TOOL_RESULT_PREVIEW_LINES:
+        return text or ""
+    shown = "\n".join(lines[:TOOL_RESULT_PREVIEW_LINES])
+    return f"{shown}\n(+{len(lines) - TOOL_RESULT_PREVIEW_LINES} more lines)"
+
 
 def log_cc_user(text: str) -> None:
     """One inbound user envelope sent into the CC subprocess (the XML batch)."""
-    cc_log.info("[CC.user] %s", _truncate(text))
+    cc_log.info("[CC.user] %s", _render(text))
 
 
 def log_cc_text(text: str) -> None:
@@ -171,7 +205,7 @@ def log_cc_text(text: str) -> None:
     because text blocks are invisible to the user. Seeing one here usually
     means dropped-text detection is about to fire.
     """
-    cc_log.info("[CC.text] %s", _truncate(text))
+    cc_log.info("[CC.text] %s", _render(text))
 
 
 def log_cc_tool_use(tool_name: str, tool_use_id: str, args: dict | None) -> None:
@@ -181,16 +215,16 @@ def log_cc_tool_use(tool_name: str, tool_use_id: str, args: dict | None) -> None
         try:
             import json as _json
 
-            args_str = _truncate(_json.dumps(args, default=str, ensure_ascii=False))
+            args_str = _render(_json.dumps(args, default=str, ensure_ascii=False))
         except Exception:
-            args_str = _truncate(str(args))
+            args_str = _render(str(args))
     cc_log.info("[CC.tool→] %s(%s) id=%s", tool_name, args_str, tool_use_id[:8])
 
 
 def log_cc_tool_result(tool_use_id: str, content: str | None, is_error: bool) -> None:
     """A tool returned a result back to the assistant."""
     tag = "[CC.tool✗]" if is_error else "[CC.tool✓]"
-    cc_log.info("%s id=%s | %s", tag, tool_use_id[:8], _truncate(content))
+    cc_log.info("%s id=%s | %s", tag, tool_use_id[:8], _render_preview(content))
 
 
 def log_cc_result(action: str | None, reason: str | None) -> None:

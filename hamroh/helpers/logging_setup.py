@@ -20,6 +20,8 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .transcript import set_cc_render_mode
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..config import Config
 
@@ -103,6 +105,8 @@ def setup_logging(cfg: Config) -> None:
 
     for noisy in _NOISY_LOGGERS:
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    set_cc_render_mode(cfg.log_transcript)
 
 
 def tail_log(path: Path, n: int) -> list[str]:

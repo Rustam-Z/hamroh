@@ -62,6 +62,13 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
+    value = (_env(name, default) or default).strip().lower()
+    if value not in allowed:
+        raise RuntimeError(f"{name} must be one of {allowed}, got {value!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class Config:
     """All settings the bot uses at runtime."""
@@ -205,6 +212,14 @@ class Config:
     #: loggers (httpx, mcp) stay quieted regardless.
     #: Env var: ``HAMROH_LOG_LEVEL`` (default ``"INFO"``).
     log_level: str
+    #: How much of Claude Code's activity the ``[CC.*]`` log lines show.
+    #: ``compact`` (default) keeps one short line per event, cut at 200
+    #: characters. ``full`` prints whole message bodies, tool arguments, and
+    #: a first-lines preview of tool results — reads like a Claude Code
+    #: transcript. The raw JSON capture in ``data/cc_logs/`` is always
+    #: complete regardless of this setting.
+    #: Env var: ``HAMROH_LOG_TRANSCRIPT`` (``"compact"`` or ``"full"``).
+    log_transcript: str
 
     # Derived paths
     db_path: Path = field(init=False)
@@ -270,6 +285,9 @@ class Config:
             crash_window_seconds=_float("HAMROH_CRASH_WINDOW_SECONDS", 600.0),
             browser_headless=_bool("HAMROH_BROWSER_HEADLESS", True),
             log_level=(_env("HAMROH_LOG_LEVEL", "INFO") or "INFO").upper(),
+            log_transcript=_choice(
+                "HAMROH_LOG_TRANSCRIPT", "compact", ("compact", "full")
+            ),
         )
         cls._apply_env_path_overrides(cfg)
         return cfg
@@ -327,6 +345,7 @@ class Config:
             crash_window_seconds=600.0,
             browser_headless=True,
             log_level="INFO",
+            log_transcript="compact",
         )
         cls._override_test_paths(cfg, data_dir.resolve())
         return cfg

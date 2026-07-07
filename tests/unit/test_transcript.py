@@ -10,12 +10,17 @@ from hamroh.helpers.transcript import (
     ChatRef,
     MsgRef,
     UserRef,
+    log_cc_text,
+    log_cc_tool_result,
+    log_cc_tool_use,
+    log_cc_user,
     log_delete,
     log_edit,
     log_inbound,
     log_inbound_edit,
     log_outbound,
     log_reaction,
+    set_cc_render_mode,
 )
 
 
@@ -135,6 +140,76 @@ def test_edit_and_delete_and_reaction(caplog_tx) -> None:
     assert any(m.startswith("[DEL]") for m in msgs)
     assert any(m.startswith("[REACT]") and "👍" in m for m in msgs)
     assert any(m.startswith("[RX↺]") for m in msgs)
+
+
+# ---------------------------------------------------------------------------
+# [CC.*] rendering modes (HAMROH_LOG_TRANSCRIPT=full|compact)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def caplog_cc(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixture:
+    caplog.set_level(logging.INFO, logger="hamroh.cc")
+    return caplog
+
+
+@pytest.fixture()
+def full_mode():
+    """Switch [CC.*] rendering to full for one test, then restore compact."""
+    set_cc_render_mode("full")
+    yield
+    set_cc_render_mode("compact")
+
+
+def test_cc_compact_truncates_and_flattens_by_default(caplog_cc) -> None:
+    log_cc_text("line one\nline two" + "x" * 500)
+    line = caplog_cc.records[-1].getMessage()
+    assert "\n" not in line, "compact mode must flatten newlines"
+    assert "…" in line, "compact mode must truncate long bodies"
+
+
+def test_cc_full_keeps_multiline_text_verbatim(caplog_cc, full_mode) -> None:
+    body = "first paragraph\n\nsecond paragraph " + "x" * 500
+    log_cc_text(body)
+    line = caplog_cc.records[-1].getMessage()
+    assert body in line, "full mode must keep the text block verbatim"
+
+
+def test_cc_full_keeps_user_envelope_verbatim(caplog_cc, full_mode) -> None:
+    envelope = '<msg id="1" chat="2">line one\nline two</msg>'
+    log_cc_user(envelope)
+    line = caplog_cc.records[-1].getMessage()
+    assert envelope in line, "full mode must keep the inbound envelope verbatim"
+
+
+def test_cc_full_keeps_tool_args_untruncated(caplog_cc, full_mode) -> None:
+    log_cc_tool_use(
+        tool_name="telegram_send_message",
+        tool_use_id="toolu_01AbCdEf",
+        args={"chat_id": 1, "text": "y" * 500},
+    )
+    line = caplog_cc.records[-1].getMessage()
+    assert "y" * 500 in line, "full mode must keep tool args untruncated"
+
+
+def test_cc_full_tool_result_shows_preview_with_more_lines(
+    caplog_cc, full_mode
+) -> None:
+    content = "\n".join(f"line {i}" for i in range(1, 26))
+    log_cc_tool_result(tool_use_id="toolu_01AbCdEf", content=content, is_error=False)
+    line = caplog_cc.records[-1].getMessage()
+    assert "line 10" in line, "preview must include the first 10 lines"
+    assert "line 11" not in line, "preview must stop after 10 lines"
+    assert "(+15 more lines)" in line, "preview must count the hidden lines"
+
+
+def test_cc_full_short_tool_result_has_no_more_lines_marker(
+    caplog_cc, full_mode
+) -> None:
+    log_cc_tool_result(tool_use_id="toolu_01AbCdEf", content="ok\ndone", is_error=False)
+    line = caplog_cc.records[-1].getMessage()
+    assert "ok\ndone" in line, "short results must render in full"
+    assert "more lines" not in line, "short results must not show a marker"
 
 
 def test_tool_context_chat_titles_default_is_independent_dict() -> None:
