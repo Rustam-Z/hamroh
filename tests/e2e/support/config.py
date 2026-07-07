@@ -77,6 +77,8 @@ MAX_RENDER_REPLY_S = 60.0  # a turn that renders an image
 MAX_BROWSER_REPLY_S = (
     120.0  # a multi-step browser flow may emit progress msgs; wait ≤2min for the photo
 )
+MAX_TOOL_GROUP_REPLY_S = 60.0  # a turn using an unlocked Bash/Write/MCP-echo tool
+MAX_SUBAGENT_REPLY_S = 120.0  # a turn that spawns a whole subagent and waits for it
 MAX_RESET_REPLY_S = 15.0  # /reset_session respawns the engine (MCP-class bound)
 MAX_KILL_S = 15.0  # the bot process exits after /kill
 

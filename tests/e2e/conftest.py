@@ -13,6 +13,7 @@ import itertools
 import json
 import logging
 import shutil
+import sys
 import uuid
 from collections.abc import AsyncIterator, Generator, Iterator
 from pathlib import Path
@@ -294,6 +295,83 @@ def default_reminders_sut(
     )
     try:
         yield sut, token, disabled_token
+    finally:
+        stop_sut(sut)
+        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
+        hamroh_sut.proc = revived.proc
+        hamroh_sut._log = revived._log
+
+
+#: The MCP server names the ``plugins_sut`` bot is booted with. The enabled one
+#: must answer tool calls; the disabled one must never even spawn.
+E2E_MCP_ENABLED = "e2e-echo"
+E2E_MCP_DISABLED = "e2e-echo-off"
+_ECHO_MCP_SCRIPT = _HERE / "support" / "echo_mcp.py"
+
+
+def _echo_mcp_entry(name: str, secret: str, enabled: bool) -> dict[str, object]:
+    """One stdio plugins.json entry running the throwaway echo MCP server.
+
+    The server holds ``secret`` in its env and returns it from every ``echo``
+    call — the model can only learn the secret through a real tool call.
+    """
+    return {
+        "name": name,
+        "command": sys.executable,
+        "args": [str(_ECHO_MCP_SCRIPT)],
+        "env": {"E2E_MCP_SECRET": secret},
+        "allowed_tools": [f"mcp__{name}"],
+        "enabled": enabled,
+    }
+
+
+def _write_plugins_json(path: Path, secret: str, disabled_secret: str) -> None:
+    """Write the plugins.json the ``plugins_sut`` bot boots with: every tool
+    group true, plus one enabled and one disabled echo MCP entry."""
+    path.write_text(
+        json.dumps(
+            {
+                "tool_groups": {"bash": True, "code": True, "subagents": True},
+                "mcps": [
+                    _echo_mcp_entry(E2E_MCP_ENABLED, secret, enabled=True),
+                    _echo_mcp_entry(E2E_MCP_DISABLED, disabled_secret, enabled=False),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture(scope="module")
+def plugins_sut(
+    hamroh_sut: Sut,
+    e2e_config: E2EConfig,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[Sut, str, str]]:
+    """A bot with every tool group enabled and two echo MCPs (on and off).
+
+    Writes a dedicated ``plugins.json`` — ``bash``/``code``/``subagents`` all
+    true, plus two stdio echo MCP entries, one enabled and one disabled, each
+    holding its own fresh secret. The SUT reads it via ``HAMROH_PLUGINS_PATH``,
+    so the repo-root ``plugins.json`` (the locked-down default every other test
+    runs under) is untouched. Same stop-launch-revive swap dance as
+    ``status_sut`` (only one process may poll the bot token). Yields
+    ``(sut, secret, disabled_secret)``: a reply carrying ``secret`` proves the
+    enabled MCP really answered; the disabled server never spawns, so
+    ``disabled_secret`` can never appear in any reply.
+    """
+    secret = new_sentinel("MCPON")
+    disabled_secret = new_sentinel("MCPOFF")
+    plugins_file = tmp_path_factory.mktemp("plugins") / "plugins.json"
+    _write_plugins_json(plugins_file, secret, disabled_secret)
+    stop_sut(hamroh_sut)
+    sut = launch_sut(
+        e2e_config,
+        tmp_path_factory.mktemp("plugins-data"),
+        extra_env={"HAMROH_PLUGINS_PATH": str(plugins_file)},
+    )
+    try:
+        yield sut, secret, disabled_secret
     finally:
         stop_sut(sut)
         revived = launch_sut(e2e_config, hamroh_sut.data_dir)

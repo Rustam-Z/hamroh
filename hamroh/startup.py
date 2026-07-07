@@ -383,8 +383,7 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
     db = await Database.open(config.db_path)
     log.info("database ready at %s", config.db_path)
 
-    project_root = Path(__file__).resolve().parent.parent
-    plugins = load_plugins(project_root / "plugins.json")
+    plugins = load_plugins(config.plugins_path)
     log.info(
         "plugins loaded: %d enabled mcp(s), %d disabled skill(s), "
         "%d disabled built-in tool(s), tool_groups=%s",

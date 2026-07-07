@@ -17,6 +17,12 @@ config. Only its *data* dir is isolated to a temp folder. One consequence: e2e
 uses the same `TELEGRAM_BOT_TOKEN` as your app, so a run will stop a locally
 running bot to claim the token.
 
+The one exception is `test_plugins_e2e.py`: it boots a dedicated bot with its
+**own** `plugins.json` (via `HAMROH_PLUGINS_PATH`) that turns every tool group
+on (`bash`, `code`, `subagents`) and wires in a throwaway echo MCP server —
+one enabled, one disabled. That proves the unlocks work end to end without
+ever touching your repo-root `plugins.json`.
+
 ## What you need (one-time)
 
 | Thing | How to get it |
@@ -139,6 +145,8 @@ first chunk (`assert_reply_within`); other observables are timed with
 | the bot process exits after `/kill` | 10s | kill |
 | writes/reads a memory file | 15s | memory |
 | reads a skill / schedules a reminder | 30s | skills, reminders (scheduled) |
+| runs an unlocked Bash/Write/MCP tool | 60s | plugins (tool groups + MCPs) |
+| spawns a subagent and relays its answer | 120s | plugins (subagents) |
 | `/reset_session` respawns the engine | 30s | reset-session |
 | renders an image | 60s | render |
 | a scheduled reminder fires | 160s | reminders (fires, delayed by design) |
@@ -166,5 +174,6 @@ tests/e2e/
     ├── assertions.py       assert_within / assert_reply_within
     ├── waits.py            generic measure/poll utilities
     ├── eval.py             latency + correctness eval core
+    ├── echo_mcp.py         throwaway stdio MCP server for the plugins tests
     └── make_session.py     one-time login to capture your session string
 ```

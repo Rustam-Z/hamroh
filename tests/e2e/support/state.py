@@ -7,6 +7,7 @@ can never mutate bot state.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -39,6 +40,33 @@ def current_cc_session_id(cc_logs_dir: Path) -> str | None:
     return max(files, key=lambda p: p.stat().st_mtime).name.removesuffix(
         ".stream.jsonl"
     )
+
+
+def cc_tool_use_names(cc_logs_dir: Path) -> set[str]:
+    """Exact names of every tool the current CC session has invoked so far.
+
+    Parsed from the newest ``<session>.stream.jsonl`` capture: assistant
+    events carry ``tool_use`` content blocks whose ``name`` is the callable
+    tool name (``Bash``, ``Agent``, ``mcp__e2e-echo__echo``, …). A line
+    still being written is skipped.
+    """
+    session = current_cc_session_id(cc_logs_dir)
+    if session is None:
+        return set()
+    names: set[str] = set()
+    stream = cc_logs_dir / f"{session}.stream.jsonl"
+    for line in stream.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:  # a partially-flushed trailing line
+            continue
+        content = (event.get("message") or {}).get("content") or []
+        names.update(
+            block["name"]
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_use"
+        )
+    return names
 
 
 def memory_files_containing(memories_dir: Path, token: str) -> list[Path]:

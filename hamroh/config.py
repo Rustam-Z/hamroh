@@ -235,6 +235,10 @@ class Config:
     #: Read-only source of truth: the startup reconciler seeds/cancels rows to
     #: match it (see ``hamroh.scheduler.reminders_config``). Sibling of ``access_path``.
     committed_reminders_path: Path = field(init=False)
+    #: The ``plugins.json`` at the repo root — tool-group toggles, external
+    #: MCPs, skill/tool disables (see ``hamroh.plugins``). ``HAMROH_PLUGINS_PATH``
+    #: redirects it (the e2e harness boots a bot with its own copy).
+    plugins_path: Path = field(init=False)
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)
     log_dir: Path = field(init=False)
@@ -253,6 +257,7 @@ class Config:
         object.__setattr__(
             self, "committed_reminders_path", project_root / "default-reminders.json"
         )
+        object.__setattr__(self, "plugins_path", project_root / "plugins.json")
         object.__setattr__(self, "attachments_dir", self.data_dir / "attachments")
         object.__setattr__(self, "renders_dir", self.data_dir / "renders")
         object.__setattr__(self, "log_dir", self.data_dir / "logs")
@@ -296,11 +301,13 @@ class Config:
     def _apply_env_path_overrides(cfg: "Config") -> None:
         """Redirect repo-root config paths to env-specified files.
 
-        ``access.json``, ``default-reminders.json`` and ``memories/`` normally
-        sit at the repo root (see ``__post_init__``). The e2e harness points
-        them at temp paths via ``HAMROH_ACCESS_PATH`` / ``HAMROH_REMINDERS_PATH``
-        / ``HAMROH_MEMORIES_DIR`` so a test can authorize a group, seed a
-        reminder or write a memory without touching the repo copies.
+        ``access.json``, ``default-reminders.json``, ``plugins.json`` and
+        ``memories/`` normally sit at the repo root (see ``__post_init__``).
+        The e2e harness points them at temp paths via ``HAMROH_ACCESS_PATH``
+        / ``HAMROH_REMINDERS_PATH`` / ``HAMROH_PLUGINS_PATH`` /
+        ``HAMROH_MEMORIES_DIR`` so a test can authorize a group, seed a
+        reminder, enable a tool group or write a memory without touching the
+        repo copies.
         """
         access_override = _env("HAMROH_ACCESS_PATH")
         if access_override:
@@ -310,6 +317,9 @@ class Config:
             object.__setattr__(
                 cfg, "committed_reminders_path", Path(reminders_override).resolve()
             )
+        plugins_override = _env("HAMROH_PLUGINS_PATH")
+        if plugins_override:
+            object.__setattr__(cfg, "plugins_path", Path(plugins_override).resolve())
         memories_override = _env("HAMROH_MEMORIES_DIR")
         if memories_override:
             object.__setattr__(cfg, "memories_dir", Path(memories_override).resolve())
@@ -354,15 +364,16 @@ class Config:
     def _override_test_paths(cfg: "Config", root: Path) -> None:
         """Point per-test file paths inside the tmp dir, off the repo root.
 
-        Tests use isolated tmp dirs, so access.json, the memories folder, and
-        the reminders file each get their own copy and never touch the repo
-        root.
+        Tests use isolated tmp dirs, so access.json, the memories folder, the
+        reminders file and plugins.json each get their own copy and never
+        touch the repo root.
         """
         object.__setattr__(cfg, "access_path", root / "access.json")
         object.__setattr__(cfg, "memories_dir", root / "memories")
         object.__setattr__(
             cfg, "committed_reminders_path", root / "default-reminders.json"
         )
+        object.__setattr__(cfg, "plugins_path", root / "plugins.json")
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
