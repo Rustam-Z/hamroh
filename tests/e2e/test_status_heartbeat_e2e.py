@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.support.assertions import assert_within
@@ -125,6 +126,7 @@ async def test_bot_reports_progress_on_long_turn_dm(
     await _assert_reports_progress(status_sut, tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_bot_reports_progress_on_long_turn_group(
     status_sut: Sut, tester_client: TelegramClient, group: Conversation
 ) -> None:

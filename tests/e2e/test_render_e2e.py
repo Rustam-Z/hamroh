@@ -68,6 +68,7 @@ async def _assert_renders(
 
 
 @pytest.mark.smoke
+@pytest.mark.slow
 async def test_bot_renders_and_sends_photo_dm(
     hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:

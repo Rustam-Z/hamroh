@@ -105,7 +105,6 @@ async def test_skill_consulted_in_dm(
     await _assert_consults_skill(hamroh_sut, tester_client, dm, e2e_skills[0])
 
 
-@pytest.mark.smoke
 async def test_skill_consulted_in_group(
     hamroh_sut: Sut,
     tester_client: TelegramClient,
