@@ -468,7 +468,8 @@ class Engine(TypingIndicatorMixin):
         block and then stops, instead of calling ``telegram_send_message`` /
         ``telegram_reply_to_message`` — those blocks are invisible to the user.
         Rather than burn a whole retry turn nagging it to resend, deliver
-        the text it already produced.
+        the text it already produced. ``skip`` turns never reach here — the
+        caller discards their leftover text as internal narration.
 
         Exception: when that text is actually a technical error (bad model
         name, quota, …) we surface the classified user-facing message
@@ -699,7 +700,8 @@ class Engine(TypingIndicatorMixin):
 
         Five outcome paths: short-circuited turn (``aborted_reason``),
         API-rejected turn (``api_error``), stderr-classified failure
-        (rate-limit/auth/quota), dropped-text (no ``telegram_send_message``),
+        (rate-limit/auth/quota), dropped-text (no ``telegram_send_message``;
+        never on ``skip`` — deliberate silence discards leftover text),
         or a clean turn (see :meth:`_finish_clean_turn`).
         """
         self._is_processing.clear()
@@ -722,7 +724,7 @@ class Engine(TypingIndicatorMixin):
         )
         await self._notify_stderr_failure(result)
 
-        if result.dropped_text:
+        if result.dropped_text and action != "skip":
             await self._handle_dropped_text(result)
             return
 
@@ -739,8 +741,16 @@ class Engine(TypingIndicatorMixin):
     ) -> None:
         """Finish a terminal turn — but re-engage once when a DM ``stop``
         delivered nothing. ``skip`` (deliberate silence) always finishes
-        clean; a still-silent stop after the single retry is logged and
-        finished clean too."""
+        clean — any text it left behind is internal narration per the
+        system-prompt contract, so it is logged and never delivered. A
+        still-silent stop after the single retry is logged and finished
+        clean too."""
+        if action == "skip" and result.dropped_text:
+            log.warning(
+                "skip turn produced undelivered text — discarded as internal "
+                "narration: %r",
+                result.text_blocks,
+            )
         if self._is_silent_stop(result, action):
             await self._retry_silent_stop()
             return

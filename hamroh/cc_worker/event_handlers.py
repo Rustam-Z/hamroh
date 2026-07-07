@@ -259,12 +259,17 @@ class CcEventHandlerMixin:
             self._current_turn.api_error = (
                 raw if isinstance(raw, str) and raw else "unknown API error"
             )
-        payload = self._extract_result_payload(event)
+        payload, from_text_block = self._extract_result_payload(event)
         if isinstance(payload, dict):
             try:
                 self._current_turn.control = ControlAction.model_validate(payload)
             except Exception:
                 log.warning("could not parse control action from %r", payload)
+            else:
+                if from_text_block:
+                    # The control JSON came from the last text block — remove
+                    # it so it is never mistaken for undelivered reply prose.
+                    self._current_turn.text_blocks.pop()
         self._current_turn.stderr_tail = list(self._stderr_tail)
         self._current_turn.dropped_text = (
             bool(self._current_turn.text_blocks)
@@ -282,27 +287,28 @@ class CcEventHandlerMixin:
         self._result_queue.put_nowait(self._current_turn)
         self._current_turn = None
 
-    def _extract_result_payload(self, event: dict[str, Any]) -> Any:
+    def _extract_result_payload(self, event: dict[str, Any]) -> tuple[Any, bool]:
         """Pull the structured-output payload out of a result event.
 
         Structured output is delivered in ``event["result"]`` when the JSON
         schema is enforced. Older CC versions stream it via ``event["output"]``
         or stuff it into the last text block. JSON-encoded strings are
         decoded; everything else is returned as-is.
+
+        Returns ``(payload, from_text_block)`` — the flag tells the caller
+        the payload was consumed from the last text block, so that block can
+        be dropped once it validates as a control action (it is internal
+        control JSON, not reply prose).
         """
         assert self._current_turn is not None
-        payload = (
-            event.get("result")
-            or event.get("output")
-            or (
-                self._current_turn.text_blocks[-1]
-                if self._current_turn.text_blocks
-                else None
-            )
-        )
+        payload = event.get("result") or event.get("output")
+        from_text_block = False
+        if not payload and self._current_turn.text_blocks:
+            payload = self._current_turn.text_blocks[-1]
+            from_text_block = True
         if isinstance(payload, str):
             try:
-                return json.loads(payload)
+                return json.loads(payload), from_text_block
             except json.JSONDecodeError:
-                return None
-        return payload
+                return None, False
+        return payload, from_text_block

@@ -262,6 +262,45 @@ async def test_skip_in_group_finishes_clean() -> None:
 
 
 @pytest.mark.asyncio
+async def test_skip_with_dropped_text_discards_narration() -> None:
+    """A ``skip`` turn that left a text block behind (the model narrated its
+    decision before skipping) must stay silent — the narration is internal
+    per the system-prompt contract and must never be delivered to the chat
+    (issue #84: skip reasoning leaked into a group as a real message)."""
+    worker = FakeWorker()
+    delivered: list[tuple[int, str]] = []
+
+    async def capture(chat_id: int, text: str) -> None:
+        delivered.append((chat_id, text))
+
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture))
+    await eng.start()
+    try:
+        # Given a group message that starts a turn
+        await eng.submit(_msg("Thanx for response", mid=1))
+        await asyncio.sleep(0.08)
+        assert len(worker.sent) == 1, "the user turn was handed to the worker"
+
+        # When the turn ends skip but the model narrated its decision as text
+        worker.feed(
+            TurnResult(
+                text_blocks=["Just a thanks in a human-to-human thread."],
+                control=ControlAction(action="skip", reason="bare thanks"),
+                user_visible_action=False,
+                dropped_text=True,
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        # Then nothing is delivered, no retry is kicked, the turn ends clean
+        assert delivered == [], "skip narration must never reach the chat"
+        assert len(worker.sent) == 1, "skip must not re-engage the model"
+        assert eng.turn_elapsed_s is None, "turn must finish clean after skip"
+    finally:
+        await eng.stop()
+
+
+@pytest.mark.asyncio
 async def test_health_introspection_accessors() -> None:
     """``pending_count`` / ``turn_elapsed_s`` back the /health readout."""
     worker = FakeWorker()
