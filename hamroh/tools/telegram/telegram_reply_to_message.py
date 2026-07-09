@@ -28,11 +28,13 @@ class ReplyToMessageArgs(BaseModel):
 class TelegramReplyToMessageTool(BaseTool[ReplyToMessageArgs]):
     name = "telegram_reply_to_message"
     description = (
-        "Send a quote-reply tied to a specific message, so the parent is "
-        "unambiguous (useful in busy group chats). Use when your reply must "
-        "reference one message. For a standalone message with no quoted "
-        "parent, use telegram_send_message instead. Sends immediately; long "
-        "text auto-splits at paragraph boundaries."
+        "Reply to a specific message, threading to it so the parent is "
+        "unambiguous (essential in busy group chats). This is the DEFAULT for "
+        "every reply in an active conversation — thread to the inbound "
+        "message you're answering. Use telegram_send_message only for an "
+        "unthreaded, proactive message with no specific parent (e.g. a timer "
+        "reminder). Sends immediately; long text auto-splits at paragraph "
+        "boundaries."
     )
     args_model = ReplyToMessageArgs
 

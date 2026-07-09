@@ -49,14 +49,16 @@ class SendMessageArgs(BaseModel):
 class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
     name = "telegram_send_message"
     description = (
-        "Send a NEW text message to a Telegram chat — the primary way to "
-        "deliver text to the user. Use for any standalone reply. Does NOT edit "
-        "or quote existing messages (use telegram_edit_message / "
-        "telegram_reply_to_message) and does NOT send images or files (use "
-        "telegram_send_photo / telegram_send_memory_document). Sends "
-        "immediately and cannot be unsent. Long text is auto-split at "
-        "paragraph boundaries; returns the first message_id plus every id in "
-        "``message_ids``."
+        "Send a NEW, unthreaded text message to a Telegram chat. Use ONLY "
+        "when there's no specific message to reply to — a reminder firing on "
+        "a timer, or a proactive/unprompted post. When answering an inbound "
+        "message (any active conversation), use telegram_reply_to_message "
+        "instead so the reply threads to it. Does NOT edit or quote existing "
+        "messages (use telegram_edit_message / telegram_reply_to_message) and "
+        "does NOT send images or files (use telegram_send_photo / "
+        "telegram_send_memory_document). Sends immediately and cannot be "
+        "unsent. Long text is auto-split at paragraph boundaries; returns the "
+        "first message_id plus every id in ``message_ids``."
     )
     args_model = SendMessageArgs
 
