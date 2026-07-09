@@ -167,6 +167,9 @@ def test_build_argv_includes_required_flags(spec: CcSpawnSpec) -> None:
     assert "--print" in argv
     assert "--input-format" in argv and "stream-json" in argv
     assert "--output-format" in argv
+    # Partial-message streaming keeps the liveness watchdog fed during a long
+    # single generation, so a hard-thinking turn isn't mistaken for a wedge.
+    assert "--include-partial-messages" in argv
     assert "--verbose" in argv
     assert "--model" in argv
     assert "--effort" in argv

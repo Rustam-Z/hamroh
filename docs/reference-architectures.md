@@ -625,7 +625,7 @@ content.
 ### 5.9 Liveness monitor for wedged subprocesses
 
 **Files:** `hamroh/cc_worker.py:_liveness_loop`, env var
-`HAMROH_LIVENESS_TIMEOUT_SECONDS` (default 300s).
+`HAMROH_LIVENESS_TIMEOUT_SECONDS` (default 600s).
 
 Claudir Part 3's "heartbeat problem": a CC subprocess can go silent
 on stdout during a long MCP call. The health monitor needs to
@@ -705,8 +705,8 @@ this change helps the fallback password case.
 
 **Files:** `hamroh/cc_worker.py` (`_record_tool_error`,
 `TurnResult.aborted_reason`). Knobs: `Config.tool_error_max_count`
-(3), `Config.tool_error_window_seconds` (60),
-`Config.liveness_timeout_seconds` (300) — all flow through
+(10), `Config.tool_error_window_seconds` (600),
+`Config.liveness_timeout_seconds` (600) — all flow through
 `hamroh.config.Config` from env vars of the same name (UPPERCASE,
 `HAMROH_` prefix). No other module reads these env vars directly;
 the engine and worker resolve them at construction time and store the
@@ -789,11 +789,7 @@ folded into the continuation; otherwise a minimal nudge resumes the
 task. Success callbacks and the `processed` commit stay deferred to the
 final `stop`, so a crash mid-continuation replays the work. A
 consecutive-heartbeat cap (`MAX_HEARTBEAT_CONTINUATIONS`) finalizes the
-turn if a model loops on `heartbeat`. This is distinct from the
-worker-side *status heartbeat timer* (`_status_heartbeat`), which pings
-"⏳ Still working" on a wall-clock interval even when the agent is
-wedged; the first ping fires early (`FIRST_STATUS_DELAY_SECONDS`) and
-later pings settle into `status_interval`.
+turn if a model loops on `heartbeat`.
 
 **Why the schema is flat (no `if`/`then`/`oneOf`).** The first
 implementation expressed the conditional in the JSON schema itself

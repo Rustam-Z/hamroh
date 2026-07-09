@@ -16,7 +16,7 @@ from .base import BaseTool, ToolResult
 #: Claude Code namespaces every hamroh MCP tool as ``mcp__<server>__<name>``;
 #: that prefixed form is the exact string Claude calls. We list it (not the
 #: bare ``tool.name``) so the names shown are the real callable ones. Mirrors
-#: ``_MCP_PREFIX`` in cc_worker/event_handlers.py (server name "hamroh").
+#: ``_MCP_PREFIX`` in cc_worker/spec.py (server name "hamroh").
 _MCP_PREFIX = "mcp__hamroh__"
 
 

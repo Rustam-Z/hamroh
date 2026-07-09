@@ -52,11 +52,6 @@ OnGiveup = Callable[[int], Awaitable[None]] | None
 #: recoveries do not consume the crash budget.
 #: Signature: ``async on_stale_session(stale_id: str)``.
 OnStaleSession = Callable[[str], Awaitable[None]] | None
-#: ``OnStatus`` — fired by the per-turn status heartbeat every
-#: ``status_interval_seconds`` while a turn is still running, so a long task
-#: can report progress instead of going silent; the turn keeps running.
-#: Signature: ``async on_status(elapsed_s: float, last_action: str | None)``.
-OnStatus = Callable[[float, "str | None"], Awaitable[None]] | None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -69,7 +64,6 @@ class WorkerHooks:
     on_crash: OnCrash = None
     on_giveup: OnGiveup = None
     on_stale_session: OnStaleSession = None
-    on_status: OnStatus = None
 
 
 # Pinned to the parent package name so log captures keyed on
@@ -113,7 +107,6 @@ class CcWorker(CcEventHandlerMixin):
         self._on_crash = hooks.on_crash
         self._on_giveup = hooks.on_giveup
         self._on_stale_session = hooks.on_stale_session
-        self._on_status = hooks.on_status
         #: Raw stdout/stderr capture — no-ops when ``spec.cc_logs_dir`` is None.
         self._capture = RawCapture(spec.cc_logs_dir)
         self._cache_config(config)
@@ -128,7 +121,6 @@ class CcWorker(CcEventHandlerMixin):
         self._liveness_poll: float = config.liveness_poll_seconds
         self._tool_error_max_count: int = config.tool_error_max_count
         self._tool_error_window: float = config.tool_error_window_seconds
-        self._status_interval: float = config.status_interval_seconds
         self._crash_backoff_base: float = config.crash_backoff_base
         self._crash_backoff_cap: float = config.crash_backoff_cap
         self._crash_limit: int = config.crash_limit
@@ -147,14 +139,16 @@ class CcWorker(CcEventHandlerMixin):
         self._liveness_task: asyncio.Task | None = None
         self._stop_supervisor = asyncio.Event()
         self._crash_times: list[float] = []
-        #: ``time.monotonic()`` of the last parsed stdout event; with
+        #: ``time.monotonic()`` of the last parsed stdout line; with
         #: ``heartbeat.last_activity`` it tells the liveness monitor whether the
-        #: subprocess is working or wedged.
+        #: subprocess is working or wedged. ``--include-partial-messages`` makes
+        #: the CLI stream deltas mid-generation, so a long think keeps this warm
+        #: and only a genuinely silent subprocess trips the wedge watchdog.
         self._last_event_at: float = time.monotonic()
 
     def _init_turn_state(self) -> None:
-        """Per-turn state: the in-flight TurnResult, the init-gate, the
-        tool-error circuit breaker, and the status-heartbeat bookkeeping.
+        """Per-turn state: the in-flight TurnResult, the init-gate, and the
+        tool-error circuit breaker.
 
         ``_awaiting_turn_init`` is armed by ``send()`` and cleared by the next
         ``system/init``; while armed, assistant/result events from a prior
@@ -174,13 +168,6 @@ class CcWorker(CcEventHandlerMixin):
         self._tool_error_watchdog_task: asyncio.Task | None = None
         self._supervisor_abort_reason: str | None = None
         self._tool_error_abort_task: asyncio.Task | None = None
-        self._turn_started_at: float | None = None
-        self._last_tool_action: str | None = None
-        #: ``time.monotonic()`` of the last message the bot sent the user this
-        #: turn. The status heartbeat pings only after a full interval of
-        #: silence *since this*, so it never nags right after a reply lands.
-        self._last_user_visible_at: float = time.monotonic()
-        self._status_task: asyncio.Task | None = None
 
     @property
     def session_id(self) -> str | None:
@@ -226,7 +213,6 @@ class CcWorker(CcEventHandlerMixin):
     async def stop(self) -> None:
         self._stop_supervisor.set()
         self._cancel_tool_error_watchdog()
-        self._cancel_status_heartbeat()
         if self._liveness_task and not self._liveness_task.done():
             self._liveness_task.cancel()
             try:
@@ -487,8 +473,6 @@ class CcWorker(CcEventHandlerMixin):
         self._current_turn = TurnResult()
         self._awaiting_turn_init = True
         self._reset_tool_error_state()
-        self._last_tool_action = None
-        self._arm_status_heartbeat()  # report progress on long turns
         log_cc_user(text)
         envelope = {
             "type": "user",
@@ -692,7 +676,6 @@ class CcWorker(CcEventHandlerMixin):
         instead of dropping a half-finished reply.
         """
         self._cancel_tool_error_watchdog()
-        self._cancel_status_heartbeat()
         sentinel = TurnResult(aborted_reason=reason)
         sentinel.stderr_tail = list(self._stderr_tail)
         if self._current_turn is not None:
@@ -700,60 +683,3 @@ class CcWorker(CcEventHandlerMixin):
         self._result_queue.put_nowait(sentinel)
         self._current_turn = None
         self._awaiting_turn_init = False
-
-    def _arm_status_heartbeat(self) -> None:
-        """(Re)start the per-turn status heartbeat at the start of a turn."""
-        self._cancel_status_heartbeat()
-        self._turn_started_at = time.monotonic()
-        self._last_user_visible_at = self._turn_started_at
-        self._status_task = asyncio.create_task(
-            self._status_heartbeat(),
-            name="cc-status-heartbeat",
-        )
-
-    def _mark_user_visible(self) -> None:
-        """Note that the bot just sent the user something. Resets the heartbeat's
-        silence clock so no "still working" ping fires right after a reply."""
-        self._last_user_visible_at = time.monotonic()
-
-    async def _status_heartbeat(self) -> None:
-        """Report progress every ``status_interval`` while a turn is running.
-
-        Worker-side (not the agent), so it fires even if the agent is wedged.
-        The turn is NOT aborted — a long task keeps going; the owner can reply
-        "stop" to halt it. Recurs until the turn ends (this task is cancelled,
-        or ``_current_turn`` goes None). Other guards still apply: the liveness
-        monitor catches silence, the tool-error breaker catches error loops.
-
-        Pings fire every ``status_interval`` (``HAMROH_STATUS_INTERVAL_SECONDS``).
-        """
-        while True:
-            await asyncio.sleep(self._status_interval)
-            if self._current_turn is None:
-                return
-            now = time.monotonic()
-            if now - self._last_user_visible_at < self._status_interval:
-                # The bot spoke to the user within the last interval — it isn't
-                # silent, so don't nag "still working" (e.g. in the gap between
-                # the final reply and the turn formally closing).
-                continue
-            started = self._turn_started_at or now
-            await self._fire_status(now - started)
-
-    async def _fire_status(self, elapsed: float) -> None:
-        """Invoke the status callback; never let a notify failure kill the loop."""
-        if self._on_status is None:
-            return
-        try:
-            await self._on_status(elapsed, self._last_tool_action)
-        except Exception:
-            log.warning("status callback failed", exc_info=True)
-
-    def _cancel_status_heartbeat(self) -> None:
-        """Stop the status heartbeat if running. Idempotent — safe from
-        ``send()`` (new turn), ``stop()`` (shutdown), or the result-event handler
-        (turn finished cleanly)."""
-        task = self._status_task
-        if task is not None and not task.done():
-            task.cancel()
-        self._status_task = None

@@ -258,8 +258,8 @@ async def wait_for_engine_idle(sut: Sut, timeout: float = 30.0) -> None:
 
     CC's ``stop`` event lags the bot's visible reply by several seconds, so
     "Telegram went quiet" does not prove the turn closed — a message sent in
-    that gap is injected into the dying turn instead of starting a fresh one
-    (and only a fresh turn arms the status heartbeat). The engine logs
+    that gap is injected into the dying turn instead of starting a fresh one.
+    The engine logs
     ``starting turn`` when a turn opens and ``turn done`` when it closes; it is
     idle once a ``turn done`` is the most recent of the two.
 

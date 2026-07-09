@@ -54,9 +54,6 @@ USER_VISIBLE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-#: Stripped from tool names for the status heartbeat's "last action" line.
-_MCP_PREFIX = "mcp__hamroh__"
-
 
 class CcEventHandlerMixin:
     """Event-dispatch methods mixed into ``CcWorker``."""
@@ -68,9 +65,6 @@ class CcEventHandlerMixin:
     #: Init-gate read by ``_handle_event`` / set by ``_on_system_init``;
     #: defined in ``CcWorker.__init__`` (see worker.py).
     _awaiting_turn_init: bool
-    #: Most recent tool the agent called this turn (prefix-stripped); written
-    #: here, read by the status heartbeat. Defined in ``CcWorker.__init__``.
-    _last_tool_action: str | None
     #: Raw stream capture, turn-result channel, and recent stderr — all set in
     #: ``CcWorker.__init__``; annotated here so the mixin's reads type-check.
     _capture: RawCapture
@@ -78,12 +72,10 @@ class CcEventHandlerMixin:
     _stderr_tail: list[str]
     #: Resumed/active CC session id; ``None`` until the first ``system/init``.
     _session_id: str | None
-    #: Tool-error breaker + heartbeat hooks, defined as methods on ``CcWorker``.
+    #: Tool-error breaker hooks, defined as methods on ``CcWorker``.
     _record_tool_error: Callable[[], None]
     _reset_tool_error_state: Callable[[], None]
-    _mark_user_visible: Callable[[], None]
     _cancel_tool_error_watchdog: Callable[[], None]
-    _cancel_status_heartbeat: Callable[[], None]
 
     def _handle_event(self, event: dict[str, Any]) -> None:
         """Parse one stream-json event from the CC subprocess.
@@ -208,10 +200,6 @@ class CcEventHandlerMixin:
         )
         if tool_name in USER_VISIBLE_TOOLS:
             self._current_turn.user_visible_action = True
-            self._mark_user_visible()
-        # Remember the latest real action so the status heartbeat can name it.
-        if tool_name != "StructuredOutput":
-            self._last_tool_action = tool_name.removeprefix(_MCP_PREFIX)
         # StructuredOutput is the definitive turn-end signal. Claudir
         # confirmed: the action lives in the tool_use event's input
         # field, NOT in the result event payload.
@@ -287,10 +275,9 @@ class CcEventHandlerMixin:
             action=ctrl.action if ctrl else None,
             reason=ctrl.reason if ctrl else None,
         )
-        # Turn finished cleanly; defuse the tool-error watchdog and stop the
-        # status heartbeat so neither fires after the turn is over.
+        # Turn finished cleanly; defuse the tool-error watchdog so it can't
+        # fire after the turn is over.
         self._cancel_tool_error_watchdog()
-        self._cancel_status_heartbeat()
         self._result_queue.put_nowait(self._current_turn)
         self._current_turn = None
 

@@ -15,7 +15,6 @@ import logging
 import os
 import signal
 import tempfile
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -567,35 +566,6 @@ def _make_on_cc_giveup(app: _App):
     return _on_cc_giveup
 
 
-def _make_on_cc_status(app: _App):
-    """Status heartbeat: while a turn keeps running, tell the waiting chats it's
-    still working (every ``status_interval_seconds``) so a long task isn't
-    silent. The turn keeps going — the owner can reply 'stop' to halt it."""
-
-    async def _on_cc_status(elapsed: float, last_action: str | None) -> None:
-        engine = app.engine
-        dispatcher = app.dispatcher
-        if engine is None or dispatcher is None or not engine._turn.active_chats:
-            return
-        minutes = max(1, int(elapsed // 60))
-        step = f" (last step: {last_action})" if last_action else ""
-        text = (
-            f"⏳ Still working on this — about {minutes} min so far{step}. "
-            "Reply 'stop' if you want me to halt."
-        )
-        for chat_id in set(engine._turn.active_chats):
-            try:
-                await dispatcher.bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    reply_to_message_id=engine._turn.reply_targets.get(chat_id),
-                )
-            except Exception:
-                log.warning("status notify to %s failed", chat_id, exc_info=True)
-
-    return _on_cc_status
-
-
 def _build_dispatcher_and_engine(
     app: _App,
     stores: _Stores,
@@ -614,57 +584,17 @@ def _build_dispatcher_and_engine(
         EngineOptions(
             debounce_ms=app.config.debounce_ms,
             db=app.db,
-            typing_action=_make_typing_action(dispatcher, app),
+            typing_action=_make_typing_action(dispatcher),
             error_notify=_make_error_notify(dispatcher),
         ),
     )
     return dispatcher, engine
 
 
-#: Stable, non-zero draft identifier reused for every progress draft. Telegram
-#: animates updates that share an id, which is exactly what we want — one live
-#: draft per chat that morphs as the turn progresses.
-PROGRESS_DRAFT_ID = 1
-
-
-def _progress_draft_text(elapsed: float, last_action: str | None) -> str:
-    """One-line progress shown in the live DM draft while a turn runs."""
-    when = f"~{int(elapsed)}s" if elapsed < 60 else f"~{int(elapsed // 60)} min"
-    step = f", last step: {last_action}" if last_action else ""
-    return f"✍️ Working on it… ({when}{step})"
-
-
-async def _send_progress_draft(
-    dispatcher: TelegramDispatcher, app: _App, chat_id: int
-) -> None:
-    """Refresh the live "working…" draft for one DM (best-effort)."""
-    worker = app.worker
-    started = worker._turn_started_at if worker is not None else None
-    elapsed = (time.monotonic() - started) if started else 0.0
-    last_action = worker._last_tool_action if worker is not None else None
-    text = _progress_draft_text(elapsed, last_action)
-    try:
-        await dispatcher.bot.send_message_draft(
-            chat_id=chat_id, draft_id=PROGRESS_DRAFT_ID, text=text
-        )
-    except Exception as exc:
-        log.warning("send_message_draft failed for chat %s: %s", chat_id, exc)
-
-
-def _make_typing_action(dispatcher: TelegramDispatcher, app: _App) -> TypingAction:
-    """Wire the engine's per-chat liveness signal.
-
-    Normally fires ``bot.send_chat_action`` ("typing…"). When the progress-draft
-    feature is on *and* the chat is a DM, fires ``bot.send_message_draft`` instead
-    so a long job shows a live "working…" draft. Telegram only allows drafts in
-    private chats, whose ids are positive (groups/supergroups are negative), so
-    the sign of ``chat_id`` picks the right path without an extra API call.
-    """
+def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
+    """Wire the engine's per-chat liveness signal to the "typing…" indicator."""
 
     async def _typing(chat_id: int) -> None:
-        if app.config.progress_draft_enabled and chat_id > 0:
-            await _send_progress_draft(dispatcher, app, chat_id)
-            return
         try:
             ok = await dispatcher.bot.send_chat_action(chat_id=chat_id, action="typing")
             log.debug("send_chat_action chat=%s returned=%r", chat_id, ok)

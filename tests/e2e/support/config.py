@@ -38,24 +38,6 @@ _REQUIRED_ENV = (
     "HAMROH_EFFORT",
 )
 
-#: The status heartbeat interval for the dedicated ``status_sut`` bot only
-#: (operator default is 300s). NOT in ``SUT_ENV_OVERRIDES`` — it reaches the bot
-#: solely through the ``status_sut`` fixture's ``extra_env`` (see ``STATUS_SUT_ENV``
-#: and ``conftest.py``), so every other test keeps the production interval and
-#: never sees a "still working" ping mid-turn. Kept small so the test is quick:
-#: the parked turn only has to outlive this.
-STATUS_SUT_INTERVAL_S = 10.0
-
-#: The env override the ``status_sut`` fixture applies — and nothing else does.
-STATUS_SUT_ENV: dict[str, str] = {
-    "HAMROH_STATUS_INTERVAL_SECONDS": str(int(STATUS_SUT_INTERVAL_S))
-}
-
-#: The env override the ``draft_sut`` fixture applies — and nothing else does.
-#: Turns on the live "working…" progress draft (``sendMessageDraft``) so the
-#: draft-mode regression test can confirm DM replies still land unaffected.
-DRAFT_SUT_ENV: dict[str, str] = {"HAMROH_PROGRESS_DRAFT_ENABLED": "true"}
-
 #: Overrides applied over the operator's ``.env`` for the SUT (see ``child_env``).
 #: ``HAMROH_EFFORT="low"`` is pinned so turn latency stays fast and consistent
 #: regardless of the operator's setting — the per-test latency gates flake when a
@@ -81,15 +63,6 @@ MAX_TOOL_GROUP_REPLY_S = 60.0  # a turn using an unlocked Bash/Write/MCP-echo to
 MAX_SUBAGENT_REPLY_S = 120.0  # a turn that spawns a whole subagent and waits for it
 MAX_RESET_REPLY_S = 15.0  # /reset_session respawns the engine (MCP-class bound)
 MAX_KILL_S = 15.0  # the bot process exits after /kill
-
-# Hearthbeat / status checks: the SUT's own interval is 300s, but the dedicated
-# ``status_sut`` fixture squeezes it to 10s so the parked turn can observe a heartbeat mid-turn.
-MAX_STATUS_PING_S = (
-    STATUS_SUT_INTERVAL_S + 5
-)  # first heartbeat: fires AT the 10s interval, so it lands just after it
-MAX_STATUS_TURN_S = (
-    60.0  # a turn parked in one short browser wait, then its done-marker
-)
 
 
 def load_env() -> None:

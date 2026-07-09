@@ -127,14 +127,12 @@ into a `Config` field.
 | `HAMROH_RATE_LIMIT_PER_MIN` | no | `20` | max DMs per minute from one user. The owner is not limited. Group chats are not limited. |
 | `HAMROH_ATTACHMENT_MAX_BYTES` | no | `20000000` | largest inbound photo/document (20 MB) the bot will download and read; bigger files are refused with a marker. |
 | `HAMROH_BROWSER_HEADLESS` | no | `true` | run the automation Chromium headless. Set `false` only for local debugging (visible window). |
-| `HAMROH_STATUS_INTERVAL_SECONDS` | no | `300` | while a turn is still running, ping the waiting chats with a progress note this often (seconds) so a long task isn't silent. |
-| `HAMROH_PROGRESS_DRAFT_ENABLED` | no | `false` | show a live "working…" draft in DMs while a long turn runs (Telegram's `sendMessageDraft`), updating with elapsed time + current step, then replaced by the real reply. Private chats only — groups keep the typing indicator. |
 | `HAMROH_SELF_REFLECTION_ENABLED` | no | `true` | master switch for the daily self-reflection loop (on by default). When off, the auto-seeded reflection reminder is removed at boot. |
 | `HAMROH_SELF_REFLECTION_CRON` | no | `0 0 * * *` | when the daily self-reflection task runs (UTC cron). Default: midnight UTC. Only used when the loop is enabled. |
-| `HAMROH_LIVENESS_TIMEOUT_SECONDS` | no | `300` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |
+| `HAMROH_LIVENESS_TIMEOUT_SECONDS` | no | `600` | if Claude is mid-turn and goes silent (no output, no tool activity) for this many seconds, the bot kills it and starts it again. |
 | `HAMROH_LIVENESS_POLL_SECONDS` | no | `30` | how often the watcher wakes up to check the timeout above. |
-| `HAMROH_TOOL_ERROR_MAX_COUNT` | no | `3` | how many tool errors trigger a stop. Used in two places: (a) failed tool calls in one turn — too many ends the turn; (b) turns where Claude wrote text but didn't call `telegram_send_message` — too many in a row makes the bot show the underlying error to the user. Stops the bot from looping forever on a broken tool or a broken model setup. |
-| `HAMROH_TOOL_ERROR_WINDOW_SECONDS` | no | `60` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
+| `HAMROH_TOOL_ERROR_MAX_COUNT` | no | `10` | how many failed tool calls in one turn trip the breaker: too many (within the window below, with no success in between) aborts the turn and restarts the Claude subprocess. Stops the bot from looping forever on a broken tool. |
+| `HAMROH_TOOL_ERROR_WINDOW_SECONDS` | no | `600` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
 | `HAMROH_CRASH_BACKOFF_BASE` | no | `2` | seconds to wait before the first restart after Claude crashes. Doubles after each crash, up to `CRASH_BACKOFF_CAP`. |
 | `HAMROH_CRASH_BACKOFF_CAP` | no | `64` | maximum wait between restarts. Once the wait reaches this, it stops growing. |
 | `HAMROH_CRASH_LIMIT` | no | `10` | how many crashes within `CRASH_WINDOW_SECONDS` count as "too many". When reached, the bot tells the owner and active chats, then exits — and something outside (systemd, docker) is expected to restart the whole bot. |
@@ -1039,29 +1037,28 @@ is enforced by code, not by hope, and tested in
 - **Wedged-subprocess detection.** `CcWorker._liveness_loop` watches
   for silent-mid-turn subprocesses: if `max(last stdout event, last
   MCP tool call) < now - HAMROH_LIVENESS_TIMEOUT_SECONDS` (default
-  300s) and a turn is in progress, the subprocess is terminated so
+  600s) and a turn is in progress, the subprocess is terminated so
   the crash-recovery path respawns it with the same session id.
   Doesn't fire when idle (silence is expected between turns).
 - **Tool-error circuit breaker.** A stream-json `tool_result` with
   `is_error=true` increments a per-turn counter in `CcWorker`; when
-  the counter hits `HAMROH_TOOL_ERROR_MAX_COUNT` (default 3) or
+  the counter hits `HAMROH_TOOL_ERROR_MAX_COUNT` (default 10) or
   the first-error window exceeds
-  `HAMROH_TOOL_ERROR_WINDOW_SECONDS` (default 60s), the worker
+  `HAMROH_TOOL_ERROR_WINDOW_SECONDS` (default 600s), the worker
   puts a sentinel `TurnResult` on the result queue and schedules
   `_terminate_proc`. The engine unblocks immediately; `_on_cc_crash`
   notifies the user on respawn. Prevents Claude from burning minutes
   looping on a deterministically-failing tool (e.g. permission
   denied, schema violation).
-- **Dropped-text retry cap.** A turn that ends with text blocks but
-  no `telegram_send_message` call (`dropped_text=True`) increments
-  `Engine._dropped_text_retries` — a *cross-turn* counter that
-  shares the `HAMROH_TOOL_ERROR_MAX_COUNT` ceiling with the
-  tool-error breaker. Below the cap the engine injects a corrective
-  `<error>Use telegram_send_message</error>`; at the cap it calls
-  `classify_cc_failure` on the text blocks, surfaces a targeted
-  message (e.g. "model unavailable — fix `HAMROH_MODEL`") to the
-  user, and resets. Catches CC-native diagnostics (invalid model,
-  auth failure, quota) that would otherwise loop silently.
+- **Dropped-text delivery.** A turn that ends with text blocks but
+  no `telegram_send_message` call (`dropped_text=True`) would be
+  invisible to the user, so `Engine._handle_dropped_text` delivers
+  those blocks directly to the waiting chats instead of burning a
+  retry turn. Exception: when the text is actually a technical error,
+  `classify_cc_failure` surfaces a targeted message (e.g. "model
+  unavailable — fix `HAMROH_MODEL`") instead of echoing the raw
+  diagnostic. Catches CC-native diagnostics (invalid model, auth
+  failure, quota) that would otherwise be lost.
 - **Crash-loop terminal notification.** When the crash budget
   (`Config.crash_limit` crashes in `Config.crash_window_seconds`,
   defaults 10 / 600s) is exhausted, `CcWorker._supervise_loop` fires

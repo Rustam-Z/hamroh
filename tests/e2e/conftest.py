@@ -24,8 +24,6 @@ from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
 from tests.e2e.support.config import (
-    DRAFT_SUT_ENV,
-    STATUS_SUT_ENV,
     E2EConfig,
     group_ids,
     load_env,
@@ -186,65 +184,6 @@ def killable_sut(
 
 
 @pytest.fixture(scope="module")
-def status_sut(
-    hamroh_sut: Sut,
-    e2e_config: E2EConfig,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Iterator[Sut]:
-    """A bot whose status-heartbeat interval is squeezed to ``STATUS_SUT_INTERVAL_S``.
-
-    The interval is read from the environment at startup, so it needs its own
-    process. Only one process may poll the bot token, so we stop the shared
-    session SUT, launch this one on the same token with the override, and revive
-    the shared SUT afterwards — the swap dance from ``killable_sut``. Module
-    scope means the heartbeat tests in one file share a single such bot, so the
-    dance runs once. Every other test keeps the production 300s interval and
-    never sees a "still working" ping.
-    """
-    stop_sut(hamroh_sut)
-    sut = launch_sut(
-        e2e_config,
-        tmp_path_factory.mktemp("status-data"),
-        extra_env=STATUS_SUT_ENV,
-    )
-    try:
-        yield sut
-    finally:
-        stop_sut(sut)
-        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
-        hamroh_sut.proc = revived.proc
-        hamroh_sut._log = revived._log
-
-
-@pytest.fixture(scope="module")
-def draft_sut(
-    hamroh_sut: Sut,
-    e2e_config: E2EConfig,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Iterator[Sut]:
-    """A bot with the live progress draft (``sendMessageDraft``) turned on.
-
-    The toggle is read from the environment at startup, so it needs its own
-    process — same stop-launch-revive swap dance as ``status_sut`` (only one
-    process may poll the bot token). Every other test keeps the draft off and
-    sees the plain typing indicator.
-    """
-    stop_sut(hamroh_sut)
-    sut = launch_sut(
-        e2e_config,
-        tmp_path_factory.mktemp("draft-data"),
-        extra_env=DRAFT_SUT_ENV,
-    )
-    try:
-        yield sut
-    finally:
-        stop_sut(sut)
-        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
-        hamroh_sut.proc = revived.proc
-        hamroh_sut._log = revived._log
-
-
-@pytest.fixture(scope="module")
 def default_reminders_sut(
     hamroh_sut: Sut,
     e2e_config: E2EConfig,
@@ -256,7 +195,7 @@ def default_reminders_sut(
     whose text carries ``token``, and one ``"enabled": false`` whose text carries
     ``disabled_token``. Then launches a dedicated SUT pointed at that file via
     ``HAMROH_REMINDERS_PATH`` — so the test never touches the repo-root copy. Same
-    stop-launch-revive swap as ``status_sut`` (only one process may poll the bot
+    stop-launch-revive swap as ``killable_sut`` (only one process may poll the bot
     token). The every-minute cron lets the @slow fire test see it deliver within
     one poll cycle. Yields ``(sut, token, disabled_token)``.
     """
@@ -355,7 +294,7 @@ def plugins_sut(
     holding its own fresh secret. The SUT reads it via ``HAMROH_PLUGINS_PATH``,
     so the repo-root ``plugins.json`` (the locked-down default every other test
     runs under) is untouched. Same stop-launch-revive swap dance as
-    ``status_sut`` (only one process may poll the bot token). Yields
+    ``killable_sut`` (only one process may poll the bot token). Yields
     ``(sut, secret, disabled_secret)``: a reply carrying ``secret`` proves the
     enabled MCP really answered; the disabled server never spawns, so
     ``disabled_secret`` can never appear in any reply.

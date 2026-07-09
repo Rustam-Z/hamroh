@@ -130,31 +130,19 @@ class Config:
 
     # ----- Settings for handling tool errors -----
     # These control what happens when Claude is still running fine, but
-    # one of its tool calls keeps failing or the turn goes quiet.
+    # one of its tool calls keeps failing inside a turn.
 
-    #: How many tool errors are allowed before the bot gives up. Used
-    #: in two places: (1) inside one turn — too many failed tool calls
-    #: stops the turn; (2) across turns — too many empty replies in a
-    #: row stops retrying.
-    #: Env var: ``HAMROH_TOOL_ERROR_MAX_COUNT`` (default 3).
+    #: How many failed tool calls in one turn trip the breaker. When
+    #: reached (within ``tool_error_window_seconds``, with no successful
+    #: tool call in between), the turn is aborted and the Claude
+    #: subprocess is restarted.
+    #: Env var: ``HAMROH_TOOL_ERROR_MAX_COUNT`` (default 10).
     tool_error_max_count: int
     #: Time-based version of the rule above. If errors keep coming in
     #: for this many seconds after the first one, the bot stops the
     #: turn — even if the count is still under the limit.
-    #: Env var: ``HAMROH_TOOL_ERROR_WINDOW_SECONDS`` (default 60, i.e. 1 min).
+    #: Env var: ``HAMROH_TOOL_ERROR_WINDOW_SECONDS`` (default 600, i.e. 10 min).
     tool_error_window_seconds: float
-    #: How often a still-running turn reports progress. Every this-many seconds
-    #: the bot posts a status update ("still working, N min, last step: …") to
-    #: the waiting chat so a long task isn't silent. The turn is NOT stopped —
-    #: the owner can reply "stop" to halt it; otherwise it keeps going.
-    #: Env var: ``HAMROH_STATUS_INTERVAL_SECONDS`` (default 300, i.e. 5 min).
-    status_interval_seconds: float
-    #: When on, a long turn shows a live "working…" draft (Telegram's
-    #: ``sendMessageDraft``) in DMs instead of the plain typing indicator, so the
-    #: user sees progress on a slow job. Private chats only — groups keep the
-    #: typing dots (the API rejects drafts there). Off by default.
-    #: Env var: ``HAMROH_PROGRESS_DRAFT_ENABLED`` (default False).
-    progress_draft_enabled: bool
 
     # ----- Settings for spotting a stuck Claude process -----
     # A separate watcher checks if Claude has gone silent in the middle
@@ -165,7 +153,7 @@ class Config:
     #: no output and no tool activity for longer than this, the watcher
     #: kills it. Silence between turns (when the bot is idle) is fine
     #: and ignored.
-    #: Env var: ``HAMROH_LIVENESS_TIMEOUT_SECONDS`` (default 300).
+    #: Env var: ``HAMROH_LIVENESS_TIMEOUT_SECONDS`` (default 600, i.e. 10 min).
     liveness_timeout_seconds: float
     #: How often the watcher wakes up to check. Smaller numbers catch a
     #: stuck process sooner but use a bit more CPU.
@@ -278,11 +266,9 @@ class Config:
             debounce_ms=_int("HAMROH_DEBOUNCE_MS", 0),
             rate_limit_per_min=_int("HAMROH_RATE_LIMIT_PER_MIN", 20),
             attachment_max_bytes=_int("HAMROH_ATTACHMENT_MAX_BYTES", 20_000_000),
-            tool_error_max_count=_int("HAMROH_TOOL_ERROR_MAX_COUNT", 3),
-            tool_error_window_seconds=_float("HAMROH_TOOL_ERROR_WINDOW_SECONDS", 300.0),
-            status_interval_seconds=_float("HAMROH_STATUS_INTERVAL_SECONDS", 300.0),
-            progress_draft_enabled=_bool("HAMROH_PROGRESS_DRAFT_ENABLED", False),
-            liveness_timeout_seconds=_float("HAMROH_LIVENESS_TIMEOUT_SECONDS", 300.0),
+            tool_error_max_count=_int("HAMROH_TOOL_ERROR_MAX_COUNT", 10),
+            tool_error_window_seconds=_float("HAMROH_TOOL_ERROR_WINDOW_SECONDS", 600.0),
+            liveness_timeout_seconds=_float("HAMROH_LIVENESS_TIMEOUT_SECONDS", 600.0),
             liveness_poll_seconds=_float("HAMROH_LIVENESS_POLL_SECONDS", 30.0),
             crash_backoff_base=_float("HAMROH_CRASH_BACKOFF_BASE", 2.0),
             crash_backoff_cap=_float("HAMROH_CRASH_BACKOFF_CAP", 64.0),
@@ -345,8 +331,6 @@ class Config:
             attachment_max_bytes=20_000_000,
             tool_error_max_count=3,
             tool_error_window_seconds=300.0,
-            status_interval_seconds=300.0,
-            progress_draft_enabled=False,
             liveness_timeout_seconds=300.0,
             liveness_poll_seconds=30.0,
             crash_backoff_base=2.0,

@@ -64,7 +64,7 @@ BASE_ALLOWED_TOOLS: tuple[str, ...] = (
 
 #: The hamroh MCP namespace prefix. Claude Code registers every hamroh tool
 #: as ``mcp__hamroh__<name>``; that prefixed form is the exact callable string.
-#: Mirrors ``_MCP_PREFIX`` in ``event_handlers.py`` and ``tools/tools.py``.
+#: Mirrors ``_MCP_PREFIX`` in ``tools/tools.py``.
 _MCP_PREFIX = "mcp__hamroh__"
 
 #: Built-in CC tools that are always reachable, regardless of any ``enable_*``
@@ -348,6 +348,7 @@ def _assemble_argv(spec: CcSpawnSpec, parts: _ArgvParts) -> list[str]:
         "stream-json",
         "--output-format",
         "stream-json",
+        "--include-partial-messages",
         "--verbose",
         "--model",
         spec.model,

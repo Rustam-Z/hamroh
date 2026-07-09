@@ -27,7 +27,6 @@ from .startup import (
     _make_on_cc_crash,
     _make_on_cc_giveup,
     _make_on_cc_stale_session,
-    _make_on_cc_status,
     _open_db_and_stores,
     _replay_unconsumed,
     _run_until_stopped,
@@ -79,7 +78,6 @@ async def _start_worker(app: _App, ctx, spec) -> None:
             on_crash=_make_on_cc_crash(app),
             on_giveup=_make_on_cc_giveup(app),
             on_stale_session=_make_on_cc_stale_session(app),
-            on_status=_make_on_cc_status(app),
         ),
     )
     await app.worker.start()

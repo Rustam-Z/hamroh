@@ -23,7 +23,7 @@ from tests.e2e.support.config import (
     _QUIET_WINDOW_S,
     MAX_TEXT_REPLY_S,
 )
-from tests.e2e.support.models import Conversation, Reply, StatusObservation
+from tests.e2e.support.models import Conversation, Reply
 
 
 def _format_outbound(convo: Conversation, text: str) -> str:
@@ -121,65 +121,6 @@ async def send_and_wait(
 def has_photo(msg: Message) -> bool:
     """Predicate for :func:`send_and_wait_until` — the message carries a photo."""
     return msg.photo is not None
-
-
-def is_status_ping(text: str) -> bool:
-    """True if ``text`` is the worker's "still working" progress heartbeat."""
-    return "Still working" in text
-
-
-async def send_and_watch_status(
-    client: TelegramClient,
-    convo: Conversation,
-    text: str,
-    *,
-    until_final: Callable[[Message], bool],
-    timeout: float,
-) -> StatusObservation:
-    """Send ``text``, time the first "still working" heartbeat, and wait for the
-    long turn's final answer (``until_final``) to land or ``timeout``.
-
-    The status heartbeat is the bot's promise that a long task is never silent.
-    This proves the ping fired on schedule AND that the turn ran to completion,
-    so a lingering turn can't bleed into the next test on the shared bot.
-    """
-    chunks: list[Message] = []
-    done = asyncio.Event()
-    first_ping_at = 0.0
-    first_ping_reply_to: int | None = None
-    completed = False
-
-    async def _collect(event: events.NewMessage.Event) -> None:
-        nonlocal first_ping_at, first_ping_reply_to, completed
-        msg = event.message
-        chunks.append(msg)
-        if not first_ping_at and is_status_ping(msg.raw_text or ""):
-            first_ping_at = time.perf_counter()
-            first_ping_reply_to = msg.reply_to_msg_id
-        if until_final(msg):
-            completed = True
-            done.set()
-
-    evt = events.NewMessage(
-        chats=convo.chat, from_users=convo.reply_from, incoming=True
-    )
-    client.add_event_handler(_collect, evt)
-    try:
-        sent_at = time.perf_counter()
-        sent = await client.send_message(convo.chat, _format_outbound(convo, text))
-        try:
-            await asyncio.wait_for(done.wait(), timeout)
-        except asyncio.TimeoutError:
-            pass
-    finally:
-        client.remove_event_handler(_collect, evt)
-
-    return StatusObservation(
-        first_ping_s=(first_ping_at - sent_at) if first_ping_at else None,
-        completed=completed,
-        chunks=tuple(m.raw_text or "" for m in chunks),
-        first_ping_replies_to_request=first_ping_reply_to == sent.id,
-    )
 
 
 async def send_and_wait_until(

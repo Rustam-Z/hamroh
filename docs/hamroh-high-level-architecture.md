@@ -123,3 +123,26 @@ the claim "I replied" / "silence is correct" makes it commit deliberately rather
 record is how you spot that pattern.
 
 It's capped at 100 chars (REASON_MAX_LENGTH) so this metadata stays a few tokens per turn — the docstring in cc_schema.py explains the cost math.
+
+## Error handling and crash handling
+
+Tool-error breaker (2 fields) — per-turn safety
+
+- tool_error_max_count / tool_error_window_seconds → cached in the worker, drive _record_tool_error/_trip_tool_error_breaker. If N failing tool calls land within the window (no success between), it aborts the turn and restarts the Claude subprocess instead
+of letting the model spin on a broken tool. Needed — without it a stuck-tool loop runs unbounded.
+
+Liveness watchdog (2 fields) — the thing from your original bug
+
+- liveness_timeout_seconds / liveness_poll_seconds → _wedge_silence + _liveness_loop. Detects a genuinely hung subprocess and kills it for respawn. Needed — this is what turns a real hang into auto-recovery instead of eternal
+silence.
+
+Crash supervisor (4 fields) — restart-after-exit
+
+All four are live in worker.py's crash path:
+- crash_backoff_base (worker.py:361,395,426) — initial + exponential backoff wait.
+- crash_backoff_cap (worker.py:425) — ceiling on that wait.
+- crash_limit (worker.py:412,419) — how many crashes trip the bail-out.
+- crash_window_seconds (worker.py:409,420) — rolling window for that count.
+
+Together: respawn on crash with growing backoff; if it crashes too often too fast, give up and exit so an outer supervisor (systemd/docker) restarts the whole process. All needed — remove any and the backoff math or the crash-loop
+guard breaks.

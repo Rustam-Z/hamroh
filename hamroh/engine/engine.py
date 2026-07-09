@@ -122,8 +122,8 @@ class TurnState:
     #: turns produce no turn-start typing indicator.
     active_chats: set[int] = field(default_factory=set)
     #: Per active chat, the most recent human ``message_id`` in the batch.
-    #: The status heartbeat replies to this so its "still working" updates
-    #: thread under the message that kicked the turn instead of floating free.
+    #: The error-notify path links back to these so a failed turn threads its
+    #: notice under the message that kicked it instead of floating free.
     reply_targets: dict[int, int] = field(default_factory=dict)
     #: ``time.monotonic()`` when the current turn started in ``_kick``.
     #: Read by :attr:`Engine.turn_elapsed_s` for the /health readout.
