@@ -20,8 +20,6 @@ skills/
 ├── render-style/          ← house style for render_html
 │   ├── SKILL.md
 │   └── README.md
-├── cc-failure-digest/     ← daily "what broke" report to the owner
-│   └── SKILL.md
 └── reminder-format/       ← house format for reminder_set text
     └── SKILL.md
 ```
@@ -32,7 +30,6 @@ skills/
 |---|---|---|
 | [self-reflection](self-reflection/) | invoked | Daily two-phase loop: introspect last 24h of outbound behavior, stress-test pending lessons against scenarios, propose promote / refine / discard rules to the owner. Triggered by an auto-seeded reminder; refused without a real `<reminder>` envelope. |
 | [render-style](render-style/) | reference | Style guide for the `render_html` tool — dark dashboard / timeline / architecture-diagram look with CSS tokens, layout rules, and three copy-paste HTML skeletons. Read on the agent's own initiative before any `render_html` call. |
-| [cc-failure-digest](cc-failure-digest/) | invoked | Daily failure report: buckets the last 24h of `hamroh.log`, the raw CC stderr captures and the `tool_calls` audit table into named categories, then sends the owner a headline plus a markdown document. Triggered by a reminder; refused without a real `<reminder>` envelope. **Needs `tool_groups.code` + `tool_groups.bash` enabled** — it reads log files. |
 | [reminder-format](reminder-format/) | reference | Three-rule format for the `reminder_set` text argument — `<THIS IS A REMINDER>` opener, `Goal:` line, numbered steps. Read before creating or editing any reminder so fired `<reminder>` envelopes are self-explanatory. |
 
 ## Skill modes

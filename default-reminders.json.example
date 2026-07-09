@@ -14,13 +14,6 @@
       "text": [
         "Summarize the week."
       ]
-    },
-    {
-      "name": "cc-failure-digest",
-      "cron": "0 7 * * *",
-      "chat": "owner",
-      "enabled": false,
-      "text": "<skill name=\"cc-failure-digest\">run</skill>"
     }
   ]
 }
