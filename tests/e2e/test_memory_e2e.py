@@ -8,6 +8,10 @@ search (DM and group, separate tests): seed a fact under an unhelpful filename,
 read by path (DM only): seed two docs in ``memories/``, then confirm the bot
     reads the fact out of EACH by its full project path — proving ``memory_read``
     works by exact path.
+description refresh (DM only): seed a doc whose description describes only its
+    old content, add a new fact to it, and confirm the frontmatter description
+    on disk no longer describes the file as it was — so ``memory_list`` never
+    advertises a stale summary.
 reset (DM only): the codeword survives ``/reset_session`` — proving
     cross-session persistence, not just in-context recall. The reset is an
     owner command, kept in a DM to avoid group command-addressing quirks.
@@ -21,6 +25,7 @@ from pathlib import Path
 import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
+from hamroh.utils.frontmatter import parse_frontmatter
 from tests.e2e.support.assertions import assert_reply_within
 from tests.e2e.support.client import send_and_wait
 from tests.e2e.support.data import new_sentinel
@@ -46,6 +51,20 @@ _READ_DOC = (
     "Read the memory file at {path} and tell me the launch date saved in it. "
     "Reply with ONLY the date."
 )
+_ADD_FACT = (
+    "Add this new fact to your existing memory file at {path}, keeping what is "
+    "already written there: {fact}. Reply with only the word DONE."
+)
+
+#: Seeded description of a file that holds nothing but a launch date. Once the
+#: bot adds a fact about the venue, a refreshed description cannot still be this.
+_STALE_DESCRIPTION = "e2e seed: holds only the launch date, nothing else"
+
+#: Tools that can land the new fact. ``memory_append`` refreshes the description
+#: structurally (it's a required arg); ``memory_write`` rewrites the whole file
+#: including frontmatter. Either satisfies the test — the assertion is on what
+#: reached disk, not on which tool the model picked.
+_MEMORY_WRITE_TOOLS = {"memory_append", "memory_write"}
 
 
 def _seed_memory_doc(memories_dir: Path, codeword: str, launch_date: str) -> str:
@@ -61,6 +80,45 @@ def _seed_memory_doc(memories_dir: Path, codeword: str, launch_date: str) -> str
         f"Project {codeword} launch date: {launch_date}\n"
     )
     return f"memories/{subpath}"
+
+
+def _seed_stale_memory_doc(memories_dir: Path, codeword: str) -> tuple[str, Path]:
+    """Seed a doc carrying :data:`_STALE_DESCRIPTION`, ready to be added to.
+
+    Written straight to disk rather than through the bot, so the SUT has not
+    read it this session — the update then has to pass the read-before-write
+    gate, exactly as a real cross-session update would.
+
+    Returns ``(full project path, on-disk path)``.
+    """
+    subpath = f"notes/{codeword}.md"
+    path = memories_dir / subpath
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\nname: {codeword}\ndescription: {_STALE_DESCRIPTION}\n---\n\n"
+        f"Project {codeword} launch date: 2027-03-14\n",
+        encoding="utf-8",
+    )
+    return f"memories/{subpath}", path
+
+
+def _description_of(path: Path) -> str | None:
+    """The frontmatter ``description`` of ``path``, or ``None`` if it has none."""
+    metadata, _ = parse_frontmatter(
+        path.read_text(encoding="utf-8"), error_cls=AssertionError, label="memory file"
+    )
+    description = metadata.get("description")
+    return description.strip() if isinstance(description, str) else None
+
+
+def _file_holding(path: Path, token: str) -> list[Path]:
+    """``[path]`` once the file contains ``token``, else ``[]``.
+
+    A ``wait_until`` predicate: the write lands a beat after the reply does.
+    """
+    if token in path.read_text(encoding="utf-8"):
+        return [path]
+    return []
 
 
 async def _assert_write_and_read(
@@ -202,6 +260,59 @@ async def test_memory_read_by_full_path_dm(
     tools = {row["tool_name"] for row in tool_calls_since(hamroh_sut.db_path, since)}
     assert "memory_read" in tools, (
         f"bot answered without calling memory_read; tools used: {sorted(tools)}"
+    )
+
+
+async def test_memory_description_refreshed_when_fact_added_dm(
+    hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
+) -> None:
+    """Adding a fact to a memory file refreshes its frontmatter description.
+
+    given  a memory doc on disk whose description describes only its old
+           content, unread by the bot this session
+    when   the owner asks the bot to add a new, unrelated fact to that file
+    then   the fact lands in the body, the description no longer reads as the
+           seeded one, and the bot read the file before writing it.
+    """
+    # given — a doc whose description advertises only the launch date
+    codeword = new_sentinel("CHERRY")
+    venue = new_sentinel("VENUE")
+    project_path, on_disk = _seed_stale_memory_doc(hamroh_sut.memories_dir, codeword)
+    since = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    # when — the owner adds a fact the old description could not cover
+    fact = f"the launch venue is {venue}"
+    reply = await send_and_wait(
+        tester_client, dm, _ADD_FACT.format(path=project_path, fact=fact)
+    )
+
+    # then — the new fact reaches the body, keeping the old content
+    assert_reply_within(reply, MAX_MEMORY_REPLY_S, "memory description refresh")
+    updated = await wait_until(lambda: _file_holding(on_disk, venue))
+    assert updated, f"{venue!r} never reached {project_path}; reply was {reply.text!r}"
+    assert "2027-03-14" in on_disk.read_text(encoding="utf-8"), (
+        f"adding a fact to {project_path} destroyed the launch date already in it"
+    )
+
+    # then — the description was rewritten, so memory_list won't show a stale one
+    description = _description_of(on_disk)
+    assert description is not None, (
+        f"{project_path} lost its frontmatter description on update"
+    )
+    assert description != _STALE_DESCRIPTION, (
+        f"{project_path} still advertises its seeded description "
+        f"{_STALE_DESCRIPTION!r} after {fact!r} was added"
+    )
+
+    # then — it landed via a memory write tool, after reading the file first
+    tools = {row["tool_name"] for row in tool_calls_since(hamroh_sut.db_path, since)}
+    assert tools & _MEMORY_WRITE_TOOLS, (
+        f"the fact reached disk without {sorted(_MEMORY_WRITE_TOOLS)}; "
+        f"tools used: {sorted(tools)}"
+    )
+    assert "memory_read" in tools, (
+        f"bot updated {project_path} without reading it first; "
+        f"tools used: {sorted(tools)}"
     )
 
 
