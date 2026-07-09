@@ -1,7 +1,10 @@
-"""Tool-error circuit breaker — aborts a stuck turn on whichever
-fires first: ``tool_error_max_count`` errors in the turn (count
-branch), or ``tool_error_window`` seconds elapsed since the first
-error (watchdog branch).
+"""Tool-error circuit breaker — aborts a turn only on a sustained
+burst: ``tool_error_max_count`` errors inside a rolling
+``tool_error_window`` with no successful tool result in between.
+
+A successful tool result resets the count (healthy progress erases
+the burst), and the window watchdog forgets a sub-threshold burst
+once it lapses so a later error opens a fresh window.
 
 Feeds synthetic ``tool_result`` events with ``is_error=true`` into
 ``_handle_event`` and verifies the worker terminates the subprocess
@@ -134,32 +137,12 @@ async def test_sentinel_carries_partial_text_for_flush(worker: CcWorker) -> None
 
 
 @pytest.mark.asyncio
-async def test_watchdog_fires_alone_with_single_error(
+async def test_watchdog_resets_sub_threshold_burst(
     fast_window_worker: CcWorker,
 ) -> None:
-    """Watchdog branch: a single error followed by silence still trips
-    the breaker once the window expires. This is the headline case the
-    user asked about — 'if 1 error in 30 seconds, still report'."""
-    worker = fast_window_worker
-    terminate_called = _attach_terminate_event(worker)
-
-    worker._handle_event(_tool_error_event("toolu_1"))
-    assert worker._turn_tool_error_count == 1
-    assert worker._tool_error_watchdog_task is not None
-
-    # No further errors. Watchdog should fire on its own ~50ms later.
-    await asyncio.wait_for(terminate_called.wait(), timeout=1.0)
-
-    result = worker._result_queue.get_nowait()
-    assert result.aborted_reason == "tool-error-limit"
-
-
-@pytest.mark.asyncio
-async def test_watchdog_fires_with_two_errors_below_threshold(
-    fast_window_worker: CcWorker,
-) -> None:
-    """Two errors within the window but below the count threshold: the
-    watchdog still fires once the deadline lapses."""
+    """Two errors below the count threshold, then silence: once the
+    window lapses the watchdog forgets the burst rather than tripping —
+    the turn was healthy, it just guessed a couple of bad paths early."""
     worker = fast_window_worker
     terminate_called = _attach_terminate_event(worker)
 
@@ -169,10 +152,80 @@ async def test_watchdog_fires_with_two_errors_below_threshold(
     assert worker._turn_tool_error_count == 2
     assert worker._tool_error_abort_task is None  # count branch hasn't tripped
 
-    await asyncio.wait_for(terminate_called.wait(), timeout=1.0)
+    # Wait past the window; nothing should terminate.
+    await asyncio.sleep(0.1)
+    assert not terminate_called.is_set()
+    assert worker._result_queue.empty()
 
+    # Burst forgotten: count reset and a fresh error opens a new window.
+    assert worker._turn_tool_error_count == 0
+    assert worker._turn_first_tool_error_at is None
+    assert worker._tool_error_watchdog_task is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_burst_after_reset_still_trips(
+    fast_window_worker: CcWorker,
+) -> None:
+    """A stale burst is forgotten, but a genuine burst that follows
+    still trips the count branch — the reset doesn't disarm the breaker
+    for the rest of the turn."""
+    worker = fast_window_worker
+    terminate_called = _attach_terminate_event(worker)
+
+    # Two errors, then let the window lapse so the burst is forgotten.
+    worker._handle_event(_tool_error_event("toolu_1"))
+    worker._handle_event(_tool_error_event("toolu_2"))
+    await asyncio.sleep(0.1)
+    assert worker._turn_tool_error_count == 0
+
+    # A fresh burst of three trips on the count branch.
+    worker._handle_event(_tool_error_event("toolu_3"))
+    worker._handle_event(_tool_error_event("toolu_4"))
+    worker._handle_event(_tool_error_event("toolu_5"))
+
+    await asyncio.wait_for(terminate_called.wait(), timeout=1.0)
     result = worker._result_queue.get_nowait()
     assert result.aborted_reason == "tool-error-limit"
+
+
+@pytest.mark.asyncio
+async def test_successful_result_resets_error_burst(
+    fast_window_worker: CcWorker,
+) -> None:
+    """Healthy progress erases the burst: two errors then a successful
+    tool result resets the count and cancels the watchdog, so the turn
+    is not aborted even after the original window would have lapsed."""
+    worker = fast_window_worker
+    terminate_called = _attach_terminate_event(worker)
+    ok_event = {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_ok",
+                    "content": "ok",
+                    "is_error": False,
+                }
+            ],
+        },
+    }
+
+    worker._handle_event(_tool_error_event("toolu_1"))
+    worker._handle_event(_tool_error_event("toolu_2"))
+    assert worker._turn_tool_error_count == 2
+
+    # A successful tool result lands — the burst is erased.
+    worker._handle_event(ok_event)
+    assert worker._turn_tool_error_count == 0
+    assert worker._turn_first_tool_error_at is None
+    assert worker._tool_error_watchdog_task is None
+
+    # Wait past the original window; nothing should terminate.
+    await asyncio.sleep(0.1)
+    assert not terminate_called.is_set()
+    assert worker._result_queue.empty()
 
 
 @pytest.mark.asyncio

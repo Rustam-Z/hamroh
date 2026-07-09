@@ -262,11 +262,17 @@ async def wait_for_engine_idle(sut: Sut, timeout: float = 30.0) -> None:
     (and only a fresh turn arms the status heartbeat). The engine logs
     ``starting turn`` when a turn opens and ``turn done`` when it closes; it is
     idle once a ``turn done`` is the most recent of the two.
+
+    The per-test log reset (``pytest_runtest_call``) fires just before this
+    call and can wipe the warm-up turn's markers *after* it already finished,
+    leaving an empty ring. So an absent ``starting turn`` means "no turn is
+    running", not "still busy" — treat it as idle too.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         tail = sut.log_tail()
-        if tail.rfind("turn done") > tail.rfind("starting turn"):
+        last_started = tail.rfind("starting turn")
+        if last_started == -1 or tail.rfind("turn done") > last_started:
             return
         await asyncio.sleep(0.2)
     raise RuntimeError(

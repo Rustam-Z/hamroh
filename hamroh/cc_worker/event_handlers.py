@@ -80,6 +80,8 @@ class CcEventHandlerMixin:
     _session_id: str | None
     #: Tool-error breaker + heartbeat hooks, defined as methods on ``CcWorker``.
     _record_tool_error: Callable[[], None]
+    _reset_tool_error_state: Callable[[], None]
+    _mark_user_visible: Callable[[], None]
     _cancel_tool_error_watchdog: Callable[[], None]
     _cancel_status_heartbeat: Callable[[], None]
 
@@ -206,6 +208,7 @@ class CcEventHandlerMixin:
         )
         if tool_name in USER_VISIBLE_TOOLS:
             self._current_turn.user_visible_action = True
+            self._mark_user_visible()
         # Remember the latest real action so the status heartbeat can name it.
         if tool_name != "StructuredOutput":
             self._last_tool_action = tool_name.removeprefix(_MCP_PREFIX)
@@ -246,6 +249,10 @@ class CcEventHandlerMixin:
         )
         if is_error:
             self._record_tool_error()
+        else:
+            # Healthy progress erases the error burst: a turn that is
+            # still landing successful tool calls is not stuck.
+            self._reset_tool_error_state()
 
     def _on_result_event(self, event: dict[str, Any]) -> None:
         """Turn complete. Parse the structured-output payload, finalise the

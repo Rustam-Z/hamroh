@@ -154,6 +154,48 @@ async def test_tool_use_updates_last_action(worker: CcWorker) -> None:
 
 
 @pytest.mark.asyncio
+async def test_recent_reply_suppresses_the_ping(worker: CcWorker) -> None:
+    """No "still working" ping while the bot spoke to the user within the last
+    interval — the heartbeat is for silence, not for a turn that just replied
+    but hasn't formally closed yet."""
+    calls: list[int] = []
+
+    async def on_status(elapsed: float, last_action: str | None) -> None:
+        calls.append(1)
+
+    worker._on_status = on_status
+    worker._arm_status_heartbeat()
+
+    # Keep sending the user a message every ~half interval: the bot is never
+    # silent for a full interval, so no ping should fire.
+    for _ in range(6):
+        worker._mark_user_visible()
+        await asyncio.sleep(0.025)
+    worker._cancel_status_heartbeat()
+
+    assert calls == [], "a turn that keeps replying must not be nagged"
+
+
+@pytest.mark.asyncio
+async def test_ping_fires_once_silence_returns(worker: CcWorker) -> None:
+    """After the bot goes quiet, the ping resumes — the reply only defers it by
+    one interval, it doesn't disable the heartbeat for the turn."""
+    calls: list[int] = []
+
+    async def on_status(elapsed: float, last_action: str | None) -> None:
+        calls.append(1)
+
+    worker._on_status = on_status
+    worker._arm_status_heartbeat()
+    worker._mark_user_visible()  # bot replies, then falls silent
+
+    await asyncio.sleep(0.17)  # a couple of silent intervals later
+    worker._cancel_status_heartbeat()
+
+    assert len(calls) >= 1, "the heartbeat must resume once silence returns"
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_with_no_callback_is_safe(worker: CcWorker) -> None:
     """No ``on_status`` wired (e.g. tests / headless) must not raise."""
     worker._on_status = None

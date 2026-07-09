@@ -159,9 +159,11 @@ class CcWorker(CcEventHandlerMixin):
         ``_awaiting_turn_init`` is armed by ``send()`` and cleared by the next
         ``system/init``; while armed, assistant/result events from a prior
         draining turn are dropped so they aren't folded into the new turn. The
-        breaker (``_turn_tool_error_*``) trips on whichever comes first: the
-        count reaching ``_tool_error_max_count`` or the wall-clock watchdog at
-        ``_turn_first_tool_error_at + _tool_error_window``.
+        breaker (``_turn_tool_error_*``) trips only on a sustained burst:
+        ``_tool_error_max_count`` errors inside a rolling
+        ``_tool_error_window`` with no successful tool result in between —
+        a success resets the count, and the window watchdog forgets a
+        sub-threshold burst once it lapses.
         ``_supervisor_abort_reason`` marks a self-inflicted exit so the
         supervisor skips the crash callback.
         """
@@ -174,6 +176,10 @@ class CcWorker(CcEventHandlerMixin):
         self._tool_error_abort_task: asyncio.Task | None = None
         self._turn_started_at: float | None = None
         self._last_tool_action: str | None = None
+        #: ``time.monotonic()`` of the last message the bot sent the user this
+        #: turn. The status heartbeat pings only after a full interval of
+        #: silence *since this*, so it never nags right after a reply lands.
+        self._last_user_visible_at: float = time.monotonic()
         self._status_task: asyncio.Task | None = None
 
     @property
@@ -480,9 +486,7 @@ class CcWorker(CcEventHandlerMixin):
             raise RuntimeError("cc worker not started")
         self._current_turn = TurnResult()
         self._awaiting_turn_init = True
-        self._turn_tool_error_count = 0
-        self._turn_first_tool_error_at = None
-        self._cancel_tool_error_watchdog()
+        self._reset_tool_error_state()
         self._last_tool_action = None
         self._arm_status_heartbeat()  # report progress on long turns
         log_cc_user(text)
@@ -583,12 +587,13 @@ class CcWorker(CcEventHandlerMixin):
     def _record_tool_error(self) -> None:
         """Record one ``tool_result`` with ``is_error=true``.
 
-        Trips the breaker on whichever fires first within a turn:
-        ``_tool_error_max_count`` errors (count branch), or
-        ``_tool_error_window`` seconds elapsed since the first error
-        (watchdog branch — see :meth:`_tool_error_watchdog`). The
-        watchdog covers the "single stuck error, then silence" case
-        where no further errors arrive to drive an event-based check.
+        The breaker trips only on a *sustained burst*:
+        ``_tool_error_max_count`` errors within a rolling
+        ``_tool_error_window`` and with no successful tool result in
+        between (a success calls :meth:`_reset_tool_error_state`). The
+        first error arms a watchdog that, if the count never reaches the
+        threshold before the window lapses, forgets the burst so a later
+        error starts a fresh window — see :meth:`_tool_error_watchdog`.
 
         On trip: schedule ``_terminate_proc`` so the crash-recovery
         path respawns and the user sees ``_on_cc_crash``'s notice.
@@ -608,15 +613,30 @@ class CcWorker(CcEventHandlerMixin):
             self._trip_tool_error_breaker(reason="count")
 
     async def _tool_error_watchdog(self, deadline: float) -> None:
-        """Wall-clock companion to the count branch.
+        """Rolling-window reaper for the error burst.
 
-        Sleeps until ``deadline``. If the breaker hasn't already
-        tripped via the count branch (or been cancelled because the
-        turn ended successfully), trips now.
+        Sleeps until ``deadline`` — one window past the first error. If
+        the count branch hasn't tripped by then, fewer than
+        ``_tool_error_max_count`` errors landed inside the window, so the
+        burst is stale: forget it and let the next error open a fresh
+        window. A genuinely stuck/silent subprocess is the liveness
+        watchdog's job, not this one.
         """
         delay = max(0.0, deadline - time.monotonic())
         await asyncio.sleep(delay)
-        self._trip_tool_error_breaker(reason="window")
+        # Reset in place — don't cancel ourselves via the shared helper.
+        self._turn_tool_error_count = 0
+        self._turn_first_tool_error_at = None
+        self._tool_error_watchdog_task = None
+
+    def _reset_tool_error_state(self) -> None:
+        """Clear the rolling-window breaker state — count, first-error
+        timestamp, and the pending watchdog. Called when a successful
+        tool result lands (healthy progress erases the burst) and at
+        turn boundaries (``send``)."""
+        self._turn_tool_error_count = 0
+        self._turn_first_tool_error_at = None
+        self._cancel_tool_error_watchdog()
 
     def _cancel_tool_error_watchdog(self) -> None:
         """Cancel the per-turn tool-error watchdog if it's still
@@ -685,10 +705,16 @@ class CcWorker(CcEventHandlerMixin):
         """(Re)start the per-turn status heartbeat at the start of a turn."""
         self._cancel_status_heartbeat()
         self._turn_started_at = time.monotonic()
+        self._last_user_visible_at = self._turn_started_at
         self._status_task = asyncio.create_task(
             self._status_heartbeat(),
             name="cc-status-heartbeat",
         )
+
+    def _mark_user_visible(self) -> None:
+        """Note that the bot just sent the user something. Resets the heartbeat's
+        silence clock so no "still working" ping fires right after a reply."""
+        self._last_user_visible_at = time.monotonic()
 
     async def _status_heartbeat(self) -> None:
         """Report progress every ``status_interval`` while a turn is running.
@@ -705,8 +731,14 @@ class CcWorker(CcEventHandlerMixin):
             await asyncio.sleep(self._status_interval)
             if self._current_turn is None:
                 return
-            started = self._turn_started_at or time.monotonic()
-            await self._fire_status(time.monotonic() - started)
+            now = time.monotonic()
+            if now - self._last_user_visible_at < self._status_interval:
+                # The bot spoke to the user within the last interval — it isn't
+                # silent, so don't nag "still working" (e.g. in the gap between
+                # the final reply and the turn formally closing).
+                continue
+            started = self._turn_started_at or now
+            await self._fire_status(now - started)
 
     async def _fire_status(self, elapsed: float) -> None:
         """Invoke the status callback; never let a notify failure kill the loop."""
