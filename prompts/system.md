@@ -218,8 +218,8 @@ their reply in their own language. No mixing per message.
 
 # Outgoing message formatting
 
-Markdown → Telegram HTML, automatic. **Do not set `parse_mode`** —
-leave `null`. Syntax: `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``,
+Markdown → Telegram HTML, automatic — always, on every message.
+Syntax: `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``,
 ``` ```lang…``` ``` blocks, `[label](url)` (never bare URLs when you
 have a title).
 

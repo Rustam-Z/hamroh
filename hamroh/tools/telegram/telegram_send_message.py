@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,10 +27,7 @@ class SendMessageArgs(BaseModel):
         )
     )
     text: str = Field(
-        description=(
-            "Message body. Markdown by default — auto-converted to Telegram "
-            "HTML. Sent verbatim when parse_mode is set."
-        )
+        description=("Message body. Markdown — auto-converted to Telegram HTML.")
     )
     reply_to_message_id: int | None = Field(
         default=None,
@@ -46,14 +42,6 @@ class SendMessageArgs(BaseModel):
             "Optional. Forum-supergroup topic id. REQUIRED when the inbound "
             '<msg> carries a topic="..." attribute — copy that value here, '
             "otherwise the message lands in the General topic."
-        ),
-    )
-    parse_mode: Literal["HTML", "MarkdownV2", None] = Field(
-        default=None,
-        description=(
-            "Optional. Leave null for normal markdown text (auto-converted to "
-            "HTML). Set 'HTML' or 'MarkdownV2' only to send pre-formatted "
-            "content verbatim."
         ),
     )
 
@@ -79,9 +67,9 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
         # Chunk the RAW text before markdown conversion so each chunk's HTML
         # is self-contained (no mid-tag splits across chunk boundaries).
         raw_chunks = chunk_text(args.text)
-        bodies, parse_mode = _render_bodies(raw_chunks, args.parse_mode)
+        bodies = [markdown_to_telegram_html(c) for c in raw_chunks]
 
-        message_ids = await self._deliver_chunks(args, bodies, parse_mode)
+        message_ids = await self._deliver_chunks(args, bodies)
         await self._persist_chunks(args, message_ids, raw_chunks)
         return _build_result(message_ids, args.chat_id)
 
@@ -89,7 +77,6 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
         self,
         args: SendMessageArgs,
         bodies: list[str],
-        parse_mode: Literal["HTML", "MarkdownV2", None],
     ) -> list[int]:
         """Send each chunk in order, returning the delivered message ids."""
         assert self.ctx.bot is not None  # guarded by caller
@@ -101,7 +88,7 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
                 text=body,
                 reply_to_message_id=reply_to,
                 message_thread_id=args.message_thread_id,
-                parse_mode=parse_mode,
+                parse_mode="HTML",
             )
             message_ids.append(sent.message_id)
             log.info(
@@ -144,20 +131,6 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
                     args.reply_to_message_id if i == 0 else None,
                 ),
             )
-
-
-def _render_bodies(
-    raw_chunks: list[str],
-    parse_mode: Literal["HTML", "MarkdownV2", None],
-) -> tuple[list[str], Literal["HTML", "MarkdownV2", None]]:
-    """Build the per-chunk message bodies and the effective parse mode.
-
-    With no parse mode the markdown chunks are converted to HTML; otherwise
-    the caller owns formatting and the chunks are sent verbatim.
-    """
-    if parse_mode is None:
-        return [markdown_to_telegram_html(c) for c in raw_chunks], "HTML"
-    return list(raw_chunks), parse_mode
 
 
 def _build_result(message_ids: list[int], chat_id: int) -> ToolResult:
