@@ -29,6 +29,7 @@ from ..cc_worker.cc_failure_classifier import (
 from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
 from ..utils.formatting import chunk_text
+from ..utils.telegram_links import message_ref
 from ..models import ChatMessage
 from .format import format_messages_with_context
 from .restore import build_restored_context
@@ -196,6 +197,8 @@ class Engine(TypingIndicatorMixin):
         self._db = options.db
         self._typing_action = options.typing_action
         self._error_notify = options.error_notify
+        #: Bot owner's Telegram id — internal error notices go here only.
+        self._owner_id = config.owner_id
         #: Per-turn user state — see :class:`TurnState`.
         self._turn = TurnState()
         #: ``<restored_context>`` digest set via :meth:`stash_restore_context`
@@ -461,6 +464,25 @@ class Engine(TypingIndicatorMixin):
             except Exception as exc:
                 log.warning("failed to send error notification to %s: %s", chat_id, exc)
 
+    async def _notify_error_to_owner(self, text: str) -> None:
+        """Send an internal-error notice to the owner only, appending the id
+        and a deep link for each message that was in flight when the turn
+        died — so the owner can jump straight to it and resend. Bypasses the
+        MCP layer (dead when we need this); failures are swallowed.
+        """
+        if self._error_notify is None:
+            return
+        refs = "\n".join(
+            message_ref(chat_id, msg_id)
+            for chat_id, msg_id in sorted(self._turn.reply_targets.items())
+        )
+        body = f"{text}\n\n{refs}" if refs else text
+        try:
+            await self._error_notify(self._owner_id, body)
+            log.info("sent error notification to owner %s", self._owner_id)
+        except Exception as exc:
+            log.warning("failed to send error notification to owner: %s", exc)
+
     async def _handle_dropped_text(self, result: "TurnResult") -> None:
         """Deliver text the model produced but never sent via ``telegram_send_message``.
 
@@ -630,7 +652,7 @@ class Engine(TypingIndicatorMixin):
         log.error("turn aborted: %s", result.aborted_reason)
         if result.text_blocks:
             await self._deliver_text_to_chats("\n\n".join(result.text_blocks))
-        await self._notify_error_to_chats(
+        await self._notify_error_to_owner(
             "⚠️ I hit an internal error and had to restart mid-task. "
             "Please resend your last message."
         )
