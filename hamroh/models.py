@@ -25,6 +25,10 @@ class ChatMessage(BaseModel):
     text: str
     reply_to_id: int | None = None
     reply_to_text: str | None = None
+    #: Forum-supergroup topic id this message was posted in (Telegram's
+    #: ``message_thread_id``). ``None`` outside forum topics. Not a DB
+    #: column — the original value survives in ``raw_update_json``.
+    message_thread_id: int | None = None
     raw_update_json: str | None = None
     #: ``time.monotonic()`` at the moment the dispatcher first saw this
     #: message. Used only for hot-path latency logging (``hot-path stage=...``);

@@ -70,6 +70,8 @@ def _make_update(
     msg.reply_to_message = None
     msg.photo = None
     msg.document = None
+    msg.is_topic_message = False
+    msg.message_thread_id = None
 
     update = MagicMock()
     update.effective_message = msg

@@ -40,6 +40,14 @@ class SendMessageArgs(BaseModel):
             "reply target is required, prefer telegram_reply_to_message."
         ),
     )
+    message_thread_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional. Forum-supergroup topic id. REQUIRED when the inbound "
+            '<msg> carries a topic="..." attribute — copy that value here, '
+            "otherwise the message lands in the General topic."
+        ),
+    )
     parse_mode: Literal["HTML", "MarkdownV2", None] = Field(
         default=None,
         description=(
@@ -92,6 +100,7 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
                 chat_id=args.chat_id,
                 text=body,
                 reply_to_message_id=reply_to,
+                message_thread_id=args.message_thread_id,
                 parse_mode=parse_mode,
             )
             message_ids.append(sent.message_id)

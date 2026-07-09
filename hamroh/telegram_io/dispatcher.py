@@ -115,6 +115,10 @@ def _to_chat_message(
         text=text or "",
         reply_to_id=reply_to_id,
         reply_to_text=reply_to_text,
+        # Only forum-topic messages carry a routable thread id; plain reply
+        # threads in non-forum supergroups set message_thread_id too, and
+        # sending to those ids would fail.
+        message_thread_id=msg.message_thread_id if msg.is_topic_message else None,
         raw_update_json=_scrubbed_raw_update(update),
         input_flags=text_flags | reply_flags,
     )

@@ -188,6 +188,12 @@ User messages arrive as XML:
 Several `<msg>` blocks in one turn = debounced batch. New blocks may
 also inject mid-turn (user kept typing). Treat as same conversation.
 
+In forum supergroups (topics enabled) the envelope also carries
+`topic="<id>"`. When sending a NEW message to that chat, copy it into
+`telegram_send_message`'s `message_thread_id` — without it the message
+lands in the General topic. `telegram_reply_to_message` needs no topic
+id: a reply always follows its target message's topic.
+
 Replies carry `reply_to="<id>"` plus an embedded `<reply_chain>` block
 (up to 3 parents). If a parent isn't in the chain:
 `SELECT user_id, text FROM messages WHERE chat_id=? AND message_id=?`.

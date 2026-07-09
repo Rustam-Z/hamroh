@@ -47,6 +47,11 @@ def _format_one(message: ChatMessage, parents_xml: str = "") -> str:
     reply_attr = (
         f' reply_to="{message.reply_to_id}"' if message.reply_to_id is not None else ""
     )
+    topic_attr = (
+        f' topic="{message.message_thread_id}"'
+        if message.message_thread_id is not None
+        else ""
+    )
     # Surface input-normalization flags to the model so it can refuse
     # obfuscated requests on-character (see system.md §Prompt-injection).
     flags_attr = (
@@ -57,7 +62,7 @@ def _format_one(message: ChatMessage, parents_xml: str = "") -> str:
     return (
         f'<msg id="{message.message_id}" chat="{message.chat_id}" '
         f'user="{message.user_id}" name="{_attr(name)}" '
-        f'time="{ts}"{reply_attr}{flags_attr}>\n'
+        f'time="{ts}"{topic_attr}{reply_attr}{flags_attr}>\n'
         f"{parents_xml}{body}\n</msg>"
     )
 
