@@ -263,6 +263,7 @@ async def test_memory_read_by_full_path_dm(
     )
 
 
+@pytest.mark.smoke
 async def test_memory_description_refreshed_when_fact_added_dm(
     hamroh_sut: Sut, tester_client: TelegramClient, dm: Conversation
 ) -> None:

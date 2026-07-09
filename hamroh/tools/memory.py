@@ -171,8 +171,14 @@ class WriteMemoryTool(BaseTool[WriteMemoryArgs]):
         "changes. If the file already exists you MUST call memory_read on it "
         "first in the same session — a safety rail against destroying notes "
         "whose content you never saw. New files can be created without a prior "
-        "read. Writes to local storage only — to send a memory file to the "
-        "user, use telegram_send_memory_document."
+        "read. Conventional locations (match these, don't invent new "
+        "structure): per-user profile → memories/notes/users/<telegram_user_id>"
+        ".md; per-group behaviors → memories/notes/groups/<chat_id>.md; "
+        "cross-session reference → memories/notes/<topic>.md; one-off report → "
+        "memories/docs/<topic>-<YYYY-MM-DD>.md. Create per-user and per-group "
+        "files lazily, after a few real exchanges. Writes to local storage "
+        "only — to send a memory file to the user, use "
+        "telegram_send_memory_document."
     )
     args_model = WriteMemoryArgs
 
