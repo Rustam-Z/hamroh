@@ -14,7 +14,14 @@ generic ones.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Literal
+
+#: Where a classified failure's notice belongs. ``"owner"`` = an operator
+#: problem (bad token, exhausted quota, misconfigured model) the person who
+#: sent the triggering message can do nothing about, so only the bot owner
+#: is told. ``"chat"`` = something the sender can act on (a transient
+#: rate-limit they can just resend past), so the notice goes to the chat.
+Audience = Literal["owner", "chat"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,11 +34,14 @@ class CcFailurePattern:
     :attr user_message: the Telegram-facing message. Kept short and action-
         oriented; operator-specific detail (env-var names, paths) is fine
         because the owner is typically the one reading it.
+    :attr audience: who sees the notice — see :data:`Audience`. Defaults to
+        ``"chat"``; operator-only failures must opt into ``"owner"``.
     """
 
     kind: str
     keywords: tuple[str, ...]
     user_message: str
+    audience: Audience = "chat"
 
 
 #: Ordered from most specific to most generic. First match wins.
@@ -48,6 +58,7 @@ CC_FAILURE_PATTERNS: tuple[CcFailurePattern, ...] = (
             "⚠️ The configured Claude model is unavailable. "
             "The operator needs to fix `HAMROH_MODEL` in the environment."
         ),
+        audience="owner",
     ),
     CcFailurePattern(
         kind="auth",
@@ -67,6 +78,7 @@ CC_FAILURE_PATTERNS: tuple[CcFailurePattern, ...] = (
             "revoked. The operator needs to regenerate it with "
             "`claude setup-token` and update `CLAUDE_CODE_OAUTH_TOKEN` in `.env`."
         ),
+        audience="owner",
     ),
     CcFailurePattern(
         kind="quota",
@@ -80,6 +92,7 @@ CC_FAILURE_PATTERNS: tuple[CcFailurePattern, ...] = (
             "⚠️ Claude API quota/credits exhausted. "
             "The operator needs to top up or wait for the quota to reset."
         ),
+        audience="owner",
     ),
     CcFailurePattern(
         kind="rate-limit",
@@ -99,6 +112,7 @@ class CcFailureClassification:
     kind: str
     user_message: str
     matched_source: str  # the substring of the source where the pattern matched
+    audience: Audience = "chat"  # who the notice is routed to
 
 
 def classify_cc_failure(
@@ -129,5 +143,6 @@ def classify_cc_failure(
                         kind=pattern.kind,
                         user_message=pattern.user_message,
                         matched_source=snippet,
+                        audience=pattern.audience,
                     )
     return None

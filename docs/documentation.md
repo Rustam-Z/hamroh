@@ -135,7 +135,7 @@ into a `Config` field.
 | `HAMROH_TOOL_ERROR_WINDOW_SECONDS` | no | `600` | if errors keep arriving for this many seconds after the first one in a turn, end the turn — even below the count above. |
 | `HAMROH_CRASH_BACKOFF_BASE` | no | `2` | seconds to wait before the first restart after Claude crashes. Doubles after each crash, up to `CRASH_BACKOFF_CAP`. |
 | `HAMROH_CRASH_BACKOFF_CAP` | no | `64` | maximum wait between restarts. Once the wait reaches this, it stops growing. |
-| `HAMROH_CRASH_LIMIT` | no | `10` | how many crashes within `CRASH_WINDOW_SECONDS` count as "too many". When reached, the bot tells the owner and active chats, then exits — and something outside (systemd, docker) is expected to restart the whole bot. |
+| `HAMROH_CRASH_LIMIT` | no | `10` | how many crashes within `CRASH_WINDOW_SECONDS` count as "too many". When reached, the bot tells the owner (crashes are the operator's to handle, so waiting chats stay silent), then exits — and something outside (systemd, docker) is expected to restart the whole bot. |
 | `HAMROH_CRASH_WINDOW_SECONDS` | no | `600` | the time window used for `CRASH_LIMIT`. Only crashes from the last X seconds are counted. |
 External-service credentials referenced by the default `plugins.json`
 via `${VAR}`. Set these in `.env` to make the corresponding MCP

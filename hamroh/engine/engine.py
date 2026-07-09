@@ -29,7 +29,7 @@ from ..cc_worker.cc_failure_classifier import (
 from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
 from ..utils.formatting import chunk_text
-from ..utils.telegram_links import message_ref
+from ..utils.telegram_links import format_message_refs
 from ..models import ChatMessage
 from .format import format_messages_with_context
 from .restore import build_restored_context
@@ -472,16 +472,28 @@ class Engine(TypingIndicatorMixin):
         """
         if self._error_notify is None:
             return
-        refs = "\n".join(
-            message_ref(chat_id, msg_id)
-            for chat_id, msg_id in sorted(self._turn.reply_targets.items())
-        )
+        refs = format_message_refs(self._turn.reply_targets)
         body = f"{text}\n\n{refs}" if refs else text
         try:
             await self._error_notify(self._owner_id, body)
             log.info("sent error notification to owner %s", self._owner_id)
         except Exception as exc:
             log.warning("failed to send error notification to owner: %s", exc)
+
+    async def _notify_classified(self, classification: CcFailureClassification) -> None:
+        """Route a classified CC failure to the audience it belongs to.
+
+        Operator problems (auth, quota, bad model) reach only the owner —
+        with the diagnostic snippet and a link to the triggering message so
+        they can fix it and resend. Sender-actionable ones (a transient
+        rate-limit) reach the waiting chat, kept clean of operator detail.
+        """
+        if classification.audience == "owner":
+            await self._notify_error_to_owner(
+                _classified_failure_message(classification)
+            )
+        else:
+            await self._notify_error_to_chats(classification.user_message)
 
     async def _handle_dropped_text(self, result: "TurnResult") -> None:
         """Deliver text the model produced but never sent via ``telegram_send_message``.
@@ -501,9 +513,7 @@ class Engine(TypingIndicatorMixin):
         """
         classification = classify_cc_failure(result.text_blocks)
         if classification is not None:
-            await self._notify_error_to_chats(
-                _classified_failure_message(classification)
-            )
+            await self._notify_classified(classification)
         else:
             await self._deliver_text_to_chats("\n\n".join(result.text_blocks))
         self._turn.active_chats.clear()
@@ -569,7 +579,9 @@ class Engine(TypingIndicatorMixin):
 
     async def _handle_worker_failure(self, exc: Exception) -> None:
         """CC subprocess died mid-turn. The worker's supervisor handles
-        respawning; our job is to tell the user.
+        respawning; our job is to alert the owner — the crash is theirs to
+        handle, so the waiting chat stays silent and only the owner is told,
+        with a link to the message that was in flight.
 
         Queued ``on_failure`` hooks fire so the caller (reminder loop)
         reverts its claimed row to ``pending`` and retries — without this,
@@ -585,9 +597,8 @@ class Engine(TypingIndicatorMixin):
                 len(self._turn_callbacks),
             )
             await self._fail_turn_callbacks()
-        await self._notify_error_to_chats(
-            "⚠️ Sorry, I ran into a temporary issue. "
-            "I'm restarting and will be back in a few seconds."
+        await self._notify_error_to_owner(
+            "⚠️ Claude Code crashed mid-turn and is restarting."
         )
         self._turn.active_chats.clear()
 
@@ -678,7 +689,7 @@ class Engine(TypingIndicatorMixin):
             [result.api_error or "", *result.text_blocks]
         )
         if classification is not None:
-            await self._notify_error_to_chats(classification.user_message)
+            await self._notify_classified(classification)
             self._turn.active_chats.clear()
             await self._fire_turn_callbacks()
             return
@@ -829,7 +840,7 @@ class Engine(TypingIndicatorMixin):
         turn can be both rate-limited AND dropped_text, but we notify once."""
         classification = classify_cc_failure(result.stderr_tail)
         if classification is not None:
-            await self._notify_error_to_chats(classification.user_message)
+            await self._notify_classified(classification)
 
     async def _continue_after_heartbeat(self) -> None:
         """Resume CC after a non-terminal ``heartbeat`` — keep the turn alive.

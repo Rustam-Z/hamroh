@@ -52,6 +52,7 @@ from .storage.render_store import RenderStore
 from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession
+from .utils.telegram_links import format_message_refs
 
 # Pinned so log captures keyed on ``"hamroh"`` keep matching after
 # the module split.
@@ -480,34 +481,19 @@ def _build_cc_spec(
 
 
 def _make_on_cc_crash(app: _App):
-    """Crash notifier: tell waiting chats (and always the owner) that CC
-    is restarting."""
+    """Crash notifier: tell the owner alone that CC crashed and is
+    restarting. A crash is the operator's to handle, so the waiting chat
+    stays silent; the notice carries a link to the in-flight message."""
 
     async def _on_cc_crash(attempt: int, backoff: float) -> None:
         dispatcher = app.dispatcher
         if dispatcher is None:
             return
-        engine = app.engine
-        user_text = (
-            f"⚠️ Technical issue, restarting "
-            f"(attempt {attempt}, retrying in {backoff:.0f}s). "
-            "Please resend your last message in a moment."
+        text = (
+            f"⚠️ Claude Code crashed and is restarting "
+            f"(attempt {attempt}, retrying in {backoff:.0f}s). Check logs."
         )
-        if engine is not None and engine._turn.active_chats:
-            for chat_id in engine._turn.active_chats:
-                try:
-                    await dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
-                except Exception:
-                    log.warning("crash notify to %s failed", chat_id, exc_info=True)
-        owner_chat = app.config.owner_id
-        if owner_chat not in (engine._turn.active_chats if engine else set()):
-            try:
-                await dispatcher.bot.send_message(
-                    chat_id=owner_chat,
-                    text=f"CC error (attempt {attempt}). Check logs.",
-                )
-            except Exception:
-                log.warning("crash notify to owner failed", exc_info=True)
+        await _notify_owner_with_refs(app, dispatcher, text)
 
     return _on_cc_crash
 
@@ -542,28 +528,36 @@ def _make_on_cc_stale_session(app: _App):
 
 
 def _make_on_cc_giveup(app: _App):
-    """Give-up notifier: tell every waiting chat + the owner that CC is
-    down for good and the operator must intervene."""
+    """Give-up notifier: tell the owner alone that CC is down for good and
+    the operator must intervene. The waiting chat stays silent — the crash
+    is the operator's to handle."""
 
     async def _on_cc_giveup(crash_count: int) -> None:
         dispatcher = app.dispatcher
         if dispatcher is None:
             return
-        user_text = (
+        text = (
             f"⚠️ Shutting down — Claude Code failed {crash_count} times. "
             "The operator needs to intervene."
         )
-        chats_to_notify: set[int] = set()
-        if app.engine is not None and app.engine._turn.active_chats:
-            chats_to_notify.update(app.engine._turn.active_chats)
-        chats_to_notify.add(app.config.owner_id)
-        for chat_id in chats_to_notify:
-            try:
-                await dispatcher.bot.send_message(chat_id=chat_id, text=user_text)
-            except Exception:
-                log.warning("giveup notify to %s failed", chat_id, exc_info=True)
+        await _notify_owner_with_refs(app, dispatcher, text)
 
     return _on_cc_giveup
+
+
+async def _notify_owner_with_refs(
+    app: _App, dispatcher: TelegramDispatcher, text: str
+) -> None:
+    """Send ``text`` to the owner, appending a link to each message that was
+    in flight when CC died so the owner can jump straight to it and resend.
+    Best-effort: a failed send is logged, not raised."""
+    targets = app.engine._turn.reply_targets if app.engine is not None else {}
+    refs = format_message_refs(targets)
+    body = f"{text}\n\n{refs}" if refs else text
+    try:
+        await dispatcher.bot.send_message(chat_id=app.config.owner_id, text=body)
+    except Exception:
+        log.warning("owner crash notify failed", exc_info=True)
 
 
 def _build_dispatcher_and_engine(

@@ -92,10 +92,12 @@ async def test_dropped_text_delivers_answer_to_user() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dropped_text_classified_failure_surfaces_error() -> None:
-    """When the dropped text is actually a technical failure (e.g. a bad
-    model name), surface the classified guidance — not the raw diagnostic
-    echoed back as if it were a real answer."""
+async def test_dropped_text_operator_failure_goes_to_owner() -> None:
+    """When the dropped text is actually an operator failure (e.g. a bad
+    model name), the classified guidance goes to the OWNER alone — the
+    sender can do nothing about it — with the diagnostic snippet and a link
+    to the triggering message, not echoed to the chat as if it were a real
+    answer."""
     worker = FakeWorker()
     notifications: list[tuple[int, str]] = []
 
@@ -125,13 +127,14 @@ async def test_dropped_text_classified_failure_surfaces_error() -> None:
         )
         await asyncio.sleep(0.05)
 
-        # Then exactly one targeted notification is shown (not the raw text),
-        # and no retry turn is kicked.
-        assert len(notifications) == 1, "exactly one user-facing notification"
+        # Then exactly one notice goes to the owner (id 0), never the chat,
+        # carrying the guidance, the diagnostic snippet, and the message id.
+        assert len(notifications) == 1, "exactly one owner-facing notification"
         chat_id, text = notifications[0]
-        assert chat_id == -100
-        assert "hamroh_model" in text.lower(), "classified guidance shown to user"
-        assert "claude-sonnet-4-7" in text, "diagnostic snippet preserved for the user"
+        assert chat_id == _CFG.owner_id, "operator failures go to the owner alone"
+        assert "hamroh_model" in text.lower(), "classified guidance shown to owner"
+        assert "claude-sonnet-4-7" in text, "diagnostic snippet preserved for owner"
+        assert "message 1" in text, "notice must name the triggering message"
         assert len(worker.sent) == 1, "no retry turn kicked into the worker"
     finally:
         await eng.stop()
