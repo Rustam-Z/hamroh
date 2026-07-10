@@ -29,12 +29,12 @@ class TelegramReplyToMessageTool(BaseTool[ReplyToMessageArgs]):
     name = "telegram_reply_to_message"
     description = (
         "Reply to a specific message, threading to it so the parent is "
-        "unambiguous (essential in busy group chats). This is the DEFAULT for "
-        "every reply in an active conversation — thread to the inbound "
-        "message you're answering. Use telegram_send_message only for an "
-        "unthreaded, proactive message with no specific parent (e.g. a timer "
-        "reminder). Sends immediately; long text auto-splits at paragraph "
-        "boundaries."
+        "unambiguous. This is how you answer EVERY inbound message, in DMs "
+        "and groups alike — thread to the message you're answering. A DM "
+        "having only one conversation is not a reason to skip threading. Use "
+        "telegram_send_message only when there is no inbound message to "
+        "answer (e.g. a scheduled timer reminder or a proactive post). Sends "
+        "immediately; long text auto-splits at paragraph boundaries."
     )
     args_model = ReplyToMessageArgs
 

@@ -1,4 +1,7 @@
-"""``telegram_send_message`` — The agent's primary way to talk to humans."""
+"""``telegram_send_message`` — send an unthreaded message (scheduled/proactive posts).
+
+For answering an inbound message, use ``telegram_reply_to_message`` instead.
+"""
 
 from __future__ import annotations
 
@@ -50,10 +53,11 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
     name = "telegram_send_message"
     description = (
         "Send a NEW, unthreaded text message to a Telegram chat. Use ONLY "
-        "when there's no specific message to reply to — a reminder firing on "
-        "a timer, or a proactive/unprompted post. When answering an inbound "
-        "message (any active conversation), use telegram_reply_to_message "
-        "instead so the reply threads to it. Does NOT edit or quote existing "
+        "when there is no inbound message to answer — a scheduled reminder "
+        "firing on a timer, or a proactive/unprompted post you initiate. "
+        "Whenever you are answering an inbound message — in a DM or a group, "
+        "even a quiet one-on-one DM — use telegram_reply_to_message instead "
+        "so the reply threads to it. Does NOT edit or quote existing "
         "messages (use telegram_edit_message / telegram_reply_to_message) and "
         "does NOT send images or files (use telegram_send_photo / "
         "telegram_send_memory_document). Sends immediately and cannot be "

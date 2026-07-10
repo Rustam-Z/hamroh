@@ -1,6 +1,6 @@
 """Tests for hamroh.utils.formatting — Markdown → Telegram HTML conversion."""
 
-from hamroh.utils.formatting import markdown_to_telegram_html
+from hamroh.utils.formatting import _is_well_formed, markdown_to_telegram_html
 
 
 def test_bold():
@@ -217,3 +217,31 @@ def test_single_pipe_line_not_treated_as_table():
     result = markdown_to_telegram_html("| just text |")
     assert "• just text" not in result
     assert "| just text |" in result
+
+
+def test_crossed_bold_italic_stays_valid_html():
+    """Overlapping `**a *b** c*` must not emit crossed `<b>`/`<i>` tags.
+
+    Telegram rejects crossed tags with a 400, dropping the whole message; the
+    converter falls back to leaving the emphasis markers as literal text.
+    """
+    result = markdown_to_telegram_html("**a *b** c*")
+    assert _is_well_formed(result), f"crossed tags leaked: {result}"
+    assert "<b>a <i>b</b>" not in result
+
+
+def test_triple_star_unbalanced_stays_valid_html():
+    result = markdown_to_telegram_html("***bold italic** oops*")
+    assert _is_well_formed(result), f"crossed tags leaked: {result}"
+
+
+def test_non_overlapping_emphasis_still_converts():
+    """The fallback must not fire for properly nested emphasis."""
+    result = markdown_to_telegram_html("**Q1** grew *20%* and `x`")
+    assert result == "<b>Q1</b> grew <i>20%</i> and <code>x</code>"
+
+
+def test_is_well_formed_detects_crossed_tags():
+    assert _is_well_formed("<b>x</b>") is True
+    assert _is_well_formed("<b>x<i>y</b>z</i>") is False
+    assert _is_well_formed("<b>unclosed") is False

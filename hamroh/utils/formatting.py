@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from html import escape
+from html.parser import HTMLParser
 
 
 def markdown_to_telegram_html(text: str) -> str:
@@ -19,7 +20,20 @@ def markdown_to_telegram_html(text: str) -> str:
     inline links, bare URLs, and blockquotes.  Unsupported constructs
     (headings, lists, images, tables, horizontal rules) are simplified to
     plain text equivalents.
+
+    Overlapping emphasis (e.g. ``**a *b** c*``) would convert to crossed
+    ``<b>``/``<i>`` tags that Telegram's HTML parser rejects with a 400,
+    dropping the whole message. When that happens we re-render with emphasis
+    left as literal text so the message still sends as valid HTML.
     """
+    rendered = _render(text, apply_emphasis=True)
+    if _is_well_formed(rendered):
+        return rendered
+    return _render(text, apply_emphasis=False)
+
+
+def _render(text: str, *, apply_emphasis: bool) -> str:
+    """Run the Markdown → Telegram HTML pipeline once."""
     # Step 1+2: stash code blocks/spans so their inner content isn't processed
     text, code_blocks = _stash_code_blocks(text)
     text, inline_codes = _stash_inline_codes(text)
@@ -31,12 +45,42 @@ def markdown_to_telegram_html(text: str) -> str:
     text = escape(text)
 
     # Steps 4-6.5: inline formatting, links, headings, blockquotes
-    text = _apply_inline_formatting(text)
+    if apply_emphasis:
+        text = _apply_inline_formatting(text)
     text = _apply_links_and_headings(text)
     text = _wrap_blockquotes(text)
 
     # Step 7: restore stashed code blocks and inline codes
     return _restore_stashed(text, code_blocks, inline_codes)
+
+
+class _TagNestingChecker(HTMLParser):
+    """Track start/end tags to detect crossed or unbalanced nesting."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[str] = []
+        self.ok = True
+
+    def handle_starttag(self, tag: str, attrs: object) -> None:
+        self.stack.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.stack or self.stack[-1] != tag:
+            self.ok = False
+        else:
+            self.stack.pop()
+
+
+def _is_well_formed(html_text: str) -> bool:
+    """True when every tag in ``html_text`` is properly closed and nested.
+
+    Telegram rejects crossed tags like ``<b>x<i>y</b>z</i>``; this guards the
+    converter's output before it reaches the Bot API.
+    """
+    checker = _TagNestingChecker()
+    checker.feed(html_text)
+    return checker.ok and not checker.stack
 
 
 def _stash_code_blocks(text: str) -> tuple[str, list[str]]:
