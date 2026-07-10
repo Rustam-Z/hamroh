@@ -43,7 +43,7 @@ async def _assert_no_reply(client: TelegramClient, convo: Conversation) -> None:
     )
 
 
-@pytest.mark.slow
+@pytest.mark.smoke
 async def test_bot_stays_silent_when_asked_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
@@ -57,7 +57,7 @@ async def test_bot_stays_silent_when_asked_dm(
     await _assert_no_reply(tester_client, dm)
 
 
-@pytest.mark.slow
+@pytest.mark.smoke
 async def test_bot_stays_silent_when_asked_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+import pytest
 from telethon import TelegramClient  # type: ignore[import-untyped]
 
 from tests.e2e.conftest import E2E_MCP_DISABLED, E2E_MCP_ENABLED
@@ -48,6 +49,7 @@ _CALL_MCP = (
 )
 
 
+@pytest.mark.smoke
 async def test_bash_enabled_runs_a_command_in_dm(
     plugins_sut: tuple[Sut, str, str],
     tester_client: TelegramClient,
@@ -83,6 +85,7 @@ async def test_bash_enabled_runs_a_command_in_dm(
     assert_reply_within(reply, MAX_TOOL_GROUP_REPLY_S, "bash command")
 
 
+@pytest.mark.smoke
 async def test_code_enabled_writes_a_file_in_dm(
     plugins_sut: tuple[Sut, str, str],
     tester_client: TelegramClient,
@@ -154,6 +157,7 @@ async def test_subagents_enabled_spawns_an_agent_in_dm(
     assert_reply_within(reply, MAX_SUBAGENT_REPLY_S, "subagent")
 
 
+@pytest.mark.smoke
 async def test_enabled_mcp_tool_answers_in_dm(
     plugins_sut: tuple[Sut, str, str],
     tester_client: TelegramClient,
@@ -184,6 +188,7 @@ async def test_enabled_mcp_tool_answers_in_dm(
     assert_reply_within(reply, MAX_TOOL_GROUP_REPLY_S, "enabled mcp echo")
 
 
+@pytest.mark.smoke
 async def test_disabled_mcp_tool_is_unreachable_in_dm(
     plugins_sut: tuple[Sut, str, str],
     tester_client: TelegramClient,

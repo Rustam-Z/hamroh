@@ -213,6 +213,7 @@ async def test_memory_search_group(
     await _assert_search_finds_seeded_fact(hamroh_sut, tester_client, group)
 
 
+@pytest.mark.smoke
 async def test_memory_read_by_full_path_dm(
     hamroh_sut: Sut,
     tester_client: TelegramClient,

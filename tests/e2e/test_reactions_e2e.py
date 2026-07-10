@@ -40,6 +40,7 @@ async def test_bot_reacts_with_emoji_dm(
     await _assert_reacts(tester_client, dm)
 
 
+@pytest.mark.smoke
 async def test_bot_reacts_with_emoji_group(
     tester_client: TelegramClient, group: Conversation
 ) -> None:

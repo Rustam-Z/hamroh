@@ -109,6 +109,7 @@ async def test_bot_replies_group(
     await _assert_prompt_reply(tester_client, group)
 
 
+@pytest.mark.smoke
 async def test_bot_sends_multiple_messages_dm(
     tester_client: TelegramClient, dm: Conversation
 ) -> None:
