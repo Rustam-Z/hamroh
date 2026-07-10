@@ -177,6 +177,13 @@ class CcSpawnSpec:
     #: :func:`hamroh.storage.skills_store.render_skills_index`; empty string means
     #: nothing is appended (no skills, or feature off).
     skills_index: str = ""
+    #: Pre-rendered memory index (path + one-line description per file),
+    #: appended to the system prompt so the agent always holds its standing
+    #: context without calling ``memory_list``. Built at startup from
+    #: :func:`hamroh.storage.memory_store.render_memory_index`; baked in at
+    #: spawn time so it reloads on every session restart. Empty string means
+    #: nothing is appended (no memory files).
+    memory_index: str = ""
     #: Exact names of the enabled hamroh MCP tools (bare, without the
     #: ``mcp__hamroh__`` prefix), used to render the "# Your tools" inventory
     #: baked into the system prompt. Populated at startup from the live tool
@@ -256,8 +263,8 @@ def render_tools_index(spec: CcSpawnSpec) -> str:
 
 def _compose_system_prompt(spec: CcSpawnSpec) -> str:
     """Assemble the system prompt: shipped base + project overlay +
-    runtime block + (optionally) the skills index + (optionally) the tools
-    inventory + (optionally) the subagent docs."""
+    runtime block + (optionally) the skills index + (optionally) the memory
+    index + (optionally) the tools inventory + (optionally) the subagent docs."""
     runtime_block = (
         "# Runtime\n\n"
         "You are running with:\n"
@@ -274,6 +281,8 @@ def _compose_system_prompt(spec: CcSpawnSpec) -> str:
     system_prompt += "\n\n" + runtime_block
     if spec.skills_index:
         system_prompt += "\n\n" + spec.skills_index
+    if spec.memory_index:
+        system_prompt += "\n\n" + spec.memory_index
     tools_index = render_tools_index(spec)
     if tools_index:
         system_prompt += "\n\n" + tools_index

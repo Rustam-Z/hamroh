@@ -376,3 +376,33 @@ class MemoryStore:
             return fallback_name, existing  # legacy file: keep all of it as body
         name = metadata.get("name")
         return (name if isinstance(name, str) and name else fallback_name), body
+
+
+def render_memory_index(store: MemoryStore) -> str:
+    """Render the memory index preloaded into the system prompt.
+
+    Lists every memory file's project path + one-line description so the
+    agent always holds its standing context (user preferences, facts,
+    ongoing projects) from the first turn — mirroring ``render_skills_index``.
+    Baked in at spawn time, so it reloads on every session restart (boot,
+    crash respawn, reset, resume) without the model having to call a tool.
+    Returns an empty string when the store is empty, so the caller can
+    append it unconditionally without leaving a dangling header.
+    """
+    files = store.list()
+    if not files:
+        return ""
+    lines = "\n".join(
+        f"- `{f.relative_path}`" + (f" — {f.description}" if f.description else "")
+        for f in files
+    )
+    return (
+        "# Your memory\n\n"
+        "Standing context you already hold — carried across restarts under "
+        "memories/. Every file's path and one-line description is listed here "
+        "so you know what you know before you reply; read a full file with "
+        'memory_read("<path>") when one is relevant. memory_list re-fetches '
+        "this same list and memory_search finds lines across files — use them "
+        "when you suspect a file changed since this session started.\n\n"
+        f"{lines}\n"
+    )

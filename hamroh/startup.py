@@ -47,7 +47,7 @@ from .scheduler.reminders_config import (
 )
 from .storage.skills_store import SkillsStore, render_skills_index
 from .storage.attachments_store import AttachmentStore
-from .storage.memory_store import MemoryStore
+from .storage.memory_store import MemoryStore, render_memory_index
 from .storage.render_store import RenderStore
 from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
@@ -441,14 +441,14 @@ async def _start_mcp_server(
 
 
 def _build_cc_spec(
-    config: Config, plugins: Plugins, mcp: McpServer, skills: SkillsStore
+    config: Config, plugins: Plugins, mcp: McpServer, stores: _Stores
 ) -> CcSpawnSpec:
     """Write the schema + MCP config to a tmpdir and assemble the spawn spec.
 
     Tool-group toggles flow through ``plugins.json`` exclusively — edit
-    the file and restart to flip. The skills index is rendered once here
-    and baked into the system prompt, so adding/removing a skill takes
-    effect on the next restart.
+    the file and restart to flip. The skills and memory indexes are rendered
+    once here and baked into the system prompt, so adding/removing a skill or
+    memory file takes effect on the next restart.
     """
     tmpdir = Path(tempfile.mkdtemp(prefix="hamroh-"))
     schema_path = tmpdir / "schema.json"
@@ -475,7 +475,8 @@ def _build_cc_spec(
         enable_bash=bool(plugins.tool_groups.get("bash", False)),
         enable_code=bool(plugins.tool_groups.get("code", False)),
         mcp_allowed_tools=tuple(mcp_allowed_tools),
-        skills_index=render_skills_index(skills),
+        skills_index=render_skills_index(stores.skills),
+        memory_index=render_memory_index(stores.memory),
         hamroh_tool_names=tuple(tool.name for tool in mcp.tools),
     )
 

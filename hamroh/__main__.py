@@ -60,7 +60,7 @@ async def _async_main() -> None:
             app.browser_manager.warm(),
             name="hamroh-browser-warm",
         )
-    spec = _build_cc_spec(config, plugins, app.mcp, stores.skills)
+    spec = _build_cc_spec(config, plugins, app.mcp, stores)
     await _start_worker(app, ctx, spec)
     await _start_engine_and_dispatcher(app, stores, chat_titles, ctx)
     log.info("hamroh is live")
