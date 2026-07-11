@@ -61,7 +61,7 @@ git push
 ```
 
 On the server this happens automatically: every deploy runs
-`./scripts/commit-memories.sh`, which commits and pushes whatever the bot
+`./scripts/commit-and-push.sh`, which commits and pushes whatever the bot
 wrote since the last deploy. If a hand edit and a bot edit ever land in the
 same file, git keeps both sides' lines (`merge=union` in `.gitattributes`)
 instead of raising a conflict.

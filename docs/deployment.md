@@ -99,7 +99,7 @@ container after editing either file: `docker compose up -d
 Every time you push changes to GitHub:
 
 ```bash
-ssh root@your-server-ip 'cd ~/hamroh && ./scripts/commit-memories.sh && git pull && docker compose up -d --build'
+ssh root@your-server-ip 'cd ~/hamroh && ./scripts/commit-and-push.sh && git pull && docker compose up -d --build'
 ```
 
 Or step by step:
@@ -107,13 +107,13 @@ Or step by step:
 ```bash
 ssh root@your-server-ip
 cd ~/hamroh
-./scripts/commit-memories.sh   # commit the bot's memories so pull isn't blocked
+./scripts/commit-and-push.sh   # commit the bot's memories so pull isn't blocked
 git pull
 docker compose up -d --build
 docker compose logs -f   # verify it started correctly
 ```
 
-`commit-memories.sh` commits and pushes anything the bot wrote to
+`commit-and-push.sh` commits and pushes anything the bot wrote to
 `memories/` since the last deploy. Without it, an uncommitted memory
 file that also changed upstream makes `git pull` abort.
 
@@ -139,7 +139,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/hamroh
-            ./scripts/commit-memories.sh
+            ./scripts/commit-and-push.sh
             git pull
             docker compose up -d --build
 ```
@@ -194,7 +194,7 @@ and the database will rebuild naturally from new messages.
 
 Memories travel with the repo: the `memories/` folder is tracked in git, so
 `git pull` / `git push` move it like any other code. Every deploy commits the
-bot's latest notes automatically via `./scripts/commit-memories.sh`; run it by
+bot's latest notes automatically via `./scripts/commit-and-push.sh`; run it by
 hand (or via cron) anytime you want the server's memories pushed sooner.
 
 If you and the bot edit the same memory file, git merges by keeping both
