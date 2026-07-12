@@ -23,6 +23,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Keep this checkout non-interactive. The server and the laptop both push, so
+# the branches diverge routinely; without pull.rebase git stops and asks how to
+# reconcile, which fails any unattended run (make update, cron).
+git config pull.rebase true
+git config rebase.autoStash true
+
+# A rebase interrupted by an earlier failed run leaves .git/rebase-merge behind
+# and makes every later git command exit 128. Clear it before doing anything.
+git rebase --abort 2>/dev/null || true
+
 git add -A
 
 if git diff --cached --quiet; then
