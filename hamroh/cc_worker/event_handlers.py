@@ -134,13 +134,24 @@ class CcEventHandlerMixin:
         err = event.get("error")
         if err:
             err_bits.append(f"error={err}")
-        if err_bits:
-            log.error(
-                "cc reported error in %s/%s event: %s",
-                etype,
-                event.get("subtype") or "-",
-                ", ".join(err_bits),
-            )
+        if not err_bits:
+            return
+        subtype = event.get("subtype") or "-"
+        # ``system/api_retry`` is CC's own transparent retry on a transient
+        # overload — the turn keeps running and recovers on its own, so it is
+        # a warning, not an error. Logging it at ERROR made self-healing
+        # retries look like failures.
+        level = (
+            log.warning
+            if etype == "system" and subtype == "api_retry"
+            else log.error
+        )
+        level(
+            "cc reported error in %s/%s event: %s",
+            etype,
+            subtype,
+            ", ".join(err_bits),
+        )
 
     def _on_system_init(self, event: dict[str, Any]) -> None:
         """Capture the CC session id and surface MCP-server init failures."""

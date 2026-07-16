@@ -35,6 +35,7 @@ from .db.reminders import (
     reset_stuck_reminders,
 )
 from .engine import Engine, EngineOptions, ErrorNotify, TypingAction
+from .helpers.owner_log_notifier import attach_owner_log_notifier
 from .storage.instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
@@ -481,24 +482,6 @@ def _build_cc_spec(
     )
 
 
-def _make_on_cc_crash(app: _App):
-    """Crash notifier: tell the owner alone that CC crashed and is
-    restarting. A crash is the operator's to handle, so the waiting chat
-    stays silent; the notice carries a link to the in-flight message."""
-
-    async def _on_cc_crash(attempt: int, backoff: float) -> None:
-        dispatcher = app.dispatcher
-        if dispatcher is None:
-            return
-        text = (
-            f"⚠️ Claude Code crashed and is restarting "
-            f"(attempt {attempt}, retrying in {backoff:.0f}s). Check logs."
-        )
-        await _notify_owner_with_refs(app, dispatcher, text)
-
-    return _on_cc_crash
-
-
 def _make_on_cc_stale_session(app: _App):
     """Stale-session notifier: drop the persisted id and tell the owner."""
 
@@ -529,36 +512,19 @@ def _make_on_cc_stale_session(app: _App):
 
 
 def _make_on_cc_giveup(app: _App):
-    """Give-up notifier: tell the owner alone that CC is down for good and
-    the operator must intervene. The waiting chat stays silent — the crash
-    is the operator's to handle."""
+    """Give-up notifier: log at ERROR that CC is down for good and the
+    operator must intervene. The root ``OwnerLogHandler`` turns that into an
+    owner DM (with a link to the in-flight message) — the one path every
+    error takes. The waiting chat stays silent; the crash is the operator's."""
 
     async def _on_cc_giveup(crash_count: int) -> None:
-        dispatcher = app.dispatcher
-        if dispatcher is None:
-            return
-        text = (
-            f"⚠️ Shutting down — Claude Code failed {crash_count} times. "
-            "The operator needs to intervene."
+        log.error(
+            "⚠️ Shutting down — Claude Code failed %d times. "
+            "The operator needs to intervene.",
+            crash_count,
         )
-        await _notify_owner_with_refs(app, dispatcher, text)
 
     return _on_cc_giveup
-
-
-async def _notify_owner_with_refs(
-    app: _App, dispatcher: TelegramDispatcher, text: str
-) -> None:
-    """Send ``text`` to the owner, appending a link to each message that was
-    in flight when CC died so the owner can jump straight to it and resend.
-    Best-effort: a failed send is logged, not raised."""
-    targets = app.engine._turn.reply_targets if app.engine is not None else {}
-    refs = format_message_refs(targets)
-    body = f"{text}\n\n{refs}" if refs else text
-    try:
-        await dispatcher.bot.send_message(chat_id=app.config.owner_id, text=body)
-    except Exception:
-        log.warning("owner crash notify failed", exc_info=True)
 
 
 def _build_dispatcher_and_engine(
@@ -609,6 +575,30 @@ def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
             log.warning("error notify failed for chat %s: %s", chat_id, exc)
 
     return _error_notify
+
+
+def _attach_owner_log_notifier(app: _App) -> None:
+    """Forward every ERROR-and-above log record to the owner as a DM.
+
+    One handler on the root logger covers the whole codebase, so operator
+    problems reach the owner in chat instead of only ``docker logs``. The
+    send failure path logs at WARNING (below ERROR), so it can't loop back
+    into another owner DM.
+    """
+    assert app.dispatcher is not None
+    owner_id = app.config.owner_id
+    notify = _make_error_notify(app.dispatcher)
+
+    async def _send_to_owner(text: str) -> None:
+        await notify(owner_id, text)
+
+    def _cause_link() -> str:
+        targets = app.engine._turn.reply_targets if app.engine is not None else {}
+        return format_message_refs(targets)
+
+    attach_owner_log_notifier(
+        _send_to_owner, asyncio.get_running_loop(), link_provider=_cause_link
+    )
 
 
 async def _run_until_stopped(app: _App) -> None:

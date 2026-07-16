@@ -11,6 +11,7 @@ Classified transient failures (rate-limit & co.) keep the session.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -154,18 +155,25 @@ async def test_policy_error_notifies_and_resets_session(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_transient_error_notifies_without_reset(tmp_path: Path) -> None:
+async def test_transient_error_alerts_owner_without_reset(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     # Given a turn that failed with a classified transient error
     engine, worker, sent = _engine(tmp_path)
     result = TurnResult(api_error="API Error: 429 rate limit exceeded")
 
     # When the engine processes the turn result
-    await engine._handle_turn_result(result)
+    with caplog.at_level(logging.ERROR):
+        await engine._handle_turn_result(result)
 
-    # Then the targeted message is sent and the session SURVIVES —
-    # a reset would lose context without fixing anything
-    assert len(sent) == 1, "exactly one notification per failed turn"
-    assert "rate-limited" in sent[0][1], "targeted rate-limit message expected"
+    # Then the owner is alerted via the log (delivered by the OwnerLogHandler)
+    # and NOT the waiting chat, and the session SURVIVES — a reset would lose
+    # context without fixing anything
+    assert sent == [], "a classified operator error must not reach the chat"
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("rate-limited" in msg for msg in errors), (
+        "the owner must be alerted with the targeted rate-limit message"
+    )
     worker.reset_session.assert_not_awaited()
     assert not engine._is_processing.is_set(), "engine must be idle again"
 

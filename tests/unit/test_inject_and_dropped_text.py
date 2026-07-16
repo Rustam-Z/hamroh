@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -92,21 +93,21 @@ async def test_dropped_text_delivers_answer_to_user() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dropped_text_operator_failure_goes_to_owner() -> None:
+async def test_dropped_text_operator_failure_alerts_owner(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """When the dropped text is actually an operator failure (e.g. a bad
-    model name), the classified guidance goes to the OWNER alone — the
-    sender can do nothing about it — with the diagnostic snippet and a link
-    to the triggering message, not echoed to the chat as if it were a real
-    answer."""
+    model name), the classified guidance is logged at ERROR — the root
+    OwnerLogHandler DMs it to the owner alone with the diagnostic snippet —
+    rather than echoed to the chat as if it were a real answer. The owner
+    delivery + message link are covered in ``test_owner_log_notifier``."""
     worker = FakeWorker()
-    notifications: list[tuple[int, str]] = []
+    delivered: list[tuple[int, str]] = []
 
-    async def capture_notify(chat_id: int, text: str) -> None:
-        notifications.append((chat_id, text))
+    async def capture(chat_id: int, text: str) -> None:
+        delivered.append((chat_id, text))
 
-    eng = Engine(
-        worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture_notify)
-    )
+    eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture))
     await eng.start()
     try:
         # Given a turn whose only text block is a model-access error
@@ -118,23 +119,19 @@ async def test_dropped_text_operator_failure_goes_to_owner() -> None:
         )
 
         # When that turn is reported as dropped text
-        worker.feed(
-            TurnResult(
-                text_blocks=[diagnostic],
-                control=None,
-                dropped_text=True,
+        with caplog.at_level(logging.ERROR):
+            worker.feed(
+                TurnResult(text_blocks=[diagnostic], control=None, dropped_text=True)
             )
-        )
-        await asyncio.sleep(0.05)
+            await asyncio.sleep(0.05)
 
-        # Then exactly one notice goes to the owner (id 0), never the chat,
-        # carrying the guidance, the diagnostic snippet, and the message id.
-        assert len(notifications) == 1, "exactly one owner-facing notification"
-        chat_id, text = notifications[0]
-        assert chat_id == _CFG.owner_id, "operator failures go to the owner alone"
-        assert "hamroh_model" in text.lower(), "classified guidance shown to owner"
-        assert "claude-sonnet-4-7" in text, "diagnostic snippet preserved for owner"
-        assert "message 1" in text, "notice must name the triggering message"
+        # Then nothing is echoed to the chat, and the owner is alerted with
+        # the classified guidance and the diagnostic snippet.
+        assert delivered == [], "operator failures must not reach the chat"
+        errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+        assert len(errors) == 1, f"exactly one owner alert, got {errors}"
+        assert "hamroh_model" in errors[0].lower(), "classified guidance shown to owner"
+        assert "claude-sonnet-4-7" in errors[0], "diagnostic snippet preserved"
         assert len(worker.sent) == 1, "no retry turn kicked into the worker"
     finally:
         await eng.stop()

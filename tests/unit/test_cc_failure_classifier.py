@@ -86,25 +86,16 @@ def test_rate_limit_pattern() -> None:
     assert result.kind == "rate-limit"
 
 
-def test_operator_failures_are_owner_audience() -> None:
-    """Auth, quota and bad-model failures are the operator's to fix, so
-    they route to the owner alone — the sender can do nothing about them."""
+def test_operator_failures_are_classified_by_kind() -> None:
+    """Auth, quota and bad-model failures each map to their own kind so the
+    owner-facing message names the right operator fix."""
     for line, kind in (
         ("Error: Unauthorized", "auth"),
         ("You have exhausted your API quota", "quota"),
         ("There's an issue with the selected model", "model-access"),
     ):
         result = classify_cc_failure([line])
-        assert result is not None and result.kind == kind
-        assert result.audience == "owner", f"{kind} must be owner-routed"
-
-
-def test_rate_limit_is_chat_audience() -> None:
-    """A transient rate-limit is something the sender can just resend past,
-    so its notice belongs in the chat, not the owner's inbox."""
-    result = classify_cc_failure(["429 Too Many Requests — rate limit exceeded"])
-    assert result is not None and result.kind == "rate-limit"
-    assert result.audience == "chat"
+        assert result is not None and result.kind == kind, f"{line} → {kind}"
 
 
 def test_first_match_wins_across_multiple_sources() -> None:

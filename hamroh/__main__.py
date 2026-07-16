@@ -21,10 +21,10 @@ from .scheduler.reminder_scheduler import _reminder_loop
 from .startup import (
     _acquire_instance_lock,
     _App,
+    _attach_owner_log_notifier,
     _bootstrap_access,
     _build_cc_spec,
     _build_dispatcher_and_engine,
-    _make_on_cc_crash,
     _make_on_cc_giveup,
     _make_on_cc_stale_session,
     _open_db_and_stores,
@@ -75,7 +75,6 @@ async def _start_worker(app: _App, ctx, spec) -> None:
         app.config,
         WorkerHooks(
             heartbeat=ctx.heartbeat,
-            on_crash=_make_on_cc_crash(app),
             on_giveup=_make_on_cc_giveup(app),
             on_stale_session=_make_on_cc_stale_session(app),
         ),
@@ -97,6 +96,7 @@ async def _start_engine_and_dispatcher(app: _App, stores, chat_titles, ctx) -> N
     app.dispatcher.engine = app.engine
     ctx.bot = app.dispatcher.bot
     ctx.on_chat_replied = app.engine.notify_chat_replied  # stops typing on reply
+    _attach_owner_log_notifier(app)  # errors now DM the owner, not just the log
     await app.dispatcher.start()
 
 
