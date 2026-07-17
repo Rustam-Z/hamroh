@@ -155,35 +155,12 @@ def _finish_readiness(cfg: E2EConfig, sut: Sut) -> None:
         ) from exc
 
 
-def _mount_ns_id(pid: int) -> object | None:
-    """Identity of ``pid``'s mount namespace, or ``None`` if unreadable.
-
-    ``(st_dev, st_ino)`` of ``/proc/<pid>/ns/mnt`` uniquely identifies a
-    mount namespace on this host — two PIDs share it iff they're in the
-    same container's mount namespace, *even when the PID namespace itself
-    is shared host-wide* (``--pid=host``). A vanished process or missing
-    permission yields ``None`` (never matches, never gets killed).
-    """
-    try:
-        st = os.stat(f"/proc/{pid}/ns/mnt")
-    except OSError:
-        return None
-    return (st.st_dev, st.st_ino)
-
-
 def _stray_sut_pids() -> list[int]:
     """PIDs of leftover ``python -m hamroh`` processes (this one excluded).
 
     The bot's argv ends with ``hamroh`` so we anchor the pattern there; the
     ``claude`` child only *contains* "hamroh" (inside its system prompt) and
     is correctly skipped. A missing ``pgrep`` or no matches yields an empty list.
-
-    Filtered to this process's own mount namespace: on a host where several
-    peer bots run identically-named ``python -m hamroh`` processes under a
-    shared PID namespace (e.g. a supervisor container with ``--pid=host``),
-    ``pgrep`` sees every one of them — without this filter a "clear my own
-    leftovers" step would SIGTERM every sibling bot too. Only PIDs that
-    share our own container's mount namespace are ever candidates.
     """
     try:
         result = subprocess.run(
@@ -195,15 +172,7 @@ def _stray_sut_pids() -> list[int]:
     except FileNotFoundError:
         return []
     own = os.getpid()
-    own_ns = _mount_ns_id(own)
-    if own_ns is None:
-        # Can't establish our own identity — fail closed, kill nothing.
-        return []
-    return [
-        pid
-        for line in result.stdout.split()
-        if (pid := int(line)) != own and _mount_ns_id(pid) == own_ns
-    ]
+    return [pid for line in result.stdout.split() if (pid := int(line)) != own]
 
 
 def kill_stray_suts(timeout: float = 10.0) -> None:
