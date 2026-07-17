@@ -38,7 +38,7 @@ def _engine(tmp_path: Path) -> tuple[Engine, MagicMock, list[tuple[int, str]]]:
     worker = MagicMock(reset_session=AsyncMock(), send=AsyncMock())
     sent: list[tuple[int, str]] = []
 
-    async def notify(chat_id: int, text: str) -> None:
+    async def notify(chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
         sent.append((chat_id, text))
 
     engine = Engine(

@@ -566,11 +566,22 @@ def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
 
 
 def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
-    """Wire the engine's bypass error-notify to ``bot.send_message``."""
+    """Wire the engine's bypass error-notify to ``bot.send_message``.
 
-    async def _error_notify(chat_id: int, text: str) -> None:
+    ``reply_to_message_id`` is optional — pass a message id to thread the
+    send (used by dropped-text delivery so recovered replies still land
+    in-thread), or ``None`` for a plain send (owner alerts, generic error
+    notices). ``None`` mirrors omitting the kwarg entirely, so behaviour for
+    existing 2-arg callers is unchanged.
+    """
+
+    async def _error_notify(
+        chat_id: int, text: str, reply_to_message_id: int | None = None
+    ) -> None:
         try:
-            await dispatcher.bot.send_message(chat_id=chat_id, text=text)
+            await dispatcher.bot.send_message(
+                chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id
+            )
         except Exception as exc:
             log.warning("error notify failed for chat %s: %s", chat_id, exc)
 
@@ -598,7 +609,7 @@ def _attach_owner_log_notifier(app: _App) -> None:
             await bot.send_message(chat_id=owner_id, text=text, parse_mode="HTML")
         except Exception as exc:
             log.warning("owner HTML DM failed, retrying as plain text: %s", exc)
-            await notify(owner_id, to_plain_text(text))
+            await notify(owner_id, to_plain_text(text), None)
 
     def _cause_link() -> str:
         if app.engine is None or app.dispatcher is None:
