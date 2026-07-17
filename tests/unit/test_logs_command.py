@@ -79,6 +79,27 @@ async def test_logs_replies_with_recent_lines_to_owner(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_logs_are_sent_as_escaped_html_blockquote(tmp_path: Path) -> None:
+    # Given a log line containing an HTML-significant character
+    cfg = _cfg(tmp_path)
+    _write_log(cfg, "boom in <module>")
+    dispatcher = _dispatcher(cfg)
+    update = _update(OWNER)
+
+    # When the owner runs /logs
+    await dispatcher._cmd_logs(update, _ctx())
+
+    # Then each reply is an HTML blockquote with the log text escaped
+    call = update.effective_message.reply_text.await_args_list[0]
+    text = call.args[0]
+    assert text.startswith("<blockquote>") and text.endswith("</blockquote>"), (
+        "log output must be wrapped as a quote, matching owner error DMs"
+    )
+    assert call.kwargs["parse_mode"] == "HTML", "the quote must render as HTML"
+    assert "&lt;module&gt;" in text, "a < in a log line must be escaped, not raw markup"
+
+
+@pytest.mark.asyncio
 async def test_logs_is_silent_for_non_owner(tmp_path: Path) -> None:
     # Given a populated log file
     cfg = _cfg(tmp_path)

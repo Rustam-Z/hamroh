@@ -9,6 +9,7 @@ the handlers read the dispatcher's ``config``, ``db``, ``engine``, and
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 import signal
@@ -20,7 +21,7 @@ from telegram.ext import Application, ContextTypes
 from ..access import load_access, save_access
 from ..config import Config
 from ..db.database import Database
-from ..utils.formatting import chunk_text
+from ..utils.formatting import TELEGRAM_TEXT_LIMIT, chunk_text
 from ..helpers.logging_setup import format_log_line, tail_log
 
 if TYPE_CHECKING:
@@ -33,6 +34,9 @@ log = logging.getLogger("hamroh.telegram_io")
 #: ``/logs`` tail size: default and hard cap.
 _LOGS_DEFAULT = 50
 _LOGS_MAX = 200
+
+#: Chars the ``<blockquote>…</blockquote>`` wrapper adds to each /logs chunk.
+_BLOCKQUOTE_OVERHEAD = len("<blockquote></blockquote>")
 
 
 def _parse_log_count(args: list[str] | None) -> int:
@@ -273,7 +277,10 @@ class OwnerCommandsMixin:
         """Tail the structured JSON log file — owner-only.
 
         ``/logs`` shows the last 50 lines; ``/logs N`` the last N (capped at
-        200). Output is chunked to fit Telegram's per-message limit.
+        200). Each chunk is sent as an HTML blockquote — the same quoted style
+        as owner error DMs — so the log stands apart from the surrounding chat.
+        The text is escaped and chunked with headroom for the tags so a ``<``
+        in a log line can't break the markup.
         """
         if not self._is_owner(update):
             return
@@ -282,9 +289,10 @@ class OwnerCommandsMixin:
         if not raw_lines:
             await self._reply(update, "no logs yet")
             return
-        body = "\n".join(format_log_line(line) for line in raw_lines)
-        for chunk in chunk_text(body):
-            await self._reply(update, chunk)
+        body = html.escape("\n".join(format_log_line(line) for line in raw_lines))
+        for chunk in chunk_text(body, TELEGRAM_TEXT_LIMIT - _BLOCKQUOTE_OVERHEAD):
+            quoted = f"<blockquote>{chunk}</blockquote>"
+            await self._reply(update, quoted, parse_mode="HTML")
 
     async def _cmd_usage(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Relay Claude Code's own ``/usage`` output verbatim — owner-only.
