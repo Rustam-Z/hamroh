@@ -46,7 +46,6 @@ kills it. Every reply is a real `claude` turn, so runs cost tokens and time.
 - **/pause · /resume** — muting stops replies; resume answers again, session stays warm
 - **/health · /audit · /access** — read-only status readouts
 - **/allow · /deny · /policy** — mutate `access.json` (state restored after each test)
-- **/usage** — relays Claude Code's own usage report
 - **/reset_session** — respawns Claude; history + memories survive
 - **/kill** — the bot process exits (runs against a throwaway bot)
 

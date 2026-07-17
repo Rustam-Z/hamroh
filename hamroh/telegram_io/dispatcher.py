@@ -2,7 +2,7 @@
 
 The handlers do the absolute minimum: persist the incoming update to SQLite
 and enqueue it on the engine. They never call any LLM directly. Owner-only
-slash commands (``/kill``, ``/health``, ``/audit``, ``/usage``, ``/access``,
+slash commands (``/kill``, ``/health``, ``/audit``, ``/access``,
 ``/allow``, ``/deny``, ``/policy``) are intercepted before the engine sees
 the message and silently no-op for non-owners.
 """
@@ -182,7 +182,6 @@ class TelegramDispatcher(OwnerCommandsMixin):
         self.application.add_handler(CommandHandler("health", self._cmd_health))
         self.application.add_handler(CommandHandler("audit", self._cmd_audit))
         self.application.add_handler(CommandHandler("logs", self._cmd_logs))
-        self.application.add_handler(CommandHandler("usage", self._cmd_usage))
         # Owner-only access management commands.
         self.application.add_handler(CommandHandler("allow", self._cmd_allow))
         self.application.add_handler(CommandHandler("deny", self._cmd_deny))

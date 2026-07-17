@@ -100,6 +100,47 @@ async def test_logs_are_sent_as_escaped_html_blockquote(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_bare_logs_truncates_to_last_4096_chars_in_one_quote(
+    tmp_path: Path,
+) -> None:
+    # Given far more log content than fits in a single Telegram message
+    cfg = _cfg(tmp_path)
+    _write_log(cfg, *[f"event number {i}" for i in range(400)])
+    dispatcher = _dispatcher(cfg)
+    update = _update(OWNER)
+
+    # When the owner runs bare /logs
+    await dispatcher._cmd_logs(update, _ctx())
+
+    # Then exactly one blockquote is sent and it fits the 4096-char limit
+    replies = update.effective_message.reply_text.await_args_list
+    assert len(replies) == 1, "bare /logs must send a single message, not chunks"
+    text = replies[0].args[0]
+    assert len(text) <= 4096, "the single quote must respect Telegram's char limit"
+    assert "event number 399" in text, "the most recent line must be included"
+    assert "event number 0" not in text, "old lines beyond 4096 chars are truncated"
+
+
+@pytest.mark.asyncio
+async def test_logs_with_argument_keeps_line_based_chunking(tmp_path: Path) -> None:
+    # Given a log file and an explicit small line count
+    cfg = _cfg(tmp_path)
+    _write_log(cfg, *[f"event {i}" for i in range(10)])
+    dispatcher = _dispatcher(cfg)
+    update = _update(OWNER)
+
+    # When the owner runs /logs 3
+    await dispatcher._cmd_logs(update, _ctx(args=["3"]))
+
+    # Then only the last 3 lines are shown, matching the old structure
+    sent = "\n".join(
+        call.args[0] for call in update.effective_message.reply_text.await_args_list
+    )
+    assert "event 9" in sent and "event 7" in sent, "the last 3 lines must appear"
+    assert "event 6" not in sent, "lines beyond the requested count must be excluded"
+
+
+@pytest.mark.asyncio
 async def test_logs_is_silent_for_non_owner(tmp_path: Path) -> None:
     # Given a populated log file
     cfg = _cfg(tmp_path)

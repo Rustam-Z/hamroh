@@ -8,7 +8,6 @@ the handlers read the dispatcher's ``config``, ``db``, ``engine``, and
 
 from __future__ import annotations
 
-import asyncio
 import html
 import logging
 import os
@@ -48,6 +47,16 @@ def _parse_log_count(args: list[str] | None) -> int:
     except ValueError:
         return _LOGS_DEFAULT
     return max(1, min(count, _LOGS_MAX))
+
+
+def _tail_chars(text: str, limit: int) -> str:
+    """Keep the last ``limit`` chars of ``text``, dropping any partial leading
+    line so the result starts cleanly and never mid-HTML-entity."""
+    if len(text) <= limit:
+        return text
+    clipped = text[-limit:]
+    newline = clipped.find("\n")
+    return clipped[newline + 1 :] if newline != -1 else clipped
 
 
 def _parse_allow_args(args: list[str] | None, *, verb: str) -> tuple[str, int] | str:
@@ -276,57 +285,27 @@ class OwnerCommandsMixin:
     async def _cmd_logs(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Tail the structured JSON log file — owner-only.
 
-        ``/logs`` shows the last 50 lines; ``/logs N`` the last N (capped at
-        200). Each chunk is sent as an HTML blockquote — the same quoted style
-        as owner error DMs — so the log stands apart from the surrounding chat.
-        The text is escaped and chunked with headroom for the tags so a ``<``
-        in a log line can't break the markup.
+        Bare ``/logs`` sends the last 4096 chars (Telegram's per-message limit)
+        as a single HTML blockquote. ``/logs N`` keeps the line-based view: the
+        last N lines (capped at 200), chunked across as many blockquotes as
+        needed. Each chunk uses the same quoted style as owner error DMs so the
+        log stands apart from the chat; the text is escaped so a ``<`` in a log
+        line can't break the markup.
         """
         if not self._is_owner(update):
             return
-        count = _parse_log_count(ctx.args)
-        raw_lines = tail_log(self.config.log_dir / "hamroh.log", count)
+        line_count = _parse_log_count(ctx.args) if ctx.args else _LOGS_MAX
+        raw_lines = tail_log(self.config.log_dir / "hamroh.log", line_count)
         if not raw_lines:
             await self._reply(update, "no logs yet")
             return
         body = html.escape("\n".join(format_log_line(line) for line in raw_lines))
-        for chunk in chunk_text(body, TELEGRAM_TEXT_LIMIT - _BLOCKQUOTE_OVERHEAD):
-            quoted = f"<blockquote>{chunk}</blockquote>"
-            await self._reply(update, quoted, parse_mode="HTML")
-
-    async def _cmd_usage(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        """Relay Claude Code's own ``/usage`` output verbatim — owner-only.
-
-        Runs a short-lived headless ``claude --print /usage`` and forwards its
-        text, so the bot shows exactly what Claude Code reports (subscription
-        session and weekly rate limits with reset times).
-        """
-        if not self._is_owner(update):
-            return
-        output = await self._fetch_claude_usage()
-        await self._reply(update, output)
-
-    async def _fetch_claude_usage(self) -> str:
-        """Run ``claude --print /usage`` and return its text, or an error line."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                self.config.claude_code_bin,
-                "--print",
-                "/usage",
-                "--output-format",
-                "text",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        budget = TELEGRAM_TEXT_LIMIT - _BLOCKQUOTE_OVERHEAD
+        chunks = chunk_text(body, budget) if ctx.args else [_tail_chars(body, budget)]
+        for chunk in chunks:
+            await self._reply(
+                update, f"<blockquote>{chunk}</blockquote>", parse_mode="HTML"
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except (asyncio.TimeoutError, OSError) as exc:
-            log.warning("/usage subprocess failed: %s", exc)
-            return f"Could not read Claude Code usage: {exc}"
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace").strip()[:200]
-            log.warning("/usage exited %s: %s", proc.returncode, err)
-            return f"Could not read Claude Code usage (exit {proc.returncode})."
-        return stdout.decode(errors="replace").strip() or "(no usage output)"
 
     # ------------------------------------------------------------------
     # Access management commands (owner-only)
@@ -400,7 +379,6 @@ class OwnerCommandsMixin:
             BotCommand("health", "quick health readout"),
             BotCommand("audit", "recent failures, backups, memory footprint"),
             BotCommand("logs", "tail recent log lines: /logs [N]"),
-            BotCommand("usage", "Claude Code usage and rate limits"),
             BotCommand("access", "show access policy"),
             BotCommand("allow", "add to allowlist: /allow <user|group> <id>"),
             BotCommand("deny", "remove from allowlist: /deny <user|group> <id>"),

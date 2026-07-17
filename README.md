@@ -16,7 +16,7 @@ You own everything: the memory files, the skill playbooks, the MCP connections, 
 
 Out of the box it:
 - Stays in your group chat and joins conversations when it has something useful to say
-- Runs *self-reflection* (on by default) — reviews what it got wrong and proposes new rules for your approval
+- Runs *self-reflection* — reviews what it got wrong and proposes new rules for your approval
 - Executes scheduled research tasks in background subagents while staying responsive to messages
 - Remembers context across restarts via file-based memory
 
@@ -70,25 +70,6 @@ uv sync --extra dev
 uv run python -m hamroh                                               # run, wait for "hamroh is live"
 uv run python -m hamroh.scripts.trace --follow                        # [optional] monitor, Claude Code I/O logs
 ```
-
-## Use cases
-
-Use as a **personal assistant.** Set reminders, take notes, ask it to research things and report back. It remembers context across restarts. Every day it reviews its own behavior and proposes improvements — you approve, it learns.
-
-Use as a **team companion.** Drop it in a group chat. It tracks conversations, answers questions, and stays quiet when it has nothing useful to add. Ask it to summarize the last 24 hours, create a GitHub issue from a bug you described, or watch a repo and notify the team when something ships. Or review code, or write code, or create a bug report.
-
-Use as an **automation layer.** Wire up MCPs and schedule agents to do real work while you sleep — fetch news, check deploys, monitor competitors, draft reports. Results land in Telegram when they're ready.
-
-### Try saying
-
-- *"hey reschedule the meeting, and message X"*
-- *"read the last 24h of our team chat and DM me a 5-bullet status."* — uses `reminder_set` + `database_query` + `telegram_send_message`. Ships on by default.
-- *"pull the top AI stories from Hacker News and send me a briefing"* — `WebFetch` + `WebSearch`, default tools.
-- *"watch https://example.com/changelog hourly and ping me the moment a new entry mentions 'pricing'."* — cron `reminder_set` + `WebFetch`. Diff state lives in a memory file.
-- *"review this week's git log on `~/code/myapp` and open a PR if the README has drifted."* — needs `tool_groups.bash: true` and `tool_groups.code: true` in `plugins.json`, plus `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for the PR.
-- *"every morning at 7am, DM me my Jira tickets due this week, grouped by project."* — needs the `mcp-atlassian` entry enabled (Atlassian's remote MCP, OAuth set up on the host).
-
-<!-- TODO: 30s GIF demo for the README header once we have one -->
 
 ## Configuration
 

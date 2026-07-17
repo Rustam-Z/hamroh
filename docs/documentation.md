@@ -286,10 +286,8 @@ hides the `/` menu from non-owners.
                              rate-limit notices, current turn duration,
                              queued messages
 /audit                       Recent tool failures, backups, memory footprint
-/logs [N]                    Tail the JSON log file (last 50 lines, or N)
-/usage                       Relay Claude Code's own usage report (subscription
-                             session + weekly rate limits, with reset times) by
-                             shelling out to `claude --print /usage`
+/logs [N]                    Tail the JSON log file (last 4096 chars, or last
+                             N lines when N is given)
 ```
 
 Application logs are written two ways: human-readable text to the console

@@ -141,7 +141,6 @@ first chunk (`assert_reply_within`); other observables are timed with
 | adds an emoji reaction | 5s | reactions |
 | an owner command acks (`/pause`, `/resume`, `/health`, `/audit`, `/access`, `/allow`, `/deny`, `/policy`) | 5s | pause, owner-readouts, access-management |
 | every reply to a 3-message burst | 10s | burst |
-| `/usage` (shells out to `claude --print /usage`) | 10s | usage |
 | the bot process exits after `/kill` | 10s | kill |
 | writes/reads a memory file | 15s | memory |
 | reads a skill / schedules a reminder | 30s | skills, reminders (scheduled) |
