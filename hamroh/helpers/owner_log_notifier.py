@@ -37,6 +37,10 @@ _MAX_LEN = 1200
 #: so one repeating fault can't flood the owner's DMs.
 _COOLDOWN_S = 60.0
 
+#: Telegram rejects messages longer than 4096 chars. The final DM (body plus
+#: any quoted-message refs) is capped safely under that so it always delivers.
+_TELEGRAM_LIMIT = 4000
+
 
 class OwnerLogHandler(logging.Handler):
     """Root-logger handler that DMs the owner on ERROR-and-above records."""
@@ -74,11 +78,19 @@ class OwnerLogHandler(logging.Handler):
             pass  # loop already closed during shutdown — nothing to do
 
     def _with_cause_link(self, text: str) -> str:
-        """Append a deep link to the message that caused this error, if any."""
+        """Append a reference to the message that caused this error, if any.
+
+        The reference is a deep link for supergroups or the sender plus quoted
+        text for DMs, so it can be long — the result is capped at Telegram's
+        send limit so an oversized quote can't block delivery.
+        """
         if self._link_provider is None:
             return text
         refs = self._link_provider()
-        return f"{text}\n\n{refs}" if refs else text
+        combined = f"{text}\n\n{refs}" if refs else text
+        if len(combined) > _TELEGRAM_LIMIT:
+            combined = combined[: _TELEGRAM_LIMIT - 1].rstrip() + "…"
+        return combined
 
     def _is_duplicate(self, text: str, now: float) -> bool:
         """True if ``text`` was already sent within the cooldown window.

@@ -593,8 +593,10 @@ def _attach_owner_log_notifier(app: _App) -> None:
         await notify(owner_id, text)
 
     def _cause_link() -> str:
-        targets = app.engine._turn.reply_targets if app.engine is not None else {}
-        return format_message_refs(targets)
+        if app.engine is None or app.dispatcher is None:
+            return ""
+        targets = app.engine._turn.reply_targets
+        return format_message_refs(targets, app.dispatcher.chat_titles)
 
     attach_owner_log_notifier(
         _send_to_owner, asyncio.get_running_loop(), link_provider=_cause_link

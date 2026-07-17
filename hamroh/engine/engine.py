@@ -120,10 +120,11 @@ class TurnState:
     #: reminders (``message_id == 0``) are excluded so reminder-only
     #: turns produce no turn-start typing indicator.
     active_chats: set[int] = field(default_factory=set)
-    #: Per active chat, the most recent human ``message_id`` in the batch.
-    #: The error-notify path links back to these so a failed turn threads its
-    #: notice under the message that kicked it instead of floating free.
-    reply_targets: dict[int, int] = field(default_factory=dict)
+    #: Per active chat, the most recent human message in the batch. The
+    #: error-notify path references these so a failed turn points the owner at
+    #: the message that kicked it — a deep link for supergroups, or the sender
+    #: and quoted text for DMs — instead of floating free.
+    reply_targets: dict[int, ChatMessage] = field(default_factory=dict)
     #: ``time.monotonic()`` when the current turn started in ``_kick``.
     #: Read by :attr:`Engine.turn_elapsed_s` for the /health readout.
     started_monotonic: float = 0.0
@@ -345,7 +346,7 @@ class Engine(TypingIndicatorMixin):
         # reminder-only turns.
         self._turn.active_chats = {m.chat_id for m in batch if m.message_id > 0}
         self._turn.reply_targets = {
-            m.chat_id: m.message_id for m in batch if m.message_id > 0
+            m.chat_id: m for m in batch if m.message_id > 0
         }
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []

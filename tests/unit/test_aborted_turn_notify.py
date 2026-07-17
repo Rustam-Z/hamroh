@@ -15,6 +15,7 @@ Regression guard for issue #75 (silent ~10 min stall after an aborted turn).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -24,6 +25,7 @@ from hamroh.cc_worker import TurnResult
 from hamroh.config import Config
 from hamroh.engine import Engine, EngineOptions
 from hamroh.engine.engine import TurnCallbacks
+from hamroh.models import ChatMessage
 
 #: A supergroup (``-100…``) so the notice can carry a shareable message link.
 WAITING_CHAT = -1001234567890
@@ -46,7 +48,16 @@ def _engine(tmp_path: Path) -> tuple[Engine, MagicMock, list[tuple[int, str]]]:
     )
     engine._is_processing.set()
     engine._turn.active_chats = {WAITING_CHAT}
-    engine._turn.reply_targets = {WAITING_CHAT: TRIGGER_MSG}
+    engine._turn.reply_targets = {
+        WAITING_CHAT: ChatMessage(
+            chat_id=WAITING_CHAT,
+            message_id=TRIGGER_MSG,
+            user_id=1,
+            direction="in",
+            timestamp=datetime(2026, 7, 17, tzinfo=timezone.utc),
+            text="render this",
+        )
+    }
     return engine, worker, sent
 
 
