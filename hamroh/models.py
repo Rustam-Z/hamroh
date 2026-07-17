@@ -53,15 +53,14 @@ class ControlAction(BaseModel):
     an intentional silence from an accidental one and re-engage only on the
     latter. ``reason`` is required on both terminal actions — a forcing
     function so the model doesn't drop conversations reflexively. For
-    ``sleep`` / ``heartbeat`` (provisional, non-terminal) it's optional.
+    ``heartbeat`` (provisional, non-terminal) it's optional.
     """
 
-    action: Literal["stop", "skip", "sleep", "heartbeat"]
+    action: Literal["stop", "skip", "heartbeat"]
     reason: str | None = Field(
         default=None,
         description="Terse justification (≤10 words). Required on stop/skip.",
     )
-    sleep_ms: int | None = None
 
     @model_validator(mode="after")
     def _reason_required_on_terminal(self) -> "ControlAction":

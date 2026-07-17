@@ -21,7 +21,7 @@ CONTROL_ACTION_SCHEMA: dict = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["stop", "skip", "sleep", "heartbeat"],
+            "enum": ["stop", "skip", "heartbeat"],
             "description": (
                 "What to do after this turn. 'stop' is valid only after a "
                 "reply was delivered via telegram_send_message or telegram_reply_to_message — "
@@ -36,12 +36,8 @@ CONTROL_ACTION_SCHEMA: dict = {
             "description": (
                 "Terse justification (≤10 words). "
                 "REQUIRED non-empty when action is 'stop' or 'skip'. "
-                "Optional (may be omitted) when action is 'sleep' or 'heartbeat'."
+                "Optional (may be omitted) when action is 'heartbeat'."
             ),
-        },
-        "sleep_ms": {
-            "type": ["integer", "null"],
-            "description": "Only used when action == 'sleep'.",
         },
     },
     "required": ["action"],

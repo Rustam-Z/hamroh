@@ -755,8 +755,8 @@ pile up fast enough to trip it in normal use.
 `@model_validator`), `prompts/system.md § Tool discipline`.
 
 Every turn ends with a `StructuredOutput` tool call whose input
-matches `CONTROL_ACTION_SCHEMA`: `{action, reason?, sleep_ms?}` with
-`action ∈ {stop, sleep, heartbeat}`. The interesting design choice is
+matches `CONTROL_ACTION_SCHEMA`: `{action, reason?}` with
+`action ∈ {stop, skip, heartbeat}`. The interesting design choice is
 **how the `reason` requirement is split between the schema and the
 client.**
 
@@ -770,12 +770,12 @@ audit trail — "why didn't the bot reply to m1470?" is answered by
 reading `[CC.done] action=stop reason=…` in the transcript log
 (`transcript.py:182`).
 
-**Why it's required only on `stop`.** `sleep` and `heartbeat` are
+**Why it's required only on the terminal actions.** `heartbeat` is
 provisional, not terminal — there's no conversation to drop, so the
 forcing-function argument doesn't apply. Requiring a reason on every
 turn would burn tokens on noise without buying any safety. The
 `@model_validator(mode="after")` on `ControlAction` enforces non-empty
-reason iff `action == "stop"`; sleep/heartbeat may omit the field
+reason iff `action ∈ {stop, skip}`; heartbeat may omit the field
 entirely.
 
 **What `heartbeat` actually does (non-terminal).** When a turn ends
@@ -814,12 +814,3 @@ prompt nudge "≤10 words, terse" the realised cost is ~10–15 tokens
 per stop. `REASON_MAX_LENGTH` is exposed as a module constant so the
 cap and the schema can never drift.
 
-**`heartbeat` is currently a no-op.** The enum value exists in the
-schema and validator, but the engine's control loop branches only on
-`sleep` (for `sleep_ms`) and treats everything else — including
-`heartbeat` — as turn-complete (`engine.py:794-822`). Wiring real
-"continue in same turn" semantics would require injecting a
-zero-content user envelope back to CC's stdin, plus loop guards.
-Deferred until a concrete need surfaces; today the model reaches
-`StructuredOutput` only when it thinks it's done, and "I need
-another step" is naturally handled by calling another tool instead.

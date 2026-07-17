@@ -24,7 +24,7 @@ Telegram ──▶ dispatcher ──▶ engine ──▶ cc_worker ──▶ [Cl
 
 1. telegram_io/dispatcher.py (466) — the front door. Receives every inbound Telegram update, applies access control (access.py) and rate limiting (rate_limiter.py), persists it, and calls engine.submit().
 2. engine/engine.py (816) — the heart of hamroh (its own docstring says so). It debounces messages (batches bursts within ~1s), formats them as XML, ships them to the worker, and runs the control loop that decides what to do when a
-turn ends. This is the file we just edited — _handle_turn_result, the stop/sleep/heartbeat actions, dropped-text, silent-stop all live here.
+turn ends. This is the file we just edited — _handle_turn_result, the stop/skip/heartbeat actions, dropped-text, silent-stop all live here.
 3. cc_worker/worker.py (727) — owns the Claude Code subprocess: spawns it, writes user messages to its stdin as stream-JSON, reads its stdout events, supervises crashes/respawns. send() (which our nudge uses) is here.
   - cc_worker/event_handlers.py (308) — parses Claude's stdout stream into a TurnResult (text blocks, tool calls, the StructuredOutput action). USER_VISIBLE_TOOLS and the dropped_text logic live here.
   - cc_worker/spec.py (399) — builds the exact CLI command + --system-prompt for spawning Claude Code (_compose_system_prompt).
@@ -37,7 +37,7 @@ logs, that was this file.
 
 ## Supporting subsystems
 
-- models.py — shared data types: ChatMessage, ControlAction (the stop/sleep/heartbeat you just learned).
+- models.py — shared data types: ChatMessage, ControlAction (the stop/skip/heartbeat you just learned).
 - db/ — SQLite layer: database.py (migrations), messages.py (message + tool-call persistence), reminders.py.
 - storage/ — file-backed stores: memory.py (the bot's long-term memory files), attachments.py.
 - reminder_scheduler.py + reminders_config.py — the cron-like loop that fires scheduled reminders into the engine.

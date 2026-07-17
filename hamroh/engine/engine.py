@@ -347,9 +347,7 @@ class Engine(TypingIndicatorMixin):
         # the turn-start typing indicator should be silent for
         # reminder-only turns.
         self._turn.active_chats = {m.chat_id for m in batch if m.message_id > 0}
-        self._turn.reply_targets = {
-            m.chat_id: m for m in batch if m.message_id > 0
-        }
+        self._turn.reply_targets = {m.chat_id: m for m in batch if m.message_id > 0}
         self._turn.started_monotonic = time.monotonic()
         self._turn.consumed_keys = []
         self._turn.heartbeat_count = 0
@@ -777,7 +775,7 @@ class Engine(TypingIndicatorMixin):
             and (not result.user_visible_action)
         ):
             log.warning("silent stop persisted after re-engagement — user got no reply")
-        await self._finish_clean_turn(result, action)
+        await self._finish_clean_turn(result)
 
     def _is_silent_stop(self, result: "TurnResult", action: str | None) -> bool:
         """A ``stop`` that delivered nothing while someone awaited a reply.
@@ -856,12 +854,10 @@ class Engine(TypingIndicatorMixin):
         if batch:
             await self._mark_consumed(batch)
 
-    async def _finish_clean_turn(
-        self, result: "TurnResult", action: str | None
-    ) -> None:
+    async def _finish_clean_turn(self, result: "TurnResult") -> None:
         """Wrap up a successful turn: commit its messages as trusted, fire
-        callbacks, honour a ``sleep`` action, and kick any messages that
-        queued up while the turn was running.
+        callbacks, and kick any messages that queued up while the turn was
+        running.
 
         The commit is the ONLY place rows gain ``processed=1`` — failed,
         aborted, and crashed turns never reach it, so their messages stay
@@ -871,9 +867,6 @@ class Engine(TypingIndicatorMixin):
             await mark_messages_processed(self._db, self._turn.consumed_keys)
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
-
-        if action == "sleep" and result.control and result.control.sleep_ms:
-            await asyncio.sleep(result.control.sleep_ms / 1000)
 
         async with self._lock:
             has_pending = bool(self._pending)

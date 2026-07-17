@@ -234,8 +234,7 @@ def test_control_action_requires_reason_only_on_terminal_actions() -> None:
     ControlAction(action="stop", reason="replied to user")
     ControlAction(action="skip", reason="group chatter, not for me")
 
-    # sleep / heartbeat without reason → ok (provisional, not terminal)
-    ControlAction(action="sleep")
+    # heartbeat without reason → ok (provisional, not terminal)
     ControlAction(action="heartbeat")
 
 
@@ -423,7 +422,7 @@ def test_structured_output_parsed_from_tool_use(spec: CcSpawnSpec, cfg: Config) 
     assert queued.dropped_text is False
 
 
-def test_structured_output_sleep_action(spec: CcSpawnSpec, cfg: Config) -> None:
+def test_structured_output_heartbeat_action(spec: CcSpawnSpec, cfg: Config) -> None:
     worker = CcWorker(spec, cfg)
     worker._current_turn = TurnResult()
     worker._handle_event(
@@ -434,11 +433,10 @@ def test_structured_output_sleep_action(spec: CcSpawnSpec, cfg: Config) -> None:
                     {
                         "type": "tool_use",
                         "name": "StructuredOutput",
-                        "id": "toolu_sleep_001",
+                        "id": "toolu_heartbeat_001",
                         "input": {
-                            "action": "sleep",
-                            "reason": "Nothing to do for a while.",
-                            "sleep_ms": 30000,
+                            "action": "heartbeat",
+                            "reason": "Still working on the digest.",
                         },
                     }
                 ]
@@ -446,8 +444,7 @@ def test_structured_output_sleep_action(spec: CcSpawnSpec, cfg: Config) -> None:
         }
     )
     assert worker._current_turn.control is not None
-    assert worker._current_turn.control.action == "sleep"
-    assert worker._current_turn.control.sleep_ms == 30000
+    assert worker._current_turn.control.action == "heartbeat"
 
 
 def test_on_giveup_fires_before_crashloop_raises(

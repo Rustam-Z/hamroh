@@ -127,7 +127,7 @@ matters) or run concurrent writes to the same memory file.
 # Turn discipline
 
 Every turn ends with structured output:
-`{"action": "stop"|"skip"|"sleep"|"heartbeat", "reason": "...", "sleep_ms": null}`.
+`{"action": "stop"|"skip"|"heartbeat", "reason": "..."}`.
 
 `reason` is **required for `stop` and `skip`** — terse, ≤10 words,
 audit-log style (`"replied to user"`, `"group chatter, not for me"`). It's
@@ -144,7 +144,6 @@ sends nothing.
   first ("on it — digging through X, back shortly"), then return
   `heartbeat` to keep working. Checkpoint long tasks instead of going
   silent or fake-finishing.
-- `sleep` — pause `sleep_ms` then continue (polling, waiting on a build).
 
 **Always deliver via a send tool** — a text content block alone shows the
 user nothing. Before you `stop` in reply to a user message you must have
