@@ -34,10 +34,12 @@ from .format import format_messages_with_context
 from .restore import build_restored_context
 from .typing_indicator import TypingAction, TypingIndicatorMixin, TypingState
 
-#: Async callable shape: ``await error_notify(chat_id, text)`` sends a
-#: message directly via the bot, bypassing the MCP layer (which is
-#: dead when we need this). Engine doesn't import telegram.
-ErrorNotify = Callable[[int, str], Awaitable[None]]
+#: Async callable shape: ``await error_notify(chat_id, text, reply_to_message_id)``
+#: sends a message directly via the bot, bypassing the MCP layer (which is
+#: dead when we need this). Engine doesn't import telegram. The third
+#: argument is optional (implementations default it to ``None``) — pass a
+#: message id to thread the send as a reply, or ``None`` for a plain send.
+ErrorNotify = Callable[[int, str, "int | None"], Awaitable[None]]
 
 #: A per-turn success/failure hook: ``await hook()``. Aliased so signatures
 #: stay readable (and so naive comma-counting param linters don't trip on the
@@ -457,7 +459,7 @@ class Engine(TypingIndicatorMixin):
             return
         for chat_id in self._turn.active_chats:
             try:
-                await self._error_notify(chat_id, text)
+                await self._error_notify(chat_id, text, None)
                 log.info("sent error notification to chat %s", chat_id)
             except Exception as exc:
                 log.warning("failed to send error notification to %s: %s", chat_id, exc)
@@ -503,14 +505,23 @@ class Engine(TypingIndicatorMixin):
         telegram) and the shared ``chunk_text`` splitter so a long answer
         breaks at paragraph boundaries instead of hitting Telegram's
         length limit. Best-effort: a failed send is logged, not raised.
+
+        Threaded when possible: if ``reply_targets`` has the human message
+        that kicked this turn for a chat, every chunk replies to it instead
+        of landing as a free-floating message — the model never got to call
+        ``telegram_reply_to_message`` itself (that's the whole reason this
+        path exists), so this is the engine doing that threading on its
+        behalf rather than losing it.
         """
         if self._error_notify is None or not text.strip():
             return
         chunks = chunk_text(text)
         for chat_id in self._turn.active_chats:
+            target = self._turn.reply_targets.get(chat_id)
+            reply_to_message_id = target.message_id if target is not None else None
             for chunk in chunks:
                 try:
-                    await self._error_notify(chat_id, chunk)
+                    await self._error_notify(chat_id, chunk, reply_to_message_id)
                 except Exception as exc:
                     log.warning("dropped-text delivery to %s failed: %s", chat_id, exc)
             log.info(

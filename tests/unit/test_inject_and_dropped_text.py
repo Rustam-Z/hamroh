@@ -57,12 +57,15 @@ class FakeWorker:
 async def test_dropped_text_delivers_answer_to_user() -> None:
     """A turn that ends with a text block but no ``telegram_send_message`` must
     deliver that text to the waiting chat — not burn a retry turn nagging
-    the model to resend."""
+    the model to resend. It must also thread to the message that kicked the
+    turn — the model never got to call ``telegram_reply_to_message`` itself
+    (that's the whole reason this recovery path exists), so the engine
+    threads on its behalf instead of the recovered text landing unthreaded."""
     worker = FakeWorker()
-    delivered: list[tuple[int, str]] = []
+    delivered: list[tuple[int, str, int | None]] = []
 
-    async def capture(chat_id: int, text: str) -> None:
-        delivered.append((chat_id, text))
+    async def capture(chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
+        delivered.append((chat_id, text, reply_to_message_id))
 
     eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture))
     await eng.start()
@@ -82,10 +85,11 @@ async def test_dropped_text_delivers_answer_to_user() -> None:
         )
         await asyncio.sleep(0.05)
 
-        # Then the text is delivered as-is to the waiting chat, and no
-        # corrective message is re-sent to the worker (no wasted retry).
-        assert delivered == [(-100, "Here is your answer")], (
-            f"answer was not delivered to the user; got {delivered!r}"
+        # Then the text is delivered as-is to the waiting chat, threaded to
+        # the message that kicked the turn (mid=1), and no corrective
+        # message is re-sent to the worker (no wasted retry).
+        assert delivered == [(-100, "Here is your answer", 1)], (
+            f"answer was not delivered in-thread to the user; got {delivered!r}"
         )
         assert len(worker.sent) == 1, "a retry turn was wrongly kicked into the worker"
     finally:
@@ -104,7 +108,7 @@ async def test_dropped_text_operator_failure_alerts_owner(
     worker = FakeWorker()
     delivered: list[tuple[int, str]] = []
 
-    async def capture(chat_id: int, text: str) -> None:
+    async def capture(chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
         delivered.append((chat_id, text))
 
     eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture))
@@ -270,7 +274,7 @@ async def test_skip_with_dropped_text_discards_narration() -> None:
     worker = FakeWorker()
     delivered: list[tuple[int, str]] = []
 
-    async def capture(chat_id: int, text: str) -> None:
+    async def capture(chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
         delivered.append((chat_id, text))
 
     eng = Engine(worker, _CFG, EngineOptions(debounce_ms=20, error_notify=capture))
