@@ -4,10 +4,15 @@ Every reference names the message and its sender and quotes the text, so the
 owner sees what happened and to whom. Group messages additionally name the
 group (title + id) and carry a shareable ``t.me/c`` deep link; DMs and basic
 groups have no such link, so the quoted text is all the owner gets to click.
+
+The refs are HTML — the owner DM is sent with Telegram's HTML parse mode so the
+quoted message renders as a real blockquote — so every dynamic field (sender,
+group title, message text) is escaped to keep stray ``<`` from breaking markup.
 """
 
 from __future__ import annotations
 
+import html
 from typing import Mapping
 
 from ..models import ChatMessage
@@ -31,15 +36,15 @@ def message_link(chat_id: int, message_id: int) -> str | None:
 
 
 def message_ref(msg: ChatMessage, chat_title: str | None = None) -> str:
-    """A reference to the message that triggered an error: which message, who
-    sent it, and the quoted text. Group messages also name the group (title +
-    id) and, for supergroups, a shareable deep link the owner can click."""
-    header = f"• message {msg.message_id} from {_sender_label(msg)}"
+    """An HTML reference to the message that triggered an error: which message,
+    who sent it, and the quoted text. Group messages also name the group (title
+    + id) and, for supergroups, a shareable deep link the owner can click."""
+    header = f"• message {msg.message_id} from {html.escape(_sender_label(msg))}"
     if msg.chat_id < 0:  # any group; DMs are positive and need no group label
-        header += f" in {_group_label(msg.chat_id, chat_title)}"
+        header += f" in {html.escape(_group_label(msg.chat_id, chat_title))}"
     link = message_link(msg.chat_id, msg.message_id)
     if link is not None:
-        header += f": {link}"
+        header += f": {html.escape(link)}"
     return f"{header}\n{_quote(msg.text)}"
 
 
@@ -69,9 +74,9 @@ def _group_label(chat_id: int, title: str | None) -> str:
 
 
 def _quote(text: str) -> str:
-    """The message text as a blockquote, capped at :data:`_MAX_QUOTE` chars."""
+    """The message text as an HTML blockquote, capped at :data:`_MAX_QUOTE`
+    chars (truncated before escaping, so no entity is split)."""
     text = text.strip()
     if len(text) > _MAX_QUOTE:
         text = text[:_MAX_QUOTE].rstrip() + "…"
-    lines = text.splitlines() or ["(no text)"]
-    return "\n".join(f"> {line}" for line in lines)
+    return f"<blockquote>{html.escape(text) or '(no text)'}</blockquote>"

@@ -12,7 +12,11 @@ import logging
 
 import pytest
 
-from hamroh.helpers.owner_log_notifier import OwnerLogHandler, _format_record
+from hamroh.helpers.owner_log_notifier import (
+    OwnerLogHandler,
+    _format_record,
+    to_plain_text,
+)
 
 
 def _record(level: int, msg: str, *, created: float = 1000.0) -> logging.LogRecord:
@@ -170,3 +174,23 @@ def test_format_record_marks_level_and_truncates() -> None:
     # Then it is flagged critical and kept DM-sized
     assert text.startswith("🔴"), "critical records must be visually distinct"
     assert len(text) <= 1201, "owner DMs must be truncated, not a log dump"
+
+
+def test_format_record_escapes_html_in_the_log_text() -> None:
+    # Given a traceback-like message with HTML-significant characters
+    text = _format_record(_record(logging.ERROR, "boom in <module> a & b"))
+
+    # Then they are escaped so HTML parse mode can't choke on the log text
+    assert "&lt;module&gt;" in text, "angle brackets in logs must be escaped"
+    assert "a &amp; b" in text, "ampersands in logs must be escaped"
+
+
+def test_to_plain_text_strips_tags_and_unescapes() -> None:
+    # Given an HTML owner DM with a blockquote and escaped entities
+    html_dm = "⚠️ ERROR\n<blockquote>a &lt; b &amp; c</blockquote>"
+
+    # When it is reduced to the plain-text fallback
+    plain = to_plain_text(html_dm)
+
+    # Then tags are gone and entities are restored to their literal characters
+    assert plain == "⚠️ ERROR\na < b & c", "fallback must be readable plain text"

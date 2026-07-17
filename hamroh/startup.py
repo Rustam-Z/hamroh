@@ -35,7 +35,7 @@ from .db.reminders import (
     reset_stuck_reminders,
 )
 from .engine import Engine, EngineOptions, ErrorNotify, TypingAction
-from .helpers.owner_log_notifier import attach_owner_log_notifier
+from .helpers.owner_log_notifier import attach_owner_log_notifier, to_plain_text
 from .storage.instructions_store import InstructionsStore
 from .mcp_server import McpServer
 from .plugins import Plugins, load_plugins
@@ -587,10 +587,18 @@ def _attach_owner_log_notifier(app: _App) -> None:
     """
     assert app.dispatcher is not None
     owner_id = app.config.owner_id
+    bot = app.dispatcher.bot
     notify = _make_error_notify(app.dispatcher)
 
     async def _send_to_owner(text: str) -> None:
-        await notify(owner_id, text)
+        # HTML so the quoted causing-message renders as a real blockquote. If
+        # Telegram rejects the markup (e.g. the length cap cut a tag), deliver
+        # the same content as plain text so the error is never swallowed.
+        try:
+            await bot.send_message(chat_id=owner_id, text=text, parse_mode="HTML")
+        except Exception as exc:
+            log.warning("owner HTML DM failed, retrying as plain text: %s", exc)
+            await notify(owner_id, to_plain_text(text))
 
     def _cause_link() -> str:
         if app.engine is None or app.dispatcher is None:

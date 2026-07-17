@@ -43,13 +43,14 @@ def test_group_ref_names_group_sender_link_and_quotes_the_text() -> None:
     ref = message_ref(msg, chat_title="Ops Room")
 
     # Then it carries the message id, sender, group name + id, deep link, and
-    # the quoted text — the same detail a DM gets, plus the group and link
+    # the quoted text in an HTML blockquote — the same detail a DM gets, plus
+    # the group and link
     assert "6382" in ref, "the message id must be named"
     assert "@alice" in ref, "the sender must be shown"
-    assert '"Ops Room"' in ref, "the group name must be shown"
+    assert "Ops Room" in ref, "the group name must be shown"
     assert "-1001234567890" in ref, "the group id must be shown"
     assert "https://t.me/c/1234567890/6382" in ref, "the deep link must be included"
-    assert "> deploy is down" in ref, "the message text must be quoted"
+    assert "<blockquote>deploy is down</blockquote>" in ref, "the text must be quoted"
 
 
 def test_group_ref_without_a_known_title_still_shows_the_group_id() -> None:
@@ -73,7 +74,17 @@ def test_dm_ref_names_the_sender_and_quotes_the_text() -> None:
     assert "42" in ref, "the message id must still be named"
     assert "587272213" in ref, "the sender id must be shown"
     assert "@alice" in ref, "the username must be shown"
-    assert "> fix the deploy please" in ref, "the message text must be quoted"
+    assert "<blockquote>fix the deploy please</blockquote>" in ref, "text is quoted"
+
+
+def test_quote_escapes_html_so_markup_cannot_break() -> None:
+    # Given a DM whose text contains HTML-significant characters
+    ref = message_ref(_msg(1, 5, text="a < b && c > d"))
+
+    # Then they are escaped inside the blockquote, not left as raw markup
+    assert "<blockquote>a &lt; b &amp;&amp; c &gt; d</blockquote>" in ref, (
+        "message text must be HTML-escaped so a stray < can't break the send"
+    )
 
 
 def test_dm_ref_falls_back_to_first_name_then_unknown() -> None:

@@ -20,7 +20,9 @@ cannot cascade into more owner DMs.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import re
 from typing import Awaitable, Callable
 
 #: Async function that delivers one text message to the owner.
@@ -116,14 +118,26 @@ class OwnerLogHandler(logging.Handler):
 
 
 def _format_record(record: logging.LogRecord) -> str:
-    """Render a log record as a short, owner-facing message."""
+    """Render a log record as a short, HTML-escaped owner-facing message.
+
+    The DM is sent with Telegram's HTML parse mode so the quoted message that
+    caused the error renders as a real blockquote. The log text is escaped
+    (after truncation, so no entity is split) so a ``<`` in a traceback can't
+    be mistaken for markup and break the send.
+    """
     icon = "🔴" if record.levelno >= logging.CRITICAL else "⚠️"
     body = f"{icon} {record.levelname} — {record.name}\n{record.getMessage()}"
     if record.exc_info:
         body = f"{body}\n\n{logging.Formatter().formatException(record.exc_info)}"
     if len(body) > _MAX_LEN:
         body = body[:_MAX_LEN].rstrip() + "…"
-    return body
+    return html.escape(body)
+
+
+def to_plain_text(html_text: str) -> str:
+    """Strip HTML tags and unescape entities. The plain-text fallback when a
+    formatted owner DM fails to send as HTML (e.g. the length cap cut a tag)."""
+    return html.unescape(re.sub(r"<[^>]+>", "", html_text))
 
 
 def attach_owner_log_notifier(
