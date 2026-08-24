@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .cc_worker import CcWorker, WorkerHooks
+from .cc_worker import WorkerHooks
 from .config import Config
 from .scheduler.reminder_scheduler import _reminder_loop
 from .startup import (
@@ -23,8 +23,8 @@ from .startup import (
     _App,
     _attach_owner_log_notifier,
     _bootstrap_access,
-    _build_cc_spec,
     _build_dispatcher_and_engine,
+    create_worker,
     _make_on_cc_giveup,
     _make_on_cc_stale_session,
     _open_db_and_stores,
@@ -60,19 +60,22 @@ async def _async_main() -> None:
             app.browser_manager.warm(),
             name="hamroh-browser-warm",
         )
-    spec = _build_cc_spec(config, plugins, app.mcp, stores)
-    await _start_worker(app, ctx, spec)
+    await _start_worker(app, ctx, plugins, stores)
     await _start_engine_and_dispatcher(app, stores, chat_titles, ctx)
-    log.info("hamroh is live")
+    log.info("hamroh is live (engine=%s)", config.engine)
 
     await _run_until_stopped(app)
 
 
-async def _start_worker(app: _App, ctx, spec) -> None:
-    """Spawn the CC worker wired to the supervisor callbacks, then supervise."""
-    app.worker = CcWorker(
-        spec,
+async def _start_worker(app: _App, ctx, plugins, stores) -> None:
+    """Build the worker for the configured engine (Claude or agy), wire the
+    supervisor callbacks, then supervise."""
+    assert app.mcp is not None  # set before this runs; satisfies the type checker
+    app.worker = create_worker(
         app.config,
+        plugins,
+        app.mcp,
+        stores,
         WorkerHooks(
             heartbeat=ctx.heartbeat,
             on_giveup=_make_on_cc_giveup(app),

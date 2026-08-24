@@ -2,9 +2,13 @@
 
 The suite is opt-in. ``pytest_collection_modifyitems`` tags every test in
 this directory with the ``e2e`` marker and skips the lot whenever the
-``claude`` CLI or the ``E2E_*`` credentials are absent — mirroring
-``tests/test_mcp_integration.py``. So a plain ``pytest`` stays green for
-contributors who have not set up a test bot.
+``E2E_*`` credentials are absent — mirroring ``tests/test_mcp_integration.py``.
+So a plain ``pytest`` stays green for contributors who have not set up a
+test bot.
+
+Every test runs once per engine (``claude`` and ``agy``) via the session-scoped
+``engine`` param; pass ``--engine claude`` / ``--engine agy`` to run just one.
+An engine whose CLI is missing is skipped on its own, without blocking the other.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from telethon.sessions import StringSession  # type: ignore[import-untyped]
 
 from tests.e2e.support.config import (
     E2EConfig,
+    ENGINES,
     group_ids,
     load_env,
     missing_env,
@@ -46,28 +51,79 @@ _HERE = Path(__file__).parent
 load_env()  # pick up the root .env before the skip-gate runs
 
 
-def _skip_reason() -> str | None:
-    """Why the e2e suite can't run here, or ``None`` if it can."""
-    if shutil.which("claude") is None:
-        return "claude CLI not on PATH"
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """``--engine`` picks which agent engine(s) the e2e suite runs against.
+
+    Default ``both`` runs every test twice — once on Claude, once on agy — so a
+    plain ``pytest tests/e2e`` proves both engines. Pass ``--engine=agy`` (or
+    ``claude``) to run only one.
+    """
+    parser.addoption(
+        "--engine",
+        action="store",
+        default="both",
+        choices=("claude", "agy", "both"),
+        help="agent engine(s) to run e2e against: claude, agy, or both (default).",
+    )
+
+
+def _selected_engines(config: pytest.Config) -> tuple[str, ...]:
+    choice = config.getoption("--engine")
+    return ENGINES if choice == "both" else (choice,)
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Parametrize every SUT-backed test by ``engine`` (session-scoped, so the
+    whole suite runs on one engine's bot, then the other's)."""
+    if "engine" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "engine", _selected_engines(metafunc.config), scope="session"
+        )
+
+
+def _base_skip_reason() -> str | None:
+    """Why NO engine can run here (missing Telegram creds), or ``None``."""
     missing = missing_env()
-    if missing:
-        return f"missing env: {', '.join(missing)}"
+    return f"missing env: {', '.join(missing)}" if missing else None
+
+
+def _engine_unavailable(engine: str) -> str | None:
+    """Why ``engine`` can't run here, or ``None``. Claude needs the ``claude``
+    CLI; agy needs ``agy`` on PATH plus a signed-in ``~/.gemini`` (no token env
+    var)."""
+    binary = "agy" if engine == "agy" else "claude"
+    if shutil.which(binary) is None:
+        return f"{binary} CLI not on PATH"
+    if engine == "agy" and not (Path.home() / ".gemini" / "oauth_creds.json").exists():
+        return "agy not signed in (run `agy` once; ~/.gemini/oauth_creds.json missing)"
     return None
 
 
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Mark this directory's tests ``e2e`` and skip them when unconfigured."""
-    reason = _skip_reason()
-    skip = pytest.mark.skip(reason=f"e2e: {reason}") if reason else None
+    """Mark this directory's tests ``e2e`` and skip per (engine) parametrization:
+    all skip if Telegram creds are missing; a given engine's items skip if that
+    engine is unavailable; ``claude_only`` items skip on the agy engine."""
+    base = _base_skip_reason()
     for item in items:
         if _HERE not in Path(str(item.fspath)).parents:
             continue
         item.add_marker(pytest.mark.e2e)
-        if skip is not None:
-            item.add_marker(skip)
+        if base is not None:
+            item.add_marker(pytest.mark.skip(reason=f"e2e: {base}"))
+            continue
+        callspec = getattr(item, "callspec", None)
+        engine = callspec.params.get("engine") if callspec is not None else None
+        if engine is None:
+            continue
+        unavailable = _engine_unavailable(engine)
+        if unavailable is not None:
+            item.add_marker(pytest.mark.skip(reason=f"e2e[{engine}]: {unavailable}"))
+        elif engine == "agy" and item.get_closest_marker("claude_only"):
+            item.add_marker(
+                pytest.mark.skip(reason="claude_only: N/A on the agy engine")
+            )
 
 
 @pytest.fixture(scope="session")
@@ -145,15 +201,18 @@ def e2e_created_skill() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def hamroh_sut(
+    engine: str,
     _free_bot_token: None,
     e2e_config: E2EConfig,
     e2e_skills: tuple[str, str],
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Sut]:
-    """Launch one bot subprocess for the whole session (boot is expensive;
-    tests isolate via unique sentinels, not restarts). Depends on ``e2e_skills``
-    so the throwaway probe skills exist before the bot bakes its skills index."""
-    sut = launch_sut(e2e_config, tmp_path_factory.mktemp("e2e-data"))
+    """Launch one bot subprocess per engine for the whole session (boot is
+    expensive; tests isolate via unique sentinels, not restarts). ``engine`` is
+    session-parametrized, so pytest runs the suite on the claude bot, then the
+    agy bot. Depends on ``e2e_skills`` so the throwaway probe skills exist before
+    the bot bakes its skills index."""
+    sut = launch_sut(e2e_config, tmp_path_factory.mktemp("e2e-data"), engine)
     try:
         yield sut
     finally:
@@ -162,7 +221,7 @@ def hamroh_sut(
 
 @pytest.fixture
 def killable_sut(
-    hamroh_sut: Sut, e2e_config: E2EConfig, tmp_path: Path
+    hamroh_sut: Sut, e2e_config: E2EConfig, tmp_path: Path, engine: str
 ) -> Iterator[Sut]:
     """A throwaway bot the test is free to /kill, with the shared SUT revived after.
 
@@ -173,12 +232,12 @@ def killable_sut(
     session fixture's reference valid, so later tests reuse the revived bot.
     """
     stop_sut(hamroh_sut)
-    victim = launch_sut(e2e_config, tmp_path / "victim")
+    victim = launch_sut(e2e_config, tmp_path / "victim", engine)
     try:
         yield victim
     finally:
         stop_sut(victim)
-        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
+        revived = launch_sut(e2e_config, hamroh_sut.data_dir, engine)
         hamroh_sut.proc = revived.proc
         hamroh_sut._log = revived._log
 
@@ -188,6 +247,7 @@ def default_reminders_sut(
     hamroh_sut: Sut,
     e2e_config: E2EConfig,
     tmp_path_factory: pytest.TempPathFactory,
+    engine: str,
 ) -> Iterator[tuple[Sut, str, str]]:
     """A bot booted with a committed ``default-reminders.json`` seeded at startup.
 
@@ -230,13 +290,14 @@ def default_reminders_sut(
     sut = launch_sut(
         e2e_config,
         tmp_path_factory.mktemp("default-reminders-data"),
+        engine,
         extra_env={"HAMROH_REMINDERS_PATH": str(reminders_file)},
     )
     try:
         yield sut, token, disabled_token
     finally:
         stop_sut(sut)
-        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
+        revived = launch_sut(e2e_config, hamroh_sut.data_dir, engine)
         hamroh_sut.proc = revived.proc
         hamroh_sut._log = revived._log
 
@@ -286,6 +347,7 @@ def plugins_sut(
     hamroh_sut: Sut,
     e2e_config: E2EConfig,
     tmp_path_factory: pytest.TempPathFactory,
+    engine: str,
 ) -> Iterator[tuple[Sut, str, str]]:
     """A bot with every tool group enabled and two echo MCPs (on and off).
 
@@ -307,13 +369,14 @@ def plugins_sut(
     sut = launch_sut(
         e2e_config,
         tmp_path_factory.mktemp("plugins-data"),
+        engine,
         extra_env={"HAMROH_PLUGINS_PATH": str(plugins_file)},
     )
     try:
         yield sut, secret, disabled_secret
     finally:
         stop_sut(sut)
-        revived = launch_sut(e2e_config, hamroh_sut.data_dir)
+        revived = launch_sut(e2e_config, hamroh_sut.data_dir, engine)
         hamroh_sut.proc = revived.proc
         hamroh_sut._log = revived._log
 

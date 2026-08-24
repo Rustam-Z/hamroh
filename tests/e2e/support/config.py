@@ -65,6 +65,11 @@ MAX_RESET_REPLY_S = 15.0  # /reset_session respawns the engine (MCP-class bound)
 MAX_KILL_S = 15.0  # the bot process exits after /kill
 
 
+#: The engines the e2e suite can run against. Each test runs once per engine
+#: selected via the ``--engine`` CLI option (default: both).
+ENGINES: tuple[str, ...] = ("claude", "agy")
+
+
 def load_env() -> None:
     """Load the project root ``.env`` so a run needs no manual ``export``.
 
@@ -94,19 +99,41 @@ def group_ids() -> list[int]:
     return chats
 
 
+def _engine_model(engine: str) -> str:
+    """The model id the SUT should run for ``engine``.
+
+    The operator's ``.env`` holds a single ``HAMROH_MODEL`` — whichever engine
+    they run live — but each engine only accepts its own model ids. So the run
+    keeps the operator's model when it matches the engine and otherwise falls
+    back to a known-good id. Override per engine with ``E2E_CLAUDE_MODEL`` /
+    ``E2E_AGY_MODEL``.
+    """
+    operator = os.environ.get("HAMROH_MODEL", "")
+    if engine == "agy":
+        default = operator if operator.startswith("gemini") else "gemini-3.1-pro-high"
+        return os.environ.get("E2E_AGY_MODEL", default)
+    default = operator if operator.startswith("claude") else "claude-sonnet-4-6"
+    return os.environ.get("E2E_CLAUDE_MODEL", default)
+
+
 def child_env(
-    data_dir: Path, extra_env: dict[str, str] | None = None
+    data_dir: Path, engine: str, extra_env: dict[str, str] | None = None
 ) -> dict[str, str]:
     """The SUT's environment: the operator's ``.env`` (via ``os.environ``) and
     the root ``plugins.json`` / ``access.json``, plus an isolated data dir so
     test artifacts (db, memories, renders) never touch the real ones, plus
     ``SUT_ENV_OVERRIDES`` and any per-SUT ``extra_env`` (e.g. a squeezed status
     interval for the heartbeat bot).
+
+    ``engine`` (``"claude"`` / ``"agy"``) sets ``HAMROH_ENGINE`` for this bot
+    and pins a matching ``HAMROH_MODEL`` (see ``_engine_model``).
     """
     env = dict(os.environ)
     env.update(SUT_ENV_OVERRIDES)
     if extra_env:
         env.update(extra_env)
+    env["HAMROH_ENGINE"] = engine
+    env["HAMROH_MODEL"] = _engine_model(engine)
     env["HAMROH_DATA_DIR"] = str(data_dir)
     # memories/ defaults to the real repo folder; redirect it into the isolated
     # data dir so test writes never touch it.

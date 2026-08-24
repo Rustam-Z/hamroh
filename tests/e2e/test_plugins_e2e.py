@@ -29,6 +29,11 @@ from tests.e2e.support.models import Conversation
 from tests.e2e.support.state import cc_tool_use_names
 from tests.e2e.support.waits import wait_until
 
+# This suite asserts Claude-engine internals: it reads the cc_logs stream
+# capture (`cc_tool_use_names`) for Claude built-in tool names like Bash/Write.
+# The agy engine has neither, so its `[agy]` parametrization is auto-skipped.
+pytestmark = pytest.mark.claude_only
+
 _RUN_COMMAND = (
     "Use your Bash tool to run this exact command: cat {path}\n"
     "Then tell me exactly what the command printed."

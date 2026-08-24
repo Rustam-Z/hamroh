@@ -25,8 +25,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
+# Install Claude Code CLI (default engine, HAMROH_ENGINE=claude)
 RUN npm install -g @anthropic-ai/claude-code
+
+# Install the Antigravity CLI (`agy`) for the alternate engine
+# (HAMROH_ENGINE=agy). Deploys to ~/.local/bin.
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash
+ENV PATH="/root/.local/bin:$PATH"
 
 # Copy Python venv from builder
 COPY --from=builder /app/.venv /app/.venv

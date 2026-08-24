@@ -14,6 +14,18 @@ Telegram ──▶ dispatcher ──▶ engine ──▶ cc_worker ──▶ [Cl
                                     tools/ ──▶ back out to Telegram
 ```
 
+> **Two engines.** The "brain" is pluggable, selected by `HAMROH_ENGINE`:
+> `cc_worker` drives Claude Code (default, described in detail below), and
+> `agy_worker` drives Google's Antigravity CLI (`agy`). Both expose the same
+> worker interface and reuse the same `TurnResult`/`CrashLoop`/`WorkerHooks`, so
+> everything downstream (dispatcher, engine, mcp_server, tools) is identical.
+> The differences are only in the worker box above: `agy` runs one-shot per turn
+> (`agy --print`) rather than a persistent stream-JSON process, and delivers its
+> reply as text (via the `dropped_text` path — see below) rather than by calling
+> `telegram_send_message` itself. This doc describes the Claude engine; the agy
+> engine's design and the full comparison are in
+> [hamroh-antigravity-plan.md](hamroh-antigravity-plan.md).
+
 ## The startup / entrypoint
 
 - __main__.py (110 lines) — python -m hamroh. The readable narrative of bringing up the 4 components in order: DB → MCP server → Claude Code subprocess → engine + dispatcher. Start here.
@@ -100,6 +112,12 @@ Hamroh forbids them because in your setup a text block is a reply that silently 
 
 It's the safety net for the most damaging failure this design allows: the model types its answer as a text block and ends the turn, convinced it replied — while the user stares at a silent chat. The worker computes it in
 event_handlers.py:274: text blocks exist AND no user-visible tool was called.
+
+> **On the agy engine this is not a rare safety net — it is the normal reply
+> path.** `agy --print` returns the model's answer as plain text on stdout, so
+> `agy_worker` puts that text in `text_blocks` and sets `dropped_text=True`; the
+> engine then delivers it (converting Markdown → Telegram HTML on the way out).
+> The telegram tools stay for rich actions (reactions, photos, polls, edits).
 
 ## Why does the engine care about it differently per action:
 

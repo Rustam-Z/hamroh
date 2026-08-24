@@ -21,10 +21,13 @@ One-time setup (a test bot + a tester-account session) is in
 [`e2e/README.md`](e2e/README.md).
 
 ```bash
-uv run -m pytest -m "e2e and smoke"      # run smoke
-uv run -m pytest -m e2e                  # all e2e tests
-uv run -m pytest -m "e2e and not slow"   # skip the ~2-min reminder-fire test
+uv run -m pytest -m "e2e and smoke and not slow"                            # run smoke, in claude and agy
+uv run -m pytest tests/e2e -m "e2e and smoke and not slow" --engine claude  # only the claude engine
+uv run -m pytest tests/e2e -m "e2e and smoke and not slow" --engine agy     # only the agy engine
 ```
+
+By default every e2e test runs **twice** — once on the claude engine, once on
+agy — so a full run proves both. Use `--engine` to run just one.
 
 Each run boots one throwaway bot (test token, temp data dir), drives it, then
 kills it. Every reply is a real `claude` turn, so runs cost tokens and time.

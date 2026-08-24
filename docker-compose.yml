@@ -59,6 +59,12 @@ services:
       # any mounted credentials, so this works the same on Linux/macOS/Windows.
       - ~/.claude:/root/.claude
       - ~/.claude.json:/root/.claude.json
+      # Antigravity CLI (HAMROH_ENGINE=agy): unlike Claude, agy has no token
+      # env var — its auth lives in ~/.gemini/oauth_creds.json. Uncomment to
+      # give the container your agy login (sign in once with `agy` first).
+      # This dir also holds agy's conversation history and generated MCP config.
+      # Read-write on purpose: agy refreshes the OAuth token and writes it back.
+      - ~/.gemini:/root/.gemini
       # Access policy — single-file bind mount so /allow, /deny, /dmpolicy
       # mutations from Telegram persist across restarts. The hamroh-init
       # sidecar above guarantees the host file exists before this mount is

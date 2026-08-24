@@ -18,11 +18,11 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO
+from typing import IO, cast
 
 from .access import AccessConfig, load_access, save_access
 from .cc_worker.cc_schema import schema_json
-from .cc_worker import CcSpawnSpec, CcWorker
+from .cc_worker import CcSpawnSpec, CcWorker, WorkerHooks
 from .config import Config
 from .db.database import Database
 from .db.messages import ToolCall, fetch_unconsumed_inbound, insert_tool_call
@@ -53,6 +53,7 @@ from .storage.render_store import RenderStore
 from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession
+from .utils.formatting import markdown_to_telegram_html
 from .utils.telegram_links import format_message_refs
 
 # Pinned so log captures keyed on ``"hamroh"`` keep matching after
@@ -482,6 +483,58 @@ def _build_cc_spec(
     )
 
 
+def _build_agy_spec(config: Config, plugins: Plugins, mcp: McpServer, stores: _Stores):
+    """Assemble the ``agy`` spawn spec (used when ``config.engine == 'agy'``).
+
+    Unlike the Claude worker, agy config is file-based (``AGENTS.md``,
+    ``~/.gemini/config/mcp_config.json``, ``.agents/hooks.json``) and written by
+    the worker's ``start()``. External plugin MCP servers are not yet mapped to
+    agy's config format; they are disabled by default in ``plugins.json``.
+    """
+    from .agy_worker import AgySpawnSpec
+
+    return AgySpawnSpec(
+        binary=config.agy_bin,
+        model=config.model,
+        system_prompt_path=Path("prompts/system.md").resolve(),
+        project_prompt_path=Path("prompts/project.md").resolve(),
+        mcp_server_url=mcp.url,
+        workspace_dir=Path.cwd(),
+        conversation_id=_load_session_id(config),
+        enable_subagents=bool(plugins.tool_groups.get("subagents", False)),
+        subagents_prompt_path=Path("prompts/subagents.md").resolve(),
+        enable_bash=bool(plugins.tool_groups.get("bash", False)),
+        enable_code=bool(plugins.tool_groups.get("code", False)),
+        skills_index=render_skills_index(stores.skills),
+        memory_index=render_memory_index(stores.memory),
+        hamroh_tool_names=tuple(tool.name for tool in mcp.tools),
+    )
+
+
+def create_worker(
+    config: Config,
+    plugins: Plugins,
+    mcp: McpServer,
+    stores: _Stores,
+    hooks: WorkerHooks,
+) -> CcWorker:
+    """Build the spawn spec + worker for the configured engine.
+
+    ``HAMROH_ENGINE=agy`` selects the Antigravity backend; the default is
+    Claude Code. Both backends share the ``(spec, config, WorkerHooks)``
+    constructor and the same runtime interface, so the agy worker is cast to
+    the ``CcWorker`` type and the rest of the app stays engine-agnostic.
+    """
+    if config.engine == "agy":
+        from .agy_worker import AgyWorker
+
+        agy_worker = AgyWorker(
+            _build_agy_spec(config, plugins, mcp, stores), config, hooks
+        )
+        return cast(CcWorker, agy_worker)
+    return CcWorker(_build_cc_spec(config, plugins, mcp, stores), config, hooks)
+
+
 def _make_on_cc_stale_session(app: _App):
     """Stale-session notifier: drop the persisted id and tell the owner."""
 
@@ -578,9 +631,17 @@ def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
     async def _error_notify(
         chat_id: int, text: str, reply_to_message_id: int | None = None
     ) -> None:
+        # Convert Markdown → Telegram HTML (and HTML-escape) so replies delivered
+        # through this channel — notably every agy-engine reply, which arrives as
+        # the model's raw Markdown — render correctly instead of showing literal
+        # ``**``/``###``/backticks. The converter self-corrects malformed markup,
+        # so a bad send is impossible; plain error text passes through unchanged.
         try:
             await dispatcher.bot.send_message(
-                chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id
+                chat_id=chat_id,
+                text=markdown_to_telegram_html(text),
+                reply_to_message_id=reply_to_message_id,
+                parse_mode="HTML",
             )
         except Exception as exc:
             log.warning("error notify failed for chat %s: %s", chat_id, exc)

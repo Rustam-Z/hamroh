@@ -29,6 +29,13 @@ DigitalOcean, Contabo…) using Docker, plus a continuous-deployment
 workflow. Read this when you're moving the bot from your laptop to a
 server, or wiring it into CI.
 
+### [hamroh-antigravity-plan.md](hamroh-antigravity-plan.md)
+The Antigravity engine backend: how hamroh runs on Google's Antigravity
+CLI (`agy`) as an alternate to Claude Code, selected with `HAMROH_ENGINE=agy`.
+Covers the design, the `agy` config contract (models, auth, MCP, the
+permission hook), what carries over vs. differs, and the implementation
+status. Read this when running or working on the agy engine.
+
 ### [reference-architectures.md](reference-architectures.md)
 Notes on the two systems hamroh descends from: Anthropic's [official
 Telegram plugin](https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/telegram) and the [Rust Claudir](https://gist.github.com/nodir-t/da74c78281f203b0439609ebe5866f49). Read this *before*
@@ -42,6 +49,7 @@ already been ruled out.
 |---|---|
 | Run the bot locally | [../README.md](../README.md) |
 | Run your own customized agent (framework as a submodule) | [documentation.md](documentation.md#run-your-own-agent) |
+| Choose or set up the agent engine (Claude or Antigravity) | [hamroh-antigravity-plan.md](hamroh-antigravity-plan.md) |
 | Decide which tools to enable | [tools.md](tools.md) |
 | Understand a specific env var or security rule | [documentation.md](documentation.md) |
 | Deploy to a server | [deployment.md](deployment.md) |

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root {
+            --bg: #0e1828;
+            --card: #1a2332;
+            --card2: #141d2c;
+            --line: rgba(255, 255, 255, .06);
+            --tx: #fff;
+            --tx2: #9ba8bd;
+            --tx3: #6b7a91;
+            --blue: #3b82f6;
+            --green: #10b981;
+            --red: #ef4444;
+            --amber: #f59e0b;
+            --purple: #8b5cf6;
+            --cyan: #06b6d4;
+            --gray: #6b7280
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--tx);
+            font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            padding: 40px
+        }
+
+        .wrap {
+            max-width: 1200px;
+            margin: 0 auto
+        }
+
+        .head {
+            text-align: center;
+            margin-bottom: 30px
+        }
+
+        .head h1 {
+            font-size: 44px;
+            font-weight: 700;
+            letter-spacing: -.01em;
+            margin-bottom: 10px
+        }
+
+        .head .sub {
+            color: var(--tx2);
+            font-size: 16px;
+            max-width: 820px;
+            margin: 0 auto
+        }
+
+        .tier {
+            margin-bottom: 8px
+        }
+
+        .tier .label {
+            font-size: 11px;
+            color: var(--tx3);
+            font-weight: 700;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            margin-bottom: 10px
+        }
+
+        .grid2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 20px
+        }
+
+        .panel {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 20px 24px;
+            border-left: 4px solid var(--c, var(--blue))
+        }
+
+        .panel.blue {
+            --c: var(--blue)
+        }
+
+        .panel.green {
+            --c: var(--green)
+        }
+
+        .panel.purple {
+            --c: var(--purple)
+        }
+
+        .panel.cyan {
+            --c: var(--cyan)
+        }
+
+        .panel .ttl {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px
+        }
+
+        .panel .ttl h2 {
+            font-size: 18px;
+            font-weight: 700
+        }
+
+        .panel .ico {
+            font-size: 20px
+        }
+
+        .panel ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 7px
+        }
+
+        .panel li {
+            color: var(--tx2);
+            font-size: 13.5px;
+            display: flex;
+            gap: 8px
+        }
+
+        .panel li b {
+            color: var(--tx);
+            font-weight: 600
+        }
+
+        .pill {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            padding: 3px 9px;
+            border-radius: 8px;
+            border: 1px solid currentColor
+        }
+
+        .pill.blue {
+            color: var(--blue);
+            background: rgba(59, 130, 246, .12)
+        }
+
+        .pill.green {
+            color: var(--green);
+            background: rgba(16, 185, 129, .12)
+        }
+
+        .pill.purple {
+            color: var(--purple);
+            background: rgba(139, 92, 246, .12)
+        }
+
+        .pill.cyan {
+            color: var(--cyan);
+            background: rgba(6, 182, 212, .12)
+        }
+
+        code {
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            background: var(--card2);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 12.5px;
+            color: var(--tx)
+        }
+
+        .strip {
+            background: var(--card2);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 16px 22px;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 14px
+        }
+
+        .strip .h {
+            font-size: 11px;
+            color: var(--tx3);
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            white-space: nowrap
+        }
+
+        .strip .t {
+            color: var(--tx2);
+            font-size: 13px
+        }
+
+        .footer {
+            text-align: center;
+            color: var(--tx3);
+            font-size: 12px;
+            margin-top: 22px;
+            padding-top: 16px;
+            border-top: 1px solid var(--line)
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+
+        <div class="head">
+            <h1>hamroh</h1>
+            <div class="sub">Personal self-evolving AI assistant in Telegram running</div>
+        </div>
+
+        <div class="tier">
+            <div class="label">core agent</div>
+            <div class="grid2">
+                <div class="panel blue">
+                    <div class="ttl"><span class="ico">🧠</span>
+                        <h2>Persistent memory</h2><span class="pill blue">on by default</span>
+                    </div>
+                    <ul>
+                        <li><b>Git-tracked</b> markdown files — survives restarts</li>
+                        <li>List / search / read / write / append, addressed by path</li>
+                        <li>You can read and curate every note it keeps</li>
+                    </ul>
+                </div>
+                <div class="panel green">
+                    <div class="ttl"><span class="ico">🔁</span>
+                        <h2>Self-reflection</h2><span class="pill green">on by default</span>
+                    </div>
+                    <ul>
+                        <li>Reviews its own behavior daily</li>
+                        <li>Proposes new rules — <b>you</b> approve before anything changes</li>
+                        <li>Nothing self-modifies without explicit sign-off</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="tier">
+            <div class="label">scheduling &amp; automation</div>
+            <div class="grid2">
+                <div class="panel cyan">
+                    <div class="ttl"><span class="ico">⏰</span>
+                        <h2>Reminders &amp; watchers</h2>
+                    </div>
+                    <ul>
+                        <li>One-shot + <code>cron</code> recurring reminders</li>
+                        <li>Background research tasks while staying responsive</li>
+                        <li>"Watch this page hourly, ping me on change"</li>
+                    </ul>
+                </div>
+                <div class="panel purple">
+                    <div class="ttl"><span class="ico">🧩</span>
+                        <h2>Extensible by design</h2>
+                    </div>
+                    <ul>
+                        <li><b>Skills</b> — drop a playbook, it reads it on its own</li>
+                        <li><b>MCPs</b> — GitHub, Jira, Slack, Notion, or your own API</li>
+                        <li>Opt-in: shell, code editing, subagents (off by default)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="tier">
+            <div class="label">communication &amp; media</div>
+            <div class="grid2">
+                <div class="panel blue">
+                    <div class="ttl"><span class="ico">💬</span>
+                        <h2>Telegram-native</h2>
+                    </div>
+                    <ul>
+                        <li>Send / reply / edit / delete, reactions, polls</li>
+                        <li>Reads inbound photos (vision), PDFs, text docs</li>
+                        <li>Stays quiet in groups unless it has real value to add</li>
+                    </ul>
+                </div>
+                <div class="panel cyan">
+                    <div class="ttl"><span class="ico">🌐</span>
+                        <h2>Search, browser &amp; render</h2>
+                    </div>
+                    <ul>
+                        <li>Web search / fetch + a real headless browser</li>
+                        <li>Read-only SQL over its own chat history</li>
+                        <li>Renders HTML &amp; LaTeX to PNG for charts, diagrams, math</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">Self-hosted — your VPS, your tokens, your logs — nothing routed through a third party</div>
+
+    </div>
+</body>
+
+</html>

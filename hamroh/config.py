@@ -90,6 +90,13 @@ class Config:
     #: Name or full path of the ``claude`` program to run.
     #: Env var: ``CLAUDE_CODE_BIN`` (default ``"claude"``).
     claude_code_bin: str
+    #: Which agent engine to run: ``"claude"`` (default, Claude Code) or
+    #: ``"agy"`` (Antigravity CLI). Env var: ``HAMROH_ENGINE``.
+    engine: str
+    #: Name or full path of the ``agy`` (Antigravity CLI) program to run —
+    #: used only when ``engine == "agy"``. Env var: ``AGY_BIN`` (default
+    #: ``"agy"``).
+    agy_bin: str
     #: Folder where the bot stores its data: the database, claude logs, the
     #: access list, and the session ID. The folder is created automatically
     #: by ``ensure_dirs``. (Memory files live in ``memories/`` at the repo
@@ -258,6 +265,8 @@ class Config:
             model=_required("HAMROH_MODEL"),
             effort=_required("HAMROH_EFFORT"),
             claude_code_bin=_env("CLAUDE_CODE_BIN", "claude") or "claude",
+            engine=_env("HAMROH_ENGINE", "claude") or "claude",
+            agy_bin=_env("AGY_BIN", "agy") or "agy",
             data_dir=Path(_env("HAMROH_DATA_DIR", "./data") or "./data").resolve(),
             self_reflection_enabled=_bool("HAMROH_SELF_REFLECTION_ENABLED", True),
             self_reflection_cron=(
@@ -323,6 +332,8 @@ class Config:
             model="claude-opus-4-7",
             effort="high",
             claude_code_bin="claude",
+            engine="claude",
+            agy_bin="agy",
             data_dir=data_dir.resolve(),
             self_reflection_enabled=False,
             self_reflection_cron="0 0 * * *",

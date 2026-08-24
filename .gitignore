@@ -11,6 +11,11 @@ __pycache__/
 # Project data (runtime)
 data/
 
+# Antigravity engine (HAMROH_ENGINE=agy) generated at startup — the composed
+# system prompt. Regenerated every run; never edit or commit. Edit
+# prompts/project.md instead.
+AGENTS.md
+
 # Env
 .env
 .env.local

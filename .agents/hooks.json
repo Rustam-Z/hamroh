@@ -1,0 +1,16 @@
+{
+  "hamroh-gate": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/rustam_z/development/hamroh/.agents/agy_gate.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

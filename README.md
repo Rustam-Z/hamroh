@@ -1,39 +1,34 @@
 <p align="center">
-  <img src="assets/hamroh-logo.jpg" alt="hamroh" width="700">
-</p>
-
-<p align="center">
-  <b>hamroh</b> is a framework for running your own persistent AI companion on Telegram — one you fully own, control, can extend, one that learns from you.
+  <img src="assets/about.jpg" alt="About hamroh">
 </p>
 
 ---
 
 > **Try it live:** a running instance lives in the [@rustamz_workshop](https://t.me/rustamz_workshop) Telegram group — join and message Luna, assistant running on top of hamroh, to see it in action before you install.
 
-**hamroh** runs a persistent AI assistant in your Telegram. Not a chatbot — an agent that has memory, runs scheduled tasks, can monitor things, and can be extended with any tool you wire up.
-
-You own everything: the memory files, the skill playbooks, the MCP connections, the logs, the tokens. Nothing is routed through a third-party product. You can read every decision it made and change any rule from a DM.
+**hamroh** runs a persistent AI assistant in your Telegram, an agent that has memory, runs scheduled tasks, can monitor things, and can be extended with any MCP tools and skills you wire up.
 
 Out of the box it:
-- Stays in your group chat and joins conversations when it has something useful to say
+- Stays in DM chats, groups, and joins conversations when it has something useful to say
+- Has cutom memory protocol, skill protocol, MPC connection, tasks scheduler and reminders 
 - Runs *self-reflection* — reviews what it got wrong and proposes new rules for your approval
 - Executes scheduled research tasks in background subagents while staying responsive to messages
-- Remembers context across restarts via file-based memory
-
-It is extendable: add MCPs to connect it to anything: GitHub, Jira, email, calendar, your own APIs. Add skills, build custom tools.
-
-Runs on a laptop or small VPS.
+- It is extendable: add MCPs to connect it to anything: GitHub, Jira, email, calendar, your own APIs. Add skills, build custom tools.
 
 The goal is a [Jarvis](https://www.youtube.com/watch?v=Qav7NJIsKL4&t=2s) — an AI that lives with you, monitors what matters, and acts on your behalf. hamroh is the foundation.
 
 ## Quickstart (3 minutes)
 
+Runs on a laptop or small VPS.
+
 If you don't know where to run, I recommend [Hetzner](https://www.hetzner.com/cloud/) or [Contabo](https://contabo.com/en/vps/).
  
 Pre-requisite: 
 * Install Docker compose
-* Install the Claude Code CLI
+* Install Claude Code CLI, or Antigravity CLI
 * Generate a Claude auth token on your machine: `claude setup-token` (opens a browser; works with a Claude subscription or API). It prints a token starting with `sk-ant-oat01-…` — you'll paste it into `.env` below. This is the login for the bot on every OS (Linux, macOS, Windows).
+
+> Prefer Google's **Antigravity CLI (`agy`)** over Claude? hamroh supports it as an alternate engine — see [Engine: Claude Code or Antigravity CLI](#engine-claude-code-or-antigravity-cli) below.
 
 **Instructions for running on Linux**
 ```bash
@@ -70,6 +65,41 @@ uv sync --extra dev
 uv run python -m hamroh                                               # run, wait for "hamroh is live"
 uv run python -m hamroh.scripts.trace --follow                        # [optional] monitor, Claude Code I/O logs
 ```
+
+### Engine: Claude Code or Antigravity CLI
+
+hamroh can run on **two agent engines**, chosen with the `HAMROH_ENGINE` setting in `.env`:
+
+- **`claude`** *(default)* — Anthropic's Claude Code CLI. This is what the Quickstart above sets up.
+- **`agy`** — Google's [Antigravity CLI](https://antigravity.google). Same bot, same tools, memory, reminders, skills, and `plugins.json` — only the model runner underneath changes.
+
+**To use the Antigravity engine instead of Claude:**
+
+```bash
+# 1. Install the Antigravity CLI (the Docker image already includes it)
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+
+# 2. Sign in once — opens a browser and writes ~/.gemini/oauth_creds.json.
+#    agy has NO token env var (unlike Claude's CLAUDE_CODE_OAUTH_TOKEN); the
+#    credential is that file. On a headless VPS, sign in on your laptop then
+#    copy ~/.gemini to the server. In Docker, mount ~/.gemini (see below).
+agy
+
+# 3. In .env, switch the engine and pick an agy model:
+#   HAMROH_ENGINE=agy
+#   HAMROH_MODEL=gemini-3.1-pro-high   # run `agy models` for the exact ids
+#   Effort is part of the model id (the -high / -medium / -low suffix), so
+#   HAMROH_EFFORT does not apply; CLAUDE_CODE_OAUTH_TOKEN is ignored too.
+
+# then run as usual
+docker compose up -d --build      # or: uv run python -m hamroh
+```
+
+> **Docker + agy:** the container needs your agy login, so mount `~/.gemini` into it —
+> add `- ~/.gemini:/root/.gemini` under the `hamroh` service's `volumes:` in
+> `docker-compose.yml` (the file ships this line commented out).
+
+Everything else — access control, skills, memory, reminders, the browser and rendering tools — works identically on both engines. Design notes and the full comparison are in [docs/hamroh-antigravity-plan.md](docs/hamroh-antigravity-plan.md).
 
 ## Configuration
 

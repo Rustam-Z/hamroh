@@ -92,7 +92,17 @@ pytest -m "e2e and not slow"
 
 # one file
 pytest tests/e2e/test_memory_e2e.py -m e2e
+
+# only one engine (default runs every test on both claude and agy)
+pytest tests/e2e -m e2e --engine claude
+pytest tests/e2e -m e2e --engine agy
 ```
+
+By default every test runs twice — once against the Claude engine and once
+against agy — so a full run proves both backends. Use `--engine` to pick just
+one. An engine that is not installed (or agy not signed in) skips its own
+half without blocking the other. Tests marked `claude_only` check Claude
+internals (the `cc_logs` capture) and always skip on the agy run.
 
 Each run starts one bot subprocess for the whole session and reuses it; tests
 stay independent by using a unique token per test. Before any test runs, the

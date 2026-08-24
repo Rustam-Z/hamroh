@@ -156,6 +156,19 @@ The mode is determined by what the skill's body instructs, not by frontmatter.
 
 ## Always on — Claude Code built-ins
 
+> **Engine note.** This section describes the **Claude** engine's built-ins.
+> The hamroh tools above (the MCP surface) are identical on both engines. The
+> engine-provided built-ins are not: on the **agy** engine (`HAMROH_ENGINE=agy`)
+> the model reaches hamroh tools through a single `call_mcp_tool` dispatcher.
+> agy's own built-ins are gated by an explicit **`permissions.allow`** allowlist
+> in `~/.gemini/antigravity-cli/settings.json` (headless agy is deny-by-default:
+> anything not allowed is auto-denied). The `tool_groups` toggles below map onto
+> permission categories: `bash` → `command(*)`, `code` → `read_file(*)`,
+> `subagents` → the subagent category; `mcp(*)` (all hamroh tools) is always
+> granted. Read-only web (`search_web`/`read_url_content`) isn't permission-gated
+> by agy, so it's always on — matching Claude's `WebSearch`/`WebFetch`. Details
+> in [hamroh-antigravity-plan.md](hamroh-antigravity-plan.md).
+
 These come from Claude Code's own tool surface. They're passed via the
 **exclusive** `--tools` flag (an allow-list over the built-in set), so this
 list is exactly what the model can reach — anything not here (native

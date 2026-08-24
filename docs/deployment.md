@@ -9,7 +9,13 @@ workflow.
 - A VPS with SSH access
 - A GitHub repo with your hamroh code
 - A Telegram bot token (from @BotFather)
-- A Claude account (subscription or API) to generate a `CLAUDE_CODE_OAUTH_TOKEN`
+- An agent engine account — **one** of:
+  - a Claude account (subscription or API) for the default Claude Code engine, or
+  - a Google/Antigravity account for the `agy` engine (`HAMROH_ENGINE=agy`).
+
+hamroh runs on either engine, selected with `HAMROH_ENGINE` (`claude` — default — or
+`agy`). The steps below show Claude first; see [Engine selection](#engine-selection-claude-or-antigravity)
+for the Antigravity path.
 
 ## Initial server setup (one-time)
 
@@ -52,6 +58,42 @@ docker compose logs -f   # should see "hamroh is live"
 ```
 
 DM your bot on Telegram to confirm it replies.
+
+## Engine selection (Claude or Antigravity)
+
+hamroh's agent engine is chosen with `HAMROH_ENGINE` in `.env`:
+
+- **`claude`** *(default)* — Anthropic's Claude Code CLI, authenticated by the
+  `CLAUDE_CODE_OAUTH_TOKEN` shown above.
+- **`agy`** — Google's Antigravity CLI. The Docker image installs `agy` alongside
+  Claude, so no extra install step is needed on the server.
+
+To run the Antigravity engine on a server:
+
+```bash
+# 1. Sign in once, on a machine WITH a browser (agy has no token env var —
+#    its credential is the file ~/.gemini/oauth_creds.json, which is long-lived).
+agy                                   # opens a browser, writes ~/.gemini
+
+# 2. Copy that credential folder to the server (the container mounts it):
+scp -r ~/.gemini root@your-server-ip:~/
+
+# 3. In the server's .env:
+#      HAMROH_ENGINE=agy
+#      HAMROH_MODEL=gemini-3.1-pro-high   # run `agy models` for exact ids;
+#                                          # effort is the -high/-medium/-low suffix
+#    CLAUDE_CODE_OAUTH_TOKEN and HAMROH_EFFORT are ignored when engine=agy.
+
+# 4. In docker-compose.yml, the `- ~/.gemini:/root/.gemini` volume is already
+#    present (uncomment it if you disabled it) so the container gets the login.
+#    Keep it read-WRITE — agy refreshes the token and writes it back.
+
+docker compose up -d --build
+```
+
+> **Heads-up:** with the agy engine, hamroh writes its MCP config into
+> `~/.gemini/config/mcp_config.json` on that host. On a dedicated VPS this is
+> fine; on a shared machine it can overwrite other agy/IDE MCP servers you have.
 
 ### Enabling capabilities
 
@@ -173,10 +215,12 @@ repo and needs no migration. `data/` contains:
 
 - `data/hamroh.db` — SQLite database (messages, users, reminders,
   tool call logs) — starts fresh on new servers
-- `data/session_id` — Claude Code session ID for conversation continuity
+- `data/session_id` — the agent session/conversation id for continuity
+  (Claude Code session id, or the agy conversation id when `HAMROH_ENGINE=agy`;
+  with agy the conversation history itself lives under `~/.gemini`)
 - `data/attachments/` — inbound photos/docs the dispatcher saved
 - `data/renders/` — outbound PNGs from `render_html`
-- `data/cc_logs/` — raw Claude Code subprocess logs
+- `data/cc_logs/` — raw Claude Code subprocess logs (Claude engine only)
 
 Headless Chromium for `render_html` is pre-installed in the Docker
 image (`playwright install --with-deps chromium`) — no per-host
@@ -275,3 +319,19 @@ This is the same procedure on Linux, macOS, and Windows. Because the
 token comes from an env var, there is no macOS Keychain export and no
 `~/.claude/.credentials.json` to keep in sync — the old platform-specific
 workarounds no longer apply.
+
+### Antigravity (`agy`) auth failed / no reply
+
+Only relevant when `HAMROH_ENGINE=agy`. Unlike Claude, `agy` has **no token env
+var** — its credential is the file `~/.gemini/oauth_creds.json`, which the
+container reads via the `~/.gemini:/root/.gemini` volume mount. If the bot can't
+authenticate:
+
+- Make sure you signed in on a browser machine (`agy`) and copied `~/.gemini`
+  to the server (`scp -r ~/.gemini root@server:~/`).
+- Make sure the `- ~/.gemini:/root/.gemini` mount in `docker-compose.yml` is
+  **uncommented and read-write** — `agy` refreshes the token and writes it back;
+  a read-only mount breaks once the access token expires.
+- Confirm `HAMROH_MODEL` is a real agy id (`agy models`), e.g.
+  `gemini-3.1-pro-high`. An unknown id fails the turn with "model … is not
+  recognized".

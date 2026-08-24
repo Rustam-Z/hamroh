@@ -118,11 +118,13 @@ into a `Config` field.
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | yes | — | from @BotFather |
 | `HAMROH_OWNER_ID` | yes | — | your numeric Telegram user id |
-| `HAMROH_MODEL` | yes | — | which Claude model to use (e.g. `claude-sonnet-4-6`); passed to `--model` |
-| `HAMROH_EFFORT` | yes | — | how hard Claude thinks; passed to `--effort` (one of `low`, `medium`, `high`, `max`) |
+| `HAMROH_ENGINE` | no | `claude` | which agent engine runs the bot: `claude` (Claude Code) or `agy` (Google's Antigravity CLI). |
+| `HAMROH_MODEL` | yes | — | which model to use. For `claude`: a Claude id (e.g. `claude-sonnet-4-6`). For `agy`: an Antigravity id (run `agy models`, e.g. `gemini-3.1-pro-high`). Passed to the engine's `--model`. |
+| `HAMROH_EFFORT` | no | `high` | Claude only — how hard it thinks (`low`/`medium`/`high`/`max`). **Ignored by `agy`**, which has no separate effort flag (the effort tier is baked into the model id, e.g. `-high`/`-low`). |
 | `HAMROH_DATA_DIR` | no | `./data` | SQLite, memories, access config, raw CC logs |
 | `HAMROH_ACCESS_PATH` | no | repo-root `access.json` | override where `access.json` lives (mainly so the e2e harness can point at a temp file). |
-| `CLAUDE_CODE_BIN` | no | `claude` | name or full path of the `claude` program |
+| `CLAUDE_CODE_BIN` | no | `claude` | name or full path of the `claude` program (Claude engine) |
+| `AGY_BIN` | no | `agy` | name or full path of the `agy` program (agy engine) |
 | `HAMROH_DEBOUNCE_MS` | no | `0` | wait this long after a message before sending it to Claude. Messages that arrive during the wait are bundled into one turn. `0` = send right away. |
 | `HAMROH_RATE_LIMIT_PER_MIN` | no | `20` | max DMs per minute from one user. The owner is not limited. Group chats are not limited. |
 | `HAMROH_ATTACHMENT_MAX_BYTES` | no | `20000000` | largest inbound photo/document (20 MB) the bot will download and read; bigger files are refused with a marker. |
@@ -175,13 +177,18 @@ Telegram listener  →  Engine (buffer + send/inject)  →  Claude worker  →  
    `telegram_send_message` call (we call this "dropped text"), the engine sends a
    corrective `<error>...</error>` block to nudge Claude into using the
    tool.
-3. **Claude worker** (`hamroh/cc_worker/`). Starts the `claude`
+3. **Agent worker** (`hamroh/cc_worker/`, default). Starts the `claude`
    process and watches it. Reads stream-json events from stdout, saves
    stderr for diagnostics, stores `session_id` so a restart can resume
    the same conversation, and starts Claude again after a crash —
    waiting longer each time (`CRASH_BACKOFF_BASE`=2s up to
    `CRASH_BACKOFF_CAP`=64s, with a give-up after `CRASH_LIMIT`=10
    crashes in `CRASH_WINDOW_SECONDS`=600s).
+   - **When `HAMROH_ENGINE=agy`**, `hamroh/agy_worker/` runs instead: it
+     drives Google's Antigravity CLI one-shot per turn (`agy --print`) and
+     delivers the model's text reply, reusing the same worker interface and
+     `TurnResult`/`CrashLoop`/`WorkerHooks`. Everything else here is
+     unchanged. See [hamroh-antigravity-plan.md](hamroh-antigravity-plan.md).
 4. **MCP server** (`hamroh/mcp_server.py`). A FastMCP server on a
    random port on `127.0.0.1`. It finds every `BaseTool` subclass in
    `hamroh/tools/` and registers it. It writes a small JSON config

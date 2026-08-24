@@ -22,6 +22,11 @@ from tests.e2e.support.config import MAX_RESET_REPLY_S, MAX_TEXT_REPLY_S
 
 log = logging.getLogger(__name__)
 
+# Both tests prove the reset by watching the Claude Code session id change in
+# the cc_logs capture. The agy engine writes no cc_logs, so its `[agy]`
+# parametrization is auto-skipped.
+pytestmark = pytest.mark.claude_only
+
 
 async def _assert_reset_and_recover(
     sut: Sut, client: TelegramClient, convo: Conversation

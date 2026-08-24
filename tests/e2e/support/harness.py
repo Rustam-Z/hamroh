@@ -199,21 +199,25 @@ def kill_stray_suts(timeout: float = 10.0) -> None:
 
 
 def launch_sut(
-    cfg: E2EConfig, data_dir: Path, extra_env: dict[str, str] | None = None
+    cfg: E2EConfig,
+    data_dir: Path,
+    engine: str = "claude",
+    extra_env: dict[str, str] | None = None,
 ) -> Sut:
     """Start ``python -m hamroh`` and block until it is 100% ready.
 
     Readiness is two-stage: wait for the ``READY_LINE`` (stack up, MCP/tools
     loaded), then drive a warm-up round-trip so the model's first-turn cold-start
-    happens before the first test runs. ``extra_env`` overrides the SUT's
-    environment for this process only (e.g. a squeezed status interval).
+    happens before the first test runs. ``engine`` picks the agent backend
+    (``"claude"`` / ``"agy"``); ``extra_env`` overrides the SUT's environment for
+    this process only (e.g. a squeezed status interval).
     """
     data_dir.mkdir(parents=True, exist_ok=True)
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "hamroh"],
         cwd=REPO_ROOT,
-        env=child_env(data_dir, extra_env),
+        env=child_env(data_dir, engine, extra_env),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
