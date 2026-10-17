@@ -28,6 +28,7 @@ from .startup import (
     _make_on_cc_giveup,
     _make_on_cc_stale_session,
     _open_db_and_stores,
+    _register_extension_commands,
     _replay_unconsumed,
     _run_until_stopped,
     _seed_default_reminders,
@@ -62,7 +63,7 @@ async def _async_main() -> None:
         )
     spec = _build_cc_spec(config, plugins, app.mcp, stores)
     await _start_worker(app, ctx, spec)
-    await _start_engine_and_dispatcher(app, stores, chat_titles, ctx)
+    await _start_engine_and_dispatcher(app, stores, ctx, plugins)
     log.info("hamroh is live")
 
     await _run_until_stopped(app)
@@ -83,10 +84,13 @@ async def _start_worker(app: _App, ctx, spec) -> None:
     await app.worker.supervise()
 
 
-async def _start_engine_and_dispatcher(app: _App, stores, chat_titles, ctx) -> None:
+async def _start_engine_and_dispatcher(app: _App, stores, ctx, plugins) -> None:
     """Build + start the engine and dispatcher, replay any unconsumed inbound,
     and arm the reminder loop. The dispatcher goes live last."""
-    app.dispatcher, app.engine = _build_dispatcher_and_engine(app, stores, chat_titles)
+    app.dispatcher, app.engine = _build_dispatcher_and_engine(
+        app, stores, ctx.chat_titles
+    )
+    _register_extension_commands(plugins.extensions, app.dispatcher)
     await app.engine.start()
     await _replay_unconsumed(app.db, app.engine)
     app.reminder_task = asyncio.create_task(

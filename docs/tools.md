@@ -213,7 +213,8 @@ Changes to either take effect on container restart.
       "enabled": true
     }
   ],
-  "skills_disabled": []
+  "skills_disabled": [],
+  "extensions": []
 }
 ```
 
@@ -237,9 +238,102 @@ Changes to either take effect on container restart.
   skipped at boot — preserving today's "credentials missing → MCP
   not spawned" semantics.
 * `enabled: false` skips the MCP even if its `${VAR}` refs resolve.
+* `extensions` — importable Python packages that add this bot's own
+  tools and owner commands. See "Extensions" below.
 * A missing `plugins.json` boots with empty plugins (locked-down).
   A malformed `plugins.json` crashes boot loudly with a
   `PluginsConfigError`.
+
+### Extensions — your own tools and commands, outside the framework
+
+An external MCP is the right shape for an off-the-shelf integration. It
+is the wrong shape for a tool that needs the bot itself: the Telegram
+bot, the SQLite database, the memory store. Those live in the hamroh
+process, and an MCP runs as a separate one. Extensions close that gap.
+
+An extension is a plain Python package in *your agent's repo* (never in
+the framework) that the bot imports at boot. Name it in `plugins.json`:
+
+```jsonc
+{ "extensions": ["ext"] }
+```
+
+The package layout:
+
+```
+ext/
+├── __init__.py          # optional: register(dispatcher) adds owner commands
+└── tools/
+    ├── __init__.py
+    └── my_tool.py       # BaseTool subclasses, same as hamroh/tools/
+```
+
+**Tools.** Every `BaseTool` subclass found anywhere in the package is
+registered next to the built-ins: same `mcp__hamroh__<name>` prefix, same
+`ToolContext` (bot, database, memory store, …), same audit log, always
+loaded, and listed in the system prompt's tool index automatically. It is
+the same file you would drop into `hamroh/tools/`, in a different folder:
+
+```python
+# ext/tools/my_tool.py
+from pydantic import BaseModel, Field
+from hamroh.tools.base import BaseTool, ToolResult
+
+
+class CountArgs(BaseModel):
+    chat_id: int = Field(description="Chat to count messages in.")
+
+
+class CountMessagesTool(BaseTool):
+    name = "count_messages"
+    description = "Count the messages stored for one chat."
+    args_model = CountArgs
+
+    async def run(self, args: CountArgs) -> ToolResult:
+        assert self.ctx.database is not None
+        row = await self.ctx.database.fetch_one(
+            "SELECT COUNT(*) FROM messages WHERE chat_id = ?", (args.chat_id,)
+        )
+        return ToolResult(content=str(row[0]))
+```
+
+A tool name that clashes with a built-in crashes boot, so an extension
+can never silently shadow `telegram_send_message`.
+
+**Owner commands.** Define `register(dispatcher)` at the top of the
+package and call `add_owner_command` for each `/command`. The framework
+applies the owner check and lists the command in the owner's menu; the
+handler is the usual python-telegram-bot `(update, context)` pair and
+can reach `dispatcher.db`, `dispatcher.config`, `dispatcher.engine`:
+
+```python
+# ext/__init__.py
+from telegram import Update
+from telegram.ext import ContextTypes
+
+
+async def _ping(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.effective_message.reply_text("pong")
+
+
+def register(dispatcher) -> None:
+    dispatcher.add_owner_command("ping", "reply pong", _ping)
+```
+
+**Wiring it in.** The package must be importable by `python -m hamroh`.
+In an agent repo built `FROM hamroh-base` that is one Dockerfile line,
+since `/app` is the working directory:
+
+```dockerfile
+COPY ext/ /app/ext/
+```
+
+Extra pip or apt dependencies go in the same Dockerfile (see
+"Installing extra packages" in documentation.md). The API an extension
+depends on is `hamroh.tools.base` (`BaseTool`, `ToolContext`,
+`ToolResult`) and `dispatcher.add_owner_command`; a framework bump can
+change other internals freely. Anything useful to *every* bot belongs
+in the framework as a built-in, not in an extension.
 
 ### MCP transports
 

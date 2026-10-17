@@ -229,6 +229,11 @@ class EchoTool(BaseTool):
 
 Restart `python -m hamroh`. The tool is live.
 
+A tool that only one bot needs does not belong in the framework. Put the
+same file in an *extension* package inside that bot's repo and name the
+package in `plugins.json` → `extensions`; extensions can also add owner
+commands. See [tools.md](tools.md#extensions--your-own-tools-and-commands-outside-the-framework).
+
 ## Access control
 
 `access.json` at the repo root governs who can talk to the bot.
@@ -629,7 +634,8 @@ my-agent/                    # your private repo
 ├── memories/                # the bot's memory (git-tracked)
 ├── plugins.json             # tools + MCP capability surface
 ├── access.json              # DM / group policy
-└── default-reminders.json   # custom recurring reminders
+├── default-reminders.json   # custom recurring reminders
+└── ext/                     # optional: this bot's own tools + owner commands
 ```
 
 Set it up once:
@@ -699,8 +705,12 @@ RUN /app/.venv/bin/pip install --no-cache-dir yt-dlp
 ```
 
 `FROM hamroh-base` keeps everything the framework already has (Python, Node,
-Chromium, hamroh, its `ENTRYPOINT`/`CMD`); you only add the extra lines. Point
-compose at your Dockerfile instead of the submodule:
+Chromium, hamroh, its `ENTRYPOINT`/`CMD`); you only add the extra lines. The
+same Dockerfile is where a bot's own Python goes: `COPY ext/ /app/ext/` bakes
+an extension package with this bot's tools and owner commands (name it in
+`plugins.json` → `extensions`; see
+[tools.md](tools.md#extensions--your-own-tools-and-commands-outside-the-framework)).
+Point compose at your Dockerfile instead of the submodule:
 
 ```yaml
     build: .            # was: build: ./framework
@@ -1141,7 +1151,7 @@ engine just reports the error and keeps the session for the next turn.
 
 ## What `plugins.json` controls
 
-One file, four blocks. Edit and restart to apply. 
+One file, five blocks. Edit and restart to apply. 
 
 Tool groups (shell / code / subagents, off by default), external MCPs, and toggles to hide built-in tools or skills. A missing file boots locked-down; a malformed one crashes boot loudly. 
 
@@ -1149,6 +1159,7 @@ Tool groups (shell / code / subagents, off by default), external MCPs, and toggl
 - **`mcps`** — external MCP servers (GitHub, Jira, Linear, Notion, your own). One array entry per server, `stdio` / `http` / `sse`, credentials pulled from `.env` via `${VAR}` references — no Python needed.
 - **`builtin_tools_disabled`** — hamroh built-ins to hide from the agent (e.g. `telegram_create_poll`).
 - **`skills_disabled`** — skill directories under `skills/` to hide.
+- **`extensions`** — Python packages from your own agent repo that add bot-specific tools and owner commands.
 
 A missing `plugins.json` boots locked-down (no integrations, no tool groups). A malformed file crashes boot loudly. Full schema, copy-paste examples, and per-MCP setup: [docs/tools.md](docs/tools.md).
 
@@ -1185,6 +1196,9 @@ A missing `plugins.json` boots locked-down (no integrations, no tool groups). A 
   ],
   "skills_disabled": [       // skill directories under skills/ to hide
     // e.g. "render-style"
+  ],
+  "extensions": [            // your own packages with extra tools + owner commands
+    // e.g. "ext"
   ]
 }
 ```
@@ -1193,6 +1207,7 @@ A missing `plugins.json` boots locked-down (no integrations, no tool groups). A 
 - **External MCPs.** Three transports supported, exactly as the [MCP spec](https://modelcontextprotocol.io) defines them: `stdio` (local subprocess, auth via `env`), `http` (remote streamable HTTP, auth via static `headers`), and `sse` (Server-Sent Events, same field shape as http). `${VAR}` references pull credentials from `.env`; if any required var is empty the MCP is silently skipped at boot. To stop advertising one without removing credentials, flip `"enabled": false`. Adding a new MCP (Linear, Notion, Slack, your own) is just a new array entry — no Python. Hamroh doesn't manage OAuth flows; supply an already-issued token via `${VAR}`.
 - **Built-in tool toggles.** Names of hamroh built-ins (e.g. `telegram_create_poll`, `render_latex`) you want hidden. Filtered at MCP registration — the agent literally can't see them. A typo crashes boot with the available list.
 - **Skill toggles.** Directory names under `skills/` to hide. The skill stays on disk but isn't listed or readable, so it can't be invoked.
+- **Extensions.** Importable package names. Each package's `BaseTool` subclasses are registered like built-ins, and its optional `register(dispatcher)` adds owner commands. A package that can't be imported, or a tool name that clashes with a built-in, crashes boot.
 
 ## Repo layout
 

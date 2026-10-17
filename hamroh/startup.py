@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import importlib
 import logging
 import os
 import signal
@@ -387,11 +388,12 @@ async def _open_db_and_stores(config: Config) -> tuple[Database, Plugins, _Store
     plugins = load_plugins(config.plugins_path)
     log.info(
         "plugins loaded: %d enabled mcp(s), %d disabled skill(s), "
-        "%d disabled built-in tool(s), tool_groups=%s",
+        "%d disabled built-in tool(s), tool_groups=%s, extensions=%s",
         len(plugins.mcps),
         len(plugins.skills_disabled),
         len(plugins.builtin_tools_disabled),
         dict(plugins.tool_groups),
+        list(plugins.extensions),
     )
 
     stores = _build_stores(config, db, plugins)
@@ -435,6 +437,7 @@ async def _start_mcp_server(
         ctx,
         db_logger=db_logger,
         disabled=plugins.builtin_tools_disabled,
+        extensions=plugins.extensions,
     )
     await mcp.start()
     log.info("mcp server live at %s", mcp.url)
@@ -550,6 +553,24 @@ def _build_dispatcher_and_engine(
         ),
     )
     return dispatcher, engine
+
+
+def _register_extension_commands(
+    extensions: tuple[str, ...], dispatcher: TelegramDispatcher
+) -> None:
+    """Give each extension package a chance to add owner commands.
+
+    A package opts in by defining ``register(dispatcher)`` at its top level;
+    packages that only ship tools need nothing here. Runs before the
+    dispatcher starts, which is when the handlers are wired.
+    """
+    for name in extensions:
+        module = importlib.import_module(name)
+        register = getattr(module, "register", None)
+        if register is None:
+            continue
+        register(dispatcher)
+        log.info("extension %s registered its commands", name)
 
 
 def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:

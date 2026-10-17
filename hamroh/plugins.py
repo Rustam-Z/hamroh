@@ -12,6 +12,9 @@ Single repo-root file ``plugins.json`` declares:
   ``--allowedTools``, and an ``enabled`` flag.
 * ``skills_disabled`` — names of directories under ``skills/`` to
   hide from the agent.
+* ``extensions`` — importable Python packages that add bot-specific
+  tools and owner commands on top of the framework (see
+  ``docs/tools.md`` → "Extensions").
 
 Behavior on a fresh clone (no ``plugins.json``) is locked-down:
 empty plugins, no external MCPs, no skill toggles. Default file
@@ -37,6 +40,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "mcps",
         "skills_disabled",
         "builtin_tools_disabled",
+        "extensions",
     }
 )
 
@@ -129,6 +133,11 @@ class Plugins:
     #: ``McpServer`` construction time — a typo crashes boot with a
     #: list of available names.
     builtin_tools_disabled: frozenset[str] = frozenset()
+    #: Importable package names, in load order. Every ``BaseTool``
+    #: subclass found in a package is registered next to the built-ins,
+    #: and a package-level ``register(dispatcher)`` may add owner
+    #: commands. A package that fails to import crashes boot.
+    extensions: tuple[str, ...] = ()
 
 
 def _interp_str(value: str, env: Mapping[str, str]) -> str | None:
@@ -438,15 +447,27 @@ def _validate_builtin_tools_disabled(raw: Any, path: Path) -> frozenset[str]:
     return _validate_string_list(raw, path, key="builtin_tools_disabled")
 
 
+def _validate_extensions(raw: Any, path: Path) -> tuple[str, ...]:
+    """Ordered (load order matters for a clear boot log), duplicates rejected."""
+    names = _validate_strings(raw, path, key="extensions")
+    if len(set(names)) != len(names):
+        raise PluginsConfigError(f"{path}: extensions has duplicate entries")
+    return tuple(names)
+
+
 def _validate_string_list(raw: Any, path: Path, *, key: str) -> frozenset[str]:
+    return frozenset(_validate_strings(raw, path, key=key))
+
+
+def _validate_strings(raw: Any, path: Path, *, key: str) -> list[str]:
     if raw is None:
-        return frozenset()
+        return []
     if not isinstance(raw, list):
         raise PluginsConfigError(f"{path}: {key} must be an array")
     for i, name in enumerate(raw):
         if not isinstance(name, str) or not name:
             raise PluginsConfigError(f"{path}: {key}[{i}] must be a non-empty string")
-    return frozenset(raw)
+    return list(raw)
 
 
 def _log_missing_file(path: Path) -> None:
@@ -530,10 +551,12 @@ def load_plugins(path: Path, *, env: Mapping[str, str] | None = None) -> Plugins
         data.get("builtin_tools_disabled"),
         path,
     )
+    extensions = _validate_extensions(data.get("extensions"), path)
 
     return Plugins(
         tool_groups=tool_groups,
         mcps=tuple(_build_mcp_specs(mcps_raw, env)),
         skills_disabled=skills_disabled,
         builtin_tools_disabled=builtin_tools_disabled,
+        extensions=extensions,
     )
