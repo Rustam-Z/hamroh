@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "rustam_z" }]
 
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2",
     "uvicorn>=0.30",
     "starlette>=0.37",
     "aiosqlite>=0.20",
