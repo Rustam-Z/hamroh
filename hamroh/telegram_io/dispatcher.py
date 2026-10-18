@@ -45,7 +45,7 @@ from ..rate_limiter import RateLimitExceeded, RateLimiter
 from ..utils.secrets_scrubber import contains_secret, scrub
 from ..helpers.transcript import ChatRef, MsgRef, UserRef, log_inbound, log_inbound_edit
 from .attachments import _process_attachments
-from .commands import OwnerCommandsMixin
+from .commands import OwnerCommand, OwnerCommandsMixin
 
 log = logging.getLogger("hamroh.telegram_io")
 
@@ -155,6 +155,10 @@ class TelegramDispatcher(OwnerCommandsMixin):
         self.chat_titles: dict[int, str] = (
             deps.chat_titles if deps.chat_titles is not None else {}
         )
+        #: Extension-added owner commands (see ``add_owner_command``). Wired
+        #: in ``start()`` — together with the built-ins and ahead of the
+        #: catch-all message handler, so they never reach the engine.
+        self.extra_commands: list[OwnerCommand] = []
         # AIORateLimiter queues outbound calls under Telegram's flood
         # limits and honours 429 retry_after, so a long multi-chunk reply
         # can't trip flood control and abort the turn via the tool-error
@@ -165,7 +169,6 @@ class TelegramDispatcher(OwnerCommandsMixin):
             .rate_limiter(AIORateLimiter())
             .build()
         )
-        self._wire_handlers()
 
     @property
     def bot(self):
@@ -187,6 +190,10 @@ class TelegramDispatcher(OwnerCommandsMixin):
         self.application.add_handler(CommandHandler("deny", self._cmd_deny))
         self.application.add_handler(CommandHandler("policy", self._cmd_policy))
         self.application.add_handler(CommandHandler("access", self._cmd_access))
+        for command in self.extra_commands:
+            self.application.add_handler(
+                CommandHandler(command.name, self._owner_only(command.handler))
+            )
 
         # All other text/caption messages plus photos and documents.
         self.application.add_handler(
@@ -437,6 +444,7 @@ class TelegramDispatcher(OwnerCommandsMixin):
                 "TelegramDispatcher.start() called with no engine attached. "
                 "Set dispatcher.engine before starting."
             )
+        self._wire_handlers()
         await self.application.initialize()
         await self._register_owner_commands()
         await self.application.start()

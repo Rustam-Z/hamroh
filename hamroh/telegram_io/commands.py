@@ -12,6 +12,8 @@ import html
 import logging
 import os
 import signal
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from telegram import BotCommand, BotCommandScopeChat, Update
@@ -36,6 +38,22 @@ _LOGS_MAX = 200
 
 #: Chars the ``<blockquote>…</blockquote>`` wrapper adds to each /logs chunk.
 _BLOCKQUOTE_OVERHEAD = len("<blockquote></blockquote>")
+
+
+#: Signature of a command handler: the python-telegram-bot ``(update, context)``
+#: pair. Extension handlers get the same shape as the built-ins.
+CommandHandlerFn = Callable[
+    [Update, ContextTypes.DEFAULT_TYPE], Coroutine[Any, Any, None]
+]
+
+
+@dataclass(frozen=True)
+class OwnerCommand:
+    """One owner-only slash command added by an extension package."""
+
+    name: str
+    description: str
+    handler: CommandHandlerFn
 
 
 def _parse_log_count(args: list[str] | None) -> int:
@@ -86,6 +104,29 @@ class OwnerCommandsMixin:
     db: Database
     engine: EnginePort | None
     application: Application
+    extra_commands: list[OwnerCommand]
+
+    def add_owner_command(
+        self, name: str, description: str, handler: CommandHandlerFn
+    ) -> None:
+        """Register an extra owner-only ``/<name>`` command.
+
+        Called by an extension's ``register(dispatcher)`` before the
+        dispatcher starts. The owner check is applied by the framework, so
+        ``handler`` only ever runs for the owner; it is listed in the owner's
+        command menu with ``description``.
+        """
+        self.extra_commands.append(OwnerCommand(name, description, handler))
+
+    def _owner_only(self, handler: CommandHandlerFn) -> CommandHandlerFn:
+        """Wrap an extension handler so non-owners are silently ignored."""
+
+        async def guarded(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            if not self._is_owner(update):
+                return
+            await handler(update, ctx)
+
+        return guarded
 
     def _is_owner(self, update: Update) -> bool:
         return (
@@ -388,6 +429,7 @@ class OwnerCommandsMixin:
             BotCommand("kill", "stop the bot"),
             BotCommand("reset_session", "fresh Claude session (history kept)"),
         ]
+        commands.extend(BotCommand(c.name, c.description) for c in self.extra_commands)
         try:
             await self.application.bot.set_my_commands(
                 commands,

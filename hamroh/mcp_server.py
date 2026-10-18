@@ -157,6 +157,7 @@ def build_fastmcp(
     *,
     db_logger=None,
     disabled: frozenset[str] = frozenset(),
+    extensions: tuple[str, ...] = (),
 ) -> tuple[FastMCP, list[BaseTool]]:
     """Construct a FastMCP server with every discovered tool registered.
 
@@ -164,9 +165,12 @@ def build_fastmcp(
     never added to the MCP server, so the model can't see or invoke
     them. Names must match an actual discovered tool; unknown names
     raise ``ValueError`` so a typo in ``plugins.json`` fails boot
-    loudly.
+    loudly. ``extensions`` are the extra packages to discover tools in;
+    a tool name used twice (e.g. an extension shadowing a built-in)
+    also fails boot.
     """
-    classes = discover_tool_classes()
+    classes = discover_tool_classes(extensions)
+    _reject_duplicate_names(classes)
     if disabled:
         known = {cls.name for cls in classes}
         unknown = disabled - known
@@ -190,6 +194,13 @@ def build_fastmcp(
     return mcp, instances
 
 
+def _reject_duplicate_names(classes: list[type[BaseTool]]) -> None:
+    names = [cls.name for cls in classes]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError(f"tool name(s) defined more than once: {duplicates}")
+
+
 class McpServer:
     """Run a FastMCP HTTP server on a random localhost port via uvicorn."""
 
@@ -199,6 +210,7 @@ class McpServer:
         *,
         db_logger=None,
         disabled: frozenset[str] = frozenset(),
+        extensions: tuple[str, ...] = (),
     ) -> None:
         self._ctx = ctx
         self._db_logger = db_logger
@@ -206,6 +218,7 @@ class McpServer:
             ctx,
             db_logger=db_logger,
             disabled=disabled,
+            extensions=extensions,
         )
         self._server: uvicorn.Server | None = None
         self._task: asyncio.Task[None] | None = None

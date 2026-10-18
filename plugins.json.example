@@ -6,6 +6,7 @@
     "subagents": false
   },
   "skills_disabled": [],
+  "extensions": [],
   "mcps": [
     {
         "name": "deepwiki",
