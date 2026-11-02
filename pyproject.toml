@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "rustam_z" }]
 
 dependencies = [
-    "mcp>=1.2.0,<2",  # 2.x renamed FastMCP (hamroh/mcp_server.py)
+    "mcp>=1.2.0,<2",
     "uvicorn>=0.30",
     "starlette>=0.37",
     "aiosqlite>=0.20",
