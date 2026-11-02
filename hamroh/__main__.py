@@ -6,6 +6,7 @@ Brings up the four components in order:
 2. Local MCP server on a random localhost port
 3. Claude Code subprocess via the CC worker
 4. Engine + Telegram dispatcher
+5. Web API, when ``HAMROH_WEB_PORT`` is set (see :mod:`hamroh.web`)
 
 Then sleeps until interrupted, at which point everything is torn down.
 """
@@ -35,6 +36,8 @@ from .startup import (
     _start_mcp_server,
 )
 from .helpers.logging_setup import setup_logging
+from .web.inbound import WebInboundDeps
+from .web.server import start_web_server
 
 __all__ = ["main", "_seed_default_reminders"]
 
@@ -86,7 +89,7 @@ async def _start_worker(app: _App, ctx, spec) -> None:
 
 async def _start_engine_and_dispatcher(app: _App, stores, ctx, plugins) -> None:
     """Build + start the engine and dispatcher, replay any unconsumed inbound,
-    and arm the reminder loop. The dispatcher goes live last."""
+    and arm the reminder loop. The dispatcher and web API go live last."""
     app.dispatcher, app.engine = _build_dispatcher_and_engine(
         app, stores, ctx.chat_titles
     )
@@ -98,10 +101,21 @@ async def _start_engine_and_dispatcher(app: _App, stores, ctx, plugins) -> None:
         name="hamroh-reminders",
     )
     app.dispatcher.engine = app.engine
-    ctx.bot = app.dispatcher.bot
+    assert app.bot is not None  # built together with the engine
+    ctx.bot = app.bot
     ctx.on_chat_replied = app.engine.notify_chat_replied  # stops typing on reply
     _attach_owner_log_notifier(app)  # errors now DM the owner, not just the log
     await app.dispatcher.start()
+    app.web_server = await start_web_server(
+        app.config.web,
+        WebInboundDeps(
+            db=app.db,
+            engine=app.engine,
+            hub=app.bot.hub,
+            chat_titles=ctx.chat_titles,
+            rate_limiter=stores.rate_limiter,
+        ),
+    )
 
 
 def main() -> None:

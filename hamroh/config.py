@@ -70,6 +70,51 @@ def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
 
 
 @dataclass(frozen=True)
+class WebConfig:
+    """Settings for the web channel (HTTP API next to Telegram).
+
+    Off unless ``HAMROH_WEB_PORT`` is set. Then ``HAMROH_WEB_TOKEN`` is
+    required: every request must send ``Authorization: Bearer <token>``.
+    """
+
+    #: Port for the web API. ``0`` turns the web channel off.
+    #: Env var: ``HAMROH_WEB_PORT`` (default ``0``).
+    port: int = 0
+    #: Address to listen on. Use ``0.0.0.0`` inside Docker.
+    #: Env var: ``HAMROH_WEB_HOST`` (default ``"127.0.0.1"``).
+    host: str = "127.0.0.1"
+    #: Shared secret the frontend sends as a bearer token.
+    #: Env var: ``HAMROH_WEB_TOKEN``.
+    token: str = ""
+    #: Browser origins allowed to call the API directly (CORS), comma
+    #: separated, e.g. ``https://app.example.com``. Empty = no CORS.
+    #: Env var: ``HAMROH_WEB_CORS_ORIGINS``.
+    cors_origins: tuple[str, ...] = ()
+
+    @property
+    def enabled(self) -> bool:
+        return self.port > 0
+
+    @classmethod
+    def from_env(cls) -> "WebConfig":
+        cfg = cls(
+            port=_int("HAMROH_WEB_PORT", 0),
+            host=_env("HAMROH_WEB_HOST", "127.0.0.1") or "127.0.0.1",
+            token=_env("HAMROH_WEB_TOKEN", "") or "",
+            cors_origins=tuple(
+                o.strip()
+                for o in (_env("HAMROH_WEB_CORS_ORIGINS", "") or "").split(",")
+                if o.strip()
+            ),
+        )
+        if cfg.enabled and not cfg.token:
+            raise RuntimeError(
+                "HAMROH_WEB_TOKEN is required when HAMROH_WEB_PORT is set"
+            )
+        return cfg
+
+
+@dataclass(frozen=True)
 class Config:
     """All settings the bot uses at runtime."""
 
@@ -208,6 +253,8 @@ class Config:
     #: complete regardless of this setting.
     #: Env var: ``HAMROH_LOG_TRANSCRIPT`` (``"compact"`` or ``"full"``).
     log_transcript: str
+    #: Web channel settings — see :class:`WebConfig`.
+    web: WebConfig = field(default_factory=WebConfig)
 
     # Derived paths
     db_path: Path = field(init=False)
@@ -279,6 +326,7 @@ class Config:
             log_transcript=_choice(
                 "HAMROH_LOG_TRANSCRIPT", "compact", ("compact", "full")
             ),
+            web=WebConfig.from_env(),
         )
         cls._apply_env_path_overrides(cfg)
         return cfg

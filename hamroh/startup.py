@@ -19,7 +19,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 from .access import AccessConfig, load_access, save_access
 from .cc_worker.cc_schema import schema_json
@@ -55,6 +55,9 @@ from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession
 from .utils.telegram_links import format_message_refs
+from .web.channel_bot import ChannelBot
+from .web.hub import WebHub
+from .web.server import WebServer
 
 # Pinned so log captures keyed on ``"hamroh"`` keep matching after
 # the module split.
@@ -327,7 +330,11 @@ class _App:
     mcp: McpServer | None = None
     worker: CcWorker | None = None
     dispatcher: TelegramDispatcher | None = None
+    #: The bot the engine and tools send through: Telegram chats go to the
+    #: Telegram bot, web chats to the web hub.
+    bot: ChannelBot | None = None
     engine: Engine | None = None
+    web_server: WebServer | None = None
     reminder_task: asyncio.Task | None = None
     browser_manager: BrowserManager | None = None
     browser_session: BrowserSession | None = None
@@ -535,21 +542,23 @@ def _build_dispatcher_and_engine(
     stores: _Stores,
     chat_titles: dict[int, str],
 ) -> tuple[TelegramDispatcher, Engine]:
-    """Construct the dispatcher (bot owner), then the engine wired to it."""
+    """Construct the dispatcher (bot owner), the channel bot on top of it,
+    then the engine wired to the channel bot."""
     assert app.worker is not None  # set before this runs; satisfies the type checker
     dispatcher = TelegramDispatcher(
         app.config,
         app.db,
         DispatcherDeps(chat_titles=chat_titles, rate_limiter=stores.rate_limiter),
     )
+    app.bot = ChannelBot(dispatcher.bot, WebHub(app.db))
     engine = Engine(
         app.worker,
         app.config,
         EngineOptions(
             debounce_ms=app.config.debounce_ms,
             db=app.db,
-            typing_action=_make_typing_action(dispatcher),
-            error_notify=_make_error_notify(dispatcher),
+            typing_action=_make_typing_action(app.bot),
+            error_notify=_make_error_notify(app.bot),
         ),
     )
     return dispatcher, engine
@@ -573,12 +582,12 @@ def _register_extension_commands(
         log.info("extension %s registered its commands", name)
 
 
-def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
+def _make_typing_action(bot: Any) -> TypingAction:
     """Wire the engine's per-chat liveness signal to the "typing…" indicator."""
 
     async def _typing(chat_id: int) -> None:
         try:
-            ok = await dispatcher.bot.send_chat_action(chat_id=chat_id, action="typing")
+            ok = await bot.send_chat_action(chat_id=chat_id, action="typing")
             log.debug("send_chat_action chat=%s returned=%r", chat_id, ok)
         except Exception as exc:
             log.warning("send_chat_action failed for chat %s: %s", chat_id, exc)
@@ -586,7 +595,7 @@ def _make_typing_action(dispatcher: TelegramDispatcher) -> TypingAction:
     return _typing
 
 
-def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
+def _make_error_notify(bot: Any) -> ErrorNotify:
     """Wire the engine's bypass error-notify to ``bot.send_message``.
 
     ``reply_to_message_id`` is optional — pass a message id to thread the
@@ -600,7 +609,7 @@ def _make_error_notify(dispatcher: TelegramDispatcher) -> ErrorNotify:
         chat_id: int, text: str, reply_to_message_id: int | None = None
     ) -> None:
         try:
-            await dispatcher.bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id, text=text, reply_to_message_id=reply_to_message_id
             )
         except Exception as exc:
@@ -620,7 +629,7 @@ def _attach_owner_log_notifier(app: _App) -> None:
     assert app.dispatcher is not None
     owner_id = app.config.owner_id
     bot = app.dispatcher.bot
-    notify = _make_error_notify(app.dispatcher)
+    notify = _make_error_notify(bot)
 
     async def _send_to_owner(text: str) -> None:
         # HTML so the quoted causing-message renders as a real blockquote. If
@@ -661,6 +670,8 @@ async def _run_until_stopped(app: _App) -> None:
         if app.worker.session_id:
             app.config.session_id_path.write_text(app.worker.session_id)
         app.reminder_task.cancel()
+        if app.web_server is not None:
+            await app.web_server.stop()
         await app.dispatcher.stop()
         await app.engine.stop()
         await app.worker.stop()

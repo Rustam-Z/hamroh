@@ -39,7 +39,7 @@ from ..db.messages import (
     upsert_user,
 )
 from ..db.unauthorized import chat_has_refusal, insert_unauthorized_message
-from ..utils.input_normalizer import normalize_inbound
+from ..utils.input_normalizer import clean_inbound
 from ..models import ChatMessage
 from ..rate_limiter import RateLimitExceeded, RateLimiter
 from ..utils.secrets_scrubber import contains_secret, scrub
@@ -68,25 +68,12 @@ class EnginePort(Protocol):
     def turn_elapsed_s(self) -> float | None: ...
 
 
-def _clean_inbound(raw: str | None) -> tuple[str | None, frozenset[str]]:
-    """Scrub credentials, then defang Unicode obfuscation (zero-width /
-    bidi / NFKC). Order matters: scrub first so the credential regexes
-    see original bytes; normalize after so DB and model see clean text.
-
-    Returns ``(cleaned_or_None, flags)``. Empty / None input passes
-    through with an empty flag set.
-    """
-    if not raw:
-        return raw, frozenset()
-    return normalize_inbound(scrub(raw))
-
-
 def _reply_context(msg) -> tuple[int | None, str | None, frozenset[str]]:
     """Extract ``(reply_to_id, scrubbed reply text, flags)`` from a message."""
     reply = msg.reply_to_message
     if reply is None:
         return None, None, frozenset()
-    reply_to_text, flags = _clean_inbound(reply.text or reply.caption or None)
+    reply_to_text, flags = clean_inbound(reply.text or reply.caption or None)
     return reply.message_id, reply_to_text, flags
 
 
@@ -102,7 +89,7 @@ def _to_chat_message(
     msg = update.effective_message
     if msg is None or msg.from_user is None:
         return None
-    text, text_flags = _clean_inbound(msg.text or msg.caption or "")
+    text, text_flags = clean_inbound(msg.text or msg.caption or "")
     reply_to_id, reply_to_text, reply_flags = _reply_context(msg)
     return ChatMessage(
         chat_id=msg.chat_id,

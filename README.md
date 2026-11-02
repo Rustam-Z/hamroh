@@ -90,6 +90,7 @@ Beyond the config files, you extend the bot by dropping in files — no Python n
 - **Reminders** — custom recurring reminders shipped with the bot are at `default-reminders.json`. [docs](docs/documentation.md#custom-reminders-default-remindersjson).
 - **Memory notes** — the bot's notes live under `memories/` (e.g. `memories/notes/references.md`); the bot reads, searches, and writes them, and you can curate them too. Addressed by full path (`memories/...`) and git-tracked, so memories survive restarts and you can commit them. [memories/README.md](memories/README.md)
 - **Persona & rules** — extend the system prompt by editing `prompts/project.md`; it's appended to the shipped `prompts/system.md`. [docs](docs/documentation.md#system-prompt). Bot name, language, house rules, owner-specific instructions; appended to the shipped `prompts/system.md`.
+- **Web channel** — talk to the same bot from your own website or app over HTTP, next to Telegram. Off by default; set `HAMROH_WEB_PORT` and `HAMROH_WEB_TOKEN`. [docs/web.md](docs/web.md).
 - **Access** — who can DM the bot or use it in groups (hot-reloaded, no restart). [docs/documentation.md](docs/documentation.md#access-control).
 - `.env` secrets — Telegram bot token, owner id, plus any credentials your `plugins.json` entries reference via `${VAR}` (the example file's GitLab / GitHub entries demonstrate the pattern).
 
@@ -116,7 +117,8 @@ A quick tour — the full per-tool surface (args, limits, rails) is in [docs/too
 ## Architecture
 
 ```
-Telegram  →  Engine (buffer + debounce)  →  Claude worker  →  claude process
+Telegram ─┐
+Web API  ─┴→  Engine (buffer + debounce)  →  Claude worker  →  claude process
                        │                                            │
                        ▼                                            ▼
                     SQLite                                   Local MCP server
@@ -124,6 +126,8 @@ Telegram  →  Engine (buffer + debounce)  →  Claude worker  →  claude proce
 
 - **Telegram listener** reads messages, saves them to SQLite, hands
   them off.
+- **Web API** (optional) does the same for messages from your own
+  frontend, and streams the bot's replies back. See [docs/web.md](docs/web.md).
 - **Engine** bundles messages that arrive close together. If a new
   one arrives while Claude is mid-reply, it's injected into the
   running turn.

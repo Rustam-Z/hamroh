@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import unicodedata
 
+from .secrets_scrubber import scrub
+
 #: Zero-width / invisible characters frequently used to split keywords
 #: or hide instructions ("ig​nore previous"). None of these have a
 #: legitimate role in chat text we care about.
@@ -93,3 +95,16 @@ def normalize_inbound(text: str) -> tuple[str, frozenset[str]]:
         flags.add(FLAG_NFKC)
         text = nfkc
     return text, frozenset(flags)
+
+
+def clean_inbound(raw: str | None) -> tuple[str | None, frozenset[str]]:
+    """Scrub credentials, then defang Unicode obfuscation (zero-width /
+    bidi / NFKC). Order matters: scrub first so the credential regexes
+    see original bytes; normalize after so DB and model see clean text.
+
+    Returns ``(cleaned_or_None, flags)``. Empty / None input passes
+    through with an empty flag set.
+    """
+    if not raw:
+        return raw, frozenset()
+    return normalize_inbound(scrub(raw))
