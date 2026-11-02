@@ -44,6 +44,7 @@ from ..models import ChatMessage
 from ..rate_limiter import RateLimitExceeded, RateLimiter
 from ..utils.secrets_scrubber import contains_secret, scrub
 from ..helpers.transcript import ChatRef, MsgRef, UserRef, log_inbound, log_inbound_edit
+from .private_users import PrivateUserCheck, PrivateUsersMixin
 from .attachments import _process_attachments
 from .commands import OwnerCommand, OwnerCommandsMixin
 
@@ -125,9 +126,11 @@ class DispatcherDeps:
     engine: EnginePort | None = None
     chat_titles: dict[int, str] | None = None
     rate_limiter: RateLimiter | None = None
+    #: Private chats' database (see :mod:`hamroh.privacy`).
+    private_db: "Database | None" = None
 
 
-class TelegramDispatcher(OwnerCommandsMixin):
+class TelegramDispatcher(OwnerCommandsMixin, PrivateUsersMixin):
     def __init__(
         self, config: Config, db: Database, deps: DispatcherDeps = DispatcherDeps()
     ) -> None:
@@ -146,6 +149,10 @@ class TelegramDispatcher(OwnerCommandsMixin):
         #: in ``start()`` — together with the built-ins and ahead of the
         #: catch-all message handler, so they never reach the engine.
         self.extra_commands: list[OwnerCommand] = []
+        #: Private chats — see :class:`PrivateUsersMixin`.
+        self.private_db = deps.private_db
+        self.private_user_check: PrivateUserCheck | None = None
+        self.public_commands: list[OwnerCommand] = []
         # AIORateLimiter queues outbound calls under Telegram's flood
         # limits and honours 429 retry_after, so a long multi-chunk reply
         # can't trip flood control and abort the turn via the tool-error
@@ -181,6 +188,7 @@ class TelegramDispatcher(OwnerCommandsMixin):
             self.application.add_handler(
                 CommandHandler(command.name, self._owner_only(command.handler))
             )
+        self._wire_public_commands()
 
         # All other text/caption messages plus photos and documents.
         self.application.add_handler(
@@ -225,7 +233,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
 
         self._remember_chat_title(update)
         chat_type = update.effective_chat.type if update.effective_chat else None
-        if not self._check_access(cm, chat_type):
+        # A private user's DM: the extension vouches for them, access.json is skipped.
+        cm.private = await self._is_private_user(cm.user_id, chat_type)
+        if not cm.private and not self._check_access(cm, chat_type):
             await self._handle_unauthorized(cm, chat_type)
             return
         if not await self._check_rate_limit(cm, chat_type):
@@ -275,8 +285,9 @@ class TelegramDispatcher(OwnerCommandsMixin):
         """Persist an inbound message. Callers must gate on
         ``_check_access`` first — disallowed chats are dropped upstream
         and never reach this method."""
-        await insert_message(self.db, cm)
-        await upsert_user(self.db, cm)
+        db = self._db_for(cm.private)
+        await insert_message(db, cm)
+        await upsert_user(db, cm)
 
     def _is_allowed(self, chat_id: int, user_id: int, chat_type: str | None) -> bool:
         """Hot-reload ``access.json`` and return the gate decision.
@@ -380,7 +391,8 @@ class TelegramDispatcher(OwnerCommandsMixin):
             return
         self._remember_chat_title(update)
         chat_type = evt.chat.type if evt.chat else None
-        if not self._is_allowed(evt.chat.id, evt.user.id, chat_type):
+        private = await self._admit(evt.chat.id, evt.user.id, chat_type)
+        if private is None:
             return
 
         def _emojis(reactions) -> list[str]:
@@ -392,7 +404,7 @@ class TelegramDispatcher(OwnerCommandsMixin):
             return out
 
         await apply_user_reaction(
-            self.db,
+            self._db_for(private),
             MessageKey(evt.chat.id, evt.message_id),
             ReactionChange(
                 user_id=evt.user.id,
@@ -408,9 +420,12 @@ class TelegramDispatcher(OwnerCommandsMixin):
         self._remember_chat_title(update)
         chat_type = msg.chat.type if msg.chat else None
         user_id = msg.from_user.id if msg.from_user else 0
-        if not self._is_allowed(msg.chat_id, user_id, chat_type):
+        private = await self._admit(msg.chat_id, user_id, chat_type)
+        if private is None:
             return
-        await mark_edited(self.db, msg.chat_id, msg.message_id, msg.text or "")
+        await mark_edited(
+            self._db_for(private), msg.chat_id, msg.message_id, msg.text or ""
+        )
         author = msg.from_user
         log_inbound_edit(
             ChatRef(msg.chat_id, self.chat_titles),

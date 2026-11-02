@@ -17,6 +17,12 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .private_profile import (
+    private_builtin_tools,
+    private_prompt_block,
+    private_tool_lists,
+)
+
 
 #: Built-in tools we explicitly deny by default. Belt-and-braces with
 #: ``--allowedTools`` so even if Claude Code's allowlist behaviour ever
@@ -189,6 +195,14 @@ class CcSpawnSpec:
     #: baked into the system prompt. Populated at startup from the live tool
     #: instances; empty means the inventory block is skipped.
     hamroh_tool_names: tuple[str, ...] = ()
+    #: A private chat's session (see :mod:`hamroh.privacy`): only the
+    #: ``hamroh_tool_names`` granted to private chats, no web built-ins, and
+    #: ``denied_hamroh_tool_names`` denied by exact name.
+    private: bool = False
+    #: Hamroh tools a private session must not reach (all the others).
+    denied_hamroh_tool_names: tuple[str, ...] = ()
+    #: Operator text appended to a private session's system prompt.
+    private_prompt_path: Path | None = None
 
 
 def _builtin_tools(spec: CcSpawnSpec) -> tuple[str, ...]:
@@ -199,6 +213,8 @@ def _builtin_tools(spec: CcSpawnSpec) -> tuple[str, ...]:
     the ``--tools`` argv flag and the prompt inventory
     (:func:`render_tools_index`) so the two can never disagree."""
     tools: list[str] = list(BASE_BUILTIN_TOOLS) + list(TASK_TOOLS)
+    if spec.private:
+        return private_builtin_tools(tuple(tools))
     if spec.enable_bash:
         tools.extend(BASH_TOOLS)
     if spec.enable_code:
@@ -286,6 +302,8 @@ def _compose_system_prompt(spec: CcSpawnSpec) -> str:
     tools_index = render_tools_index(spec)
     if tools_index:
         system_prompt += "\n\n" + tools_index
+    if spec.private:
+        system_prompt += "\n\n" + private_prompt_block(spec)
     if spec.enable_subagents:
         if (
             spec.subagents_prompt_path is None
@@ -304,6 +322,8 @@ def _tool_lists(spec: CcSpawnSpec) -> tuple[tuple[str, ...], tuple[str, ...]]:
     the ``enable_*`` flags unlock. Tools listed in *neither* list are
     implicitly reachable via ToolSearch — so every gated tool must land
     in one or the other."""
+    if spec.private:
+        return private_tool_lists(spec, DEFAULT_DISALLOWED_TOOLS)
     allowed_extras: list[str] = []
     disallowed_extras: list[str] = list(DEFAULT_DISALLOWED_TOOLS)
 

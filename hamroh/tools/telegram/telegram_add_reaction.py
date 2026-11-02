@@ -107,6 +107,8 @@ class AddReactionArgs(BaseModel):
 
 class TelegramAddReactionTool(BaseTool[AddReactionArgs]):
     name = "telegram_add_reaction"
+    #: Also allowed in private chats (replies stay in that chat — see the MCP gate).
+    audience = "both"
     description = (
         "React to a Telegram message with a single emoji from Telegram's fixed "
         "allowlist (see the emoji parameter for the exact set). Prefer a "
@@ -141,10 +143,11 @@ class TelegramAddReactionTool(BaseTool[AddReactionArgs]):
             message_id=args.message_id,
             emoji=emoji,
         )
-        if self.ctx.database is not None:
+        db = self.ctx.db_for_turn()
+        if db is not None:
             bot_id, _, _ = await bot_identity(self.ctx.bot)
             await add_bot_reaction(
-                self.ctx.database,
+                db,
                 MessageKey(args.chat_id, args.message_id),
                 bot_id,
                 emoji,

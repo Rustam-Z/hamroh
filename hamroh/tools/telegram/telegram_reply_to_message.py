@@ -27,6 +27,8 @@ class ReplyToMessageArgs(BaseModel):
 
 class TelegramReplyToMessageTool(BaseTool[ReplyToMessageArgs]):
     name = "telegram_reply_to_message"
+    #: Also allowed in private chats (replies stay in that chat — see the MCP gate).
+    audience = "both"
     description = (
         "Reply to a specific message, threading to it so the parent is "
         "unambiguous. This is how you answer EVERY inbound message, in DMs "

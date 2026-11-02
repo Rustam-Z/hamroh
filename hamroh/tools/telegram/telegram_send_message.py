@@ -52,6 +52,8 @@ class SendMessageArgs(BaseModel):
 
 class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
     name = "telegram_send_message"
+    #: Also allowed in private chats (replies stay in that chat — see the MCP gate).
+    audience = "both"
     description = (
         "Send a NEW, unthreaded text message to a Telegram chat. Use ONLY "
         "when there is no inbound message to answer — a scheduled reminder "

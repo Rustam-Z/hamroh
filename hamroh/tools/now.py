@@ -15,6 +15,8 @@ class NowArgs(BaseModel):
 
 class NowTool(BaseTool[NowArgs]):
     name = "time_now"
+    #: Also allowed in private chats.
+    audience = "both"
     description = (
         "Return the current time as ISO8601 in both UTC and the host's local "
         "timezone. Use to ground 'now' before computing a date/time. To "

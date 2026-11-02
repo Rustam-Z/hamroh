@@ -32,7 +32,9 @@ its own private chat with the bot, like a Telegram DM. The same `user`
 always lands in the same chat, so history survives restarts.
 
 Web users are never the bot **owner**, so owner-only actions stay with you
-on Telegram. `access.json` does not apply to the web: the token is the gate.
+on Telegram. With `HAMROH_WEB_PRIVATE=true` every web user is a **private
+chat**: own Claude session, own database, a narrow tool set — see
+[private-chats.md](private-chats.md). `access.json` does not apply to the web: the token is the gate.
 Anyone holding the token can talk to the bot as any `user`, so keep it on
 your server.
 

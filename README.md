@@ -91,6 +91,7 @@ Beyond the config files, you extend the bot by dropping in files — no Python n
 - **Memory notes** — the bot's notes live under `memories/` (e.g. `memories/notes/references.md`); the bot reads, searches, and writes them, and you can curate them too. Addressed by full path (`memories/...`) and git-tracked, so memories survive restarts and you can commit them. [memories/README.md](memories/README.md)
 - **Persona & rules** — extend the system prompt by editing `prompts/project.md`; it's appended to the shipped `prompts/system.md`. [docs](docs/documentation.md#system-prompt). Bot name, language, house rules, owner-specific instructions; appended to the shipped `prompts/system.md`.
 - **Web channel** — talk to the same bot from your own website or app over HTTP, next to Telegram. Off by default; set `HAMROH_WEB_PORT` and `HAMROH_WEB_TOKEN`. [docs/web.md](docs/web.md).
+- **Private chats** — people who must talk to the bot alone (web users, or Telegram users your extension vouches for) get their own session, their own database and only the tools meant for them. [docs/private-chats.md](docs/private-chats.md).
 - **Access** — who can DM the bot or use it in groups (hot-reloaded, no restart). [docs/documentation.md](docs/documentation.md#access-control).
 - `.env` secrets — Telegram bot token, owner id, plus any credentials your `plugins.json` entries reference via `${VAR}` (the example file's GitLab / GitHub entries demonstrate the pattern).
 

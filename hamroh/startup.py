@@ -55,6 +55,7 @@ from .telegram_io import DispatcherDeps, TelegramDispatcher
 from .tools.base import ToolContext
 from .tools.browser import BrowserManager, BrowserSession
 from .utils.telegram_links import format_message_refs
+from .privacy.switcher import SessionSwitcher
 from .web.channel_bot import ChannelBot
 from .web.hub import WebHub
 from .web.server import WebServer
@@ -327,6 +328,10 @@ class _App:
 
     config: Config
     db: Database
+    #: Private chats' database — rows no tool can reach (see :mod:`hamroh.privacy`).
+    private_db: Database | None = None
+    #: Puts the worker in each turn's session.
+    sessions: SessionSwitcher | None = None
     mcp: McpServer | None = None
     worker: CcWorker | None = None
     dispatcher: TelegramDispatcher | None = None
@@ -369,7 +374,9 @@ def _acquire_instance_lock(config: Config) -> IO[str]:
     return handle
 
 
-async def _replay_unconsumed(db: Database, engine: Engine) -> None:
+async def _replay_unconsumed(
+    db: Database, engine: Engine, *, private: bool = False
+) -> None:
     """Re-submit inbound messages buffered but never handed to CC.
 
     Runs once at boot, after the engine starts and before the dispatcher
@@ -384,6 +391,7 @@ async def _replay_unconsumed(db: Database, engine: Engine) -> None:
         len(messages),
     )
     for m in messages:
+        m.private = private  # every chat in the private DB is a private chat
         await engine.submit(m)
 
 
@@ -425,7 +433,8 @@ async def _start_mcp_server(
     db = app.db
 
     async def db_logger(**kwargs):  # called by every MCP tool wrapper
-        await insert_tool_call(db, ToolCall(**kwargs))
+        # A private turn's audit row stays with its chat, in the private DB.
+        await insert_tool_call(ctx.db_for_turn() or db, ToolCall(**kwargs))
 
     browser_manager = BrowserManager(headless=app.config.browser_headless)
     ctx = ToolContext(
@@ -439,6 +448,7 @@ async def _start_mcp_server(
         browser_manager=browser_manager,
         browser_session=BrowserSession(browser_manager),
         chat_titles=chat_titles,
+        private_database=app.private_db,
     )
     mcp = McpServer(
         ctx,
@@ -548,9 +558,13 @@ def _build_dispatcher_and_engine(
     dispatcher = TelegramDispatcher(
         app.config,
         app.db,
-        DispatcherDeps(chat_titles=chat_titles, rate_limiter=stores.rate_limiter),
+        DispatcherDeps(
+            chat_titles=chat_titles,
+            rate_limiter=stores.rate_limiter,
+            private_db=app.private_db,
+        ),
     )
-    app.bot = ChannelBot(dispatcher.bot, WebHub(app.db))
+    app.bot = ChannelBot(dispatcher.bot, WebHub(web_db(app)))
     engine = Engine(
         app.worker,
         app.config,
@@ -559,9 +573,18 @@ def _build_dispatcher_and_engine(
             db=app.db,
             typing_action=_make_typing_action(app.bot),
             error_notify=_make_error_notify(app.bot),
+            switcher=app.sessions,
+            private_db=app.private_db,
         ),
     )
     return dispatcher, engine
+
+
+def web_db(app: _App) -> Database:
+    """The web channel's database: the private one when every web user is private."""
+    if app.config.web.private and app.private_db is not None:
+        return app.private_db
+    return app.db
 
 
 def _register_extension_commands(
@@ -666,8 +689,10 @@ async def _run_until_stopped(app: _App) -> None:
     try:
         await stop_event.wait()
     finally:
-        # Persist session id first so the next start resumes it.
-        if app.worker.session_id:
+        # Persist session ids first so the next start resumes them.
+        if app.sessions is not None:
+            app.sessions.persist_shared(app.config.session_id_path)
+        elif app.worker.session_id:
             app.config.session_id_path.write_text(app.worker.session_id)
         app.reminder_task.cancel()
         if app.web_server is not None:
@@ -681,4 +706,6 @@ async def _run_until_stopped(app: _App) -> None:
         if app.browser_manager is not None:
             await app.browser_manager.close()
         await app.db.close()
+        if app.private_db is not None:
+            await app.private_db.close()
         log.info("clean shutdown complete")

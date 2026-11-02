@@ -54,6 +54,12 @@ OnGiveup = Callable[[int], Awaitable[None]] | None
 OnStaleSession = Callable[[str], Awaitable[None]] | None
 
 
+#: Supervisor abort reason for a planned switch to another chat's session.
+SESSION_SWITCH = "session-switch"
+#: How long a session switch may take to bring the new process up.
+SWITCH_TIMEOUT_SECONDS = 60.0
+
+
 @dataclasses.dataclass(frozen=True)
 class WorkerHooks:
     """Optional liveness heartbeat + supervisor lifecycle callbacks for
@@ -138,6 +144,9 @@ class CcWorker(CcEventHandlerMixin):
         self._supervisor_task: asyncio.Task | None = None
         self._liveness_task: asyncio.Task | None = None
         self._stop_supervisor = asyncio.Event()
+        #: Set each time a ``claude`` process is spawned; a session switch
+        #: waits on it before the next turn is sent.
+        self._spawned = asyncio.Event()
         self._crash_times: list[float] = []
         #: ``time.monotonic()`` of the last parsed stdout line; with
         #: ``heartbeat.last_activity`` it tells the liveness monitor whether the
@@ -209,6 +218,7 @@ class CcWorker(CcEventHandlerMixin):
         )
         self._stdout_task = asyncio.create_task(self._read_stdout(), name="cc-stdout")
         self._stderr_task = asyncio.create_task(self._read_stderr(), name="cc-stderr")
+        self._spawned.set()
 
     async def stop(self) -> None:
         self._stop_supervisor.set()
@@ -358,7 +368,10 @@ class CcWorker(CcEventHandlerMixin):
                     rc,
                     intentional,
                 )
-                await asyncio.sleep(self._crash_backoff_base)
+                # A planned session switch respawns at once; other planned
+                # restarts keep the short pause.
+                if intentional != SESSION_SWITCH:
+                    await asyncio.sleep(self._crash_backoff_base)
                 await self._terminate_proc()
                 await self.start()
                 continue
@@ -434,6 +447,20 @@ class CcWorker(CcEventHandlerMixin):
         await asyncio.sleep(backoff)
         await self._terminate_proc()
         await self.start()
+
+    async def switch_session(self, spec: CcSpawnSpec) -> None:
+        """Respawn ``claude`` with ``spec`` — another chat's session and tool profile.
+
+        Between turns only (see :mod:`hamroh.privacy.switcher`). Rides the
+        supervisor's intentional-respawn path, so the crash budget is
+        untouched, and returns once the new process is up.
+        """
+        self.spec = spec
+        self._session_id = spec.session_id
+        self._spawned.clear()
+        self._supervisor_abort_reason = SESSION_SWITCH
+        await self._terminate_proc()
+        await asyncio.wait_for(self._spawned.wait(), timeout=SWITCH_TIMEOUT_SECONDS)
 
     async def reset_session(self) -> None:
         """Drop the session id and respawn CC with a fresh, empty context.

@@ -18,6 +18,8 @@ import logging
 
 from .cc_worker import CcWorker, WorkerHooks
 from .config import Config
+from .db.database import Database
+from .privacy.wiring import build_switcher
 from .scheduler.reminder_scheduler import _reminder_loop
 from .startup import (
     _acquire_instance_lock,
@@ -34,6 +36,7 @@ from .startup import (
     _run_until_stopped,
     _seed_default_reminders,
     _start_mcp_server,
+    web_db,
 )
 from .helpers.logging_setup import setup_logging
 from .web.inbound import WebInboundDeps
@@ -52,7 +55,8 @@ async def _async_main() -> None:
     _bootstrap_access(config)
 
     db, plugins, stores = await _open_db_and_stores(config)
-    app = _App(config=config, db=db, lock=lock)
+    private_db = await Database.open(config.private_db_path)
+    app = _App(config=config, db=db, private_db=private_db, lock=lock)
 
     chat_titles: dict[int, str] = {}  # dispatcher writes, outbound tools read
     ctx, app.mcp = await _start_mcp_server(app, stores, plugins, chat_titles)
@@ -66,6 +70,8 @@ async def _async_main() -> None:
         )
     spec = _build_cc_spec(config, plugins, app.mcp, stores)
     await _start_worker(app, ctx, spec)
+    assert app.worker is not None
+    app.sessions = build_switcher(app.worker, app.mcp, config, ctx.turn)
     await _start_engine_and_dispatcher(app, stores, ctx, plugins)
     log.info("hamroh is live")
 
@@ -96,6 +102,8 @@ async def _start_engine_and_dispatcher(app: _App, stores, ctx, plugins) -> None:
     _register_extension_commands(plugins.extensions, app.dispatcher)
     await app.engine.start()
     await _replay_unconsumed(app.db, app.engine)
+    if app.private_db is not None:
+        await _replay_unconsumed(app.private_db, app.engine, private=True)
     app.reminder_task = asyncio.create_task(
         _reminder_loop(app.db, app.engine),
         name="hamroh-reminders",
@@ -109,7 +117,8 @@ async def _start_engine_and_dispatcher(app: _App, stores, ctx, plugins) -> None:
     app.web_server = await start_web_server(
         app.config.web,
         WebInboundDeps(
-            db=app.db,
+            db=web_db(app),
+            private=app.config.web.private,
             engine=app.engine,
             hub=app.bot.hub,
             chat_titles=ctx.chat_titles,

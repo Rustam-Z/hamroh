@@ -28,6 +28,9 @@ How to talk to the same bot from your own website or app: turning the web
 channel on, the HTTP API (send, live reply stream, history), and how it
 shares one agent with Telegram.
 
+### [private-chats.md](private-chats.md)
+Chats a person has with the bot alone: own session, own database, narrow tools, and the extension hooks that mark them.
+
 ### [deployment.md](deployment.md)
 Step-by-step guide for deploying hamroh to a VPS (Hetzner,
 DigitalOcean, Contabo…) using Docker, plus a continuous-deployment

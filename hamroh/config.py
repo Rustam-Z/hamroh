@@ -55,6 +55,12 @@ def _float(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a number, got {raw!r}") from exc
 
 
+def _path_or_none(name: str) -> Path | None:
+    """An optional file path from the environment, resolved; ``None`` when unset."""
+    value = _env(name, "")
+    return Path(value).resolve() if value else None
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = _env(name)
     if raw is None:
@@ -90,6 +96,11 @@ class WebConfig:
     #: separated, e.g. ``https://app.example.com``. Empty = no CORS.
     #: Env var: ``HAMROH_WEB_CORS_ORIGINS``.
     cors_origins: tuple[str, ...] = ()
+    #: Every web user gets a private chat (see :mod:`hamroh.privacy`): own
+    #: Claude session, own database, narrow tool set. For a frontend whose
+    #: users must never see each other's data.
+    #: Env var: ``HAMROH_WEB_PRIVATE`` (default ``false``).
+    private: bool = False
 
     @property
     def enabled(self) -> bool:
@@ -106,6 +117,7 @@ class WebConfig:
                 for o in (_env("HAMROH_WEB_CORS_ORIGINS", "") or "").split(",")
                 if o.strip()
             ),
+            private=_bool("HAMROH_WEB_PRIVATE", False),
         )
         if cfg.enabled and not cfg.token:
             raise RuntimeError(
@@ -255,6 +267,9 @@ class Config:
     log_transcript: str
     #: Web channel settings — see :class:`WebConfig`.
     web: WebConfig = field(default_factory=WebConfig)
+    #: Operator text appended to every private chat's system prompt, e.g. what
+    #: the extension's tools are for. Env var: ``HAMROH_PRIVATE_PROMPT``.
+    private_prompt_path: Path | None = None
 
     # Derived paths
     db_path: Path = field(init=False)
@@ -277,9 +292,15 @@ class Config:
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)
     log_dir: Path = field(init=False)
+    #: Private chats' messages and tool audit — never reachable by tools.
+    private_db_path: Path = field(init=False)
+    #: Private chats' Claude session ids (see :mod:`hamroh.privacy.sessions`).
+    sessions_path: Path = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "db_path", self.data_dir / "hamroh.db")
+        object.__setattr__(self, "private_db_path", self.data_dir / "private.db")
+        object.__setattr__(self, "sessions_path", self.data_dir / "sessions.json")
         object.__setattr__(self, "session_id_path", self.data_dir / "session_id")
         object.__setattr__(self, "cc_logs_dir", self.data_dir / "cc_logs")
         # access.json and memories/ live at the repo root, not the gitignored
@@ -327,6 +348,7 @@ class Config:
                 "HAMROH_LOG_TRANSCRIPT", "compact", ("compact", "full")
             ),
             web=WebConfig.from_env(),
+            private_prompt_path=_path_or_none("HAMROH_PRIVATE_PROMPT"),
         )
         cls._apply_env_path_overrides(cfg)
         return cfg

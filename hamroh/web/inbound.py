@@ -57,6 +57,8 @@ class WebInboundDeps:
     hub: WebHub
     chat_titles: dict[int, str]
     rate_limiter: "RateLimiter | None" = None
+    #: Every web user is a private chat (``HAMROH_WEB_PRIVATE``).
+    private: bool = False
 
 
 class WebInbound:
@@ -94,10 +96,13 @@ class WebInbound:
             chat_id=chat_id,
             message_id=await self._deps.hub.next_message_id(chat_id),
             user_id=chat_id,
+            # The frontend's id for the person: tools of a private turn act for it.
+            username=incoming.user,
             first_name=name,
             direction="in",
             timestamp=datetime.now(timezone.utc),
             text=text or "",
             reply_to_id=incoming.reply_to_id,
             input_flags=flags,
+            private=self._deps.private,
         )
