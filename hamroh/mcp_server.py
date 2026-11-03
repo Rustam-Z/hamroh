@@ -28,6 +28,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.types import Image
 
 from .privacy.turn import call_refusal, reply_refusal
+from .cc_worker.event_handlers import mark_user_visible
 from .tools import discover_tool_classes
 from .tools.base import BaseTool, ToolContext, ToolResult
 
@@ -205,11 +206,17 @@ def build_fastmcp(
             continue
         instance = cls(ctx)
         instances.append(instance)
-        wrapper = _make_wrapper(instance, db_logger)
-        mcp.add_tool(wrapper, name=instance.name, description=instance.description)
-        log.info("registered MCP tool %s", instance.name)
+        _register(mcp, instance, db_logger)
     ctx.enabled_tools = instances
     return mcp, instances
+
+
+def _register(mcp: FastMCP, instance: BaseTool, db_logger: Any) -> None:
+    """Expose one tool; a tool the user perceives (``user_visible``) counts as a reply."""
+    mcp.add_tool(_make_wrapper(instance, db_logger), name=instance.name, description=instance.description)
+    if instance.user_visible:
+        mark_user_visible(f"mcp__{MCP_SERVER_NAME}__{instance.name}")
+    log.info("registered MCP tool %s", instance.name)
 
 
 def _reject_duplicate_names(classes: list[type[BaseTool]]) -> None:

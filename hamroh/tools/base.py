@@ -150,6 +150,10 @@ class BaseTool(ABC, Generic[ArgsT]):
     #: chats only, or ``both``. Enforced by the MCP server and by the
     #: private session's tool list (see :mod:`hamroh.privacy`).
     audience: ClassVar[Audience] = "shared"
+    #: The user perceives what this tool does (it sends a message, a file, a photo…): a turn
+    #: that called it has answered — see ``event_handlers.is_user_visible``. Built-in send
+    #: tools are listed there; an extension's own sending tool sets this.
+    user_visible: ClassVar[bool] = False
 
     def __init__(self, ctx: ToolContext) -> None:
         self.ctx = ctx

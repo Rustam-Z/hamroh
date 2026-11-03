@@ -122,3 +122,14 @@ async def test_now_tool_runs() -> None:
     result = await tool.run(NowArgs())
     assert "utc=" in result.content
     assert result.is_error is False
+
+
+def test_extension_tool_can_count_as_a_visible_reply() -> None:
+    """An extension's own sending tool (a report file, a chart) answers the user: a turn that
+    called it must not be taken for a silent stop."""
+    from hamroh.cc_worker.event_handlers import is_user_visible, mark_user_visible
+
+    name = "mcp__hamroh__ext_report_for_test"
+    assert not is_user_visible(name)
+    mark_user_visible(name)
+    assert is_user_visible(name) and is_user_visible("mcp__hamroh__telegram_send_message")
