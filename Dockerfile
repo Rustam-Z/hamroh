@@ -5,12 +5,14 @@ FROM python:3.11-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY hamroh/ hamroh/
 
-# Create venv and install production dependencies (not dev/test)
+# Create venv and install production dependencies (not dev/test) at the exact
+# versions in uv.lock — the ones the tests ran against. Resolving afresh at
+# build time picks up whatever was released since, breaking majors included.
 RUN uv venv /app/.venv && \
-    uv pip install --python /app/.venv/bin/python . --no-cache-dir
+    UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --no-dev --no-editable --no-cache
 
 # Stage 2: Runtime
 FROM python:3.11-slim

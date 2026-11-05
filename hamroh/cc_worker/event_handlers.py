@@ -55,6 +55,19 @@ USER_VISIBLE_TOOLS: frozenset[str] = frozenset(
 )
 
 
+#: Extension tools that declare ``user_visible = True`` — added when the MCP server registers them.
+_EXTRA_VISIBLE: set[str] = set()
+
+
+def mark_user_visible(tool_name: str) -> None:
+    """Count a (namespaced) extension tool as a user-visible reply, like the built-in senders."""
+    _EXTRA_VISIBLE.add(tool_name)
+
+
+def is_user_visible(tool_name: str) -> bool:
+    return tool_name in USER_VISIBLE_TOOLS or tool_name in _EXTRA_VISIBLE
+
+
 class CcEventHandlerMixin:
     """Event-dispatch methods mixed into ``CcWorker``."""
 
@@ -209,7 +222,7 @@ class CcEventHandlerMixin:
             tool_use_id=str(block.get("id", "")),
             args=tool_input,
         )
-        if tool_name in USER_VISIBLE_TOOLS:
+        if is_user_visible(tool_name):
             self._current_turn.user_visible_action = True
         # StructuredOutput is the definitive turn-end signal. Claudir
         # confirmed: the action lives in the tool_use event's input

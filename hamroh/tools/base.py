@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from ..db.messages import insert_message
 from ..models import ChatMessage
 from ..helpers.transcript import ChatRef, MsgRef, log_outbound
+from ..privacy.turn import Audience, TurnContext
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..storage.attachments_store import AttachmentStore
@@ -90,6 +91,17 @@ class ToolContext:
     on_chat_replied: Any = (
         None  # Callable[[int], None] | None — kept untyped to avoid an import
     )
+    #: The turn in flight — whose it is, set by the engine before every turn.
+    #: Tools act for ``turn`` instead of trusting ids the model passes.
+    turn: TurnContext = field(default_factory=TurnContext)
+    #: Private chats' database (``private.db``); ``None`` when unused.
+    private_database: "Database | None" = None
+
+    def db_for_turn(self) -> "Database | None":
+        """The database the current turn's rows belong in."""
+        if self.turn.private and self.private_database is not None:
+            return self.private_database
+        return self.database
 
 
 @dataclass
@@ -133,6 +145,15 @@ class BaseTool(ABC, Generic[ArgsT]):
 
     #: Pydantic model describing the call arguments.
     args_model: ClassVar[type[BaseModel]]
+
+    #: Where the tool may run: ``shared`` chats only (default), ``private``
+    #: chats only, or ``both``. Enforced by the MCP server and by the
+    #: private session's tool list (see :mod:`hamroh.privacy`).
+    audience: ClassVar[Audience] = "shared"
+    #: The user perceives what this tool does (it sends a message, a file, a photo…): a turn
+    #: that called it has answered — see ``event_handlers.is_user_visible``. Built-in send
+    #: tools are listed there; an extension's own sending tool sets this.
+    user_visible: ClassVar[bool] = False
 
     def __init__(self, ctx: ToolContext) -> None:
         self.ctx = ctx
@@ -210,11 +231,12 @@ async def record_outbound(ctx: ToolContext, record: OutboundRecord) -> None:
     and ``telegram_create_poll`` after the Telegram API confirms delivery. No-ops
     when the database or bot is unavailable (tests).
     """
-    if ctx.database is None or ctx.bot is None:
+    db = ctx.db_for_turn()
+    if db is None or ctx.bot is None:
         return
     bot_user_id, bot_username, bot_first_name = await bot_identity(ctx.bot)
     await insert_message(
-        ctx.database,
+        db,
         ChatMessage(
             chat_id=record.chat_id,
             message_id=record.message_id,

@@ -71,5 +71,10 @@ services:
       # at boot. Read-only; host edits apply on restart. hamroh-init seeds it.
       - ./default-reminders.json:/app/default-reminders.json:ro
     working_dir: /app
+    # Web channel (docs/web.md). Uncomment together with HAMROH_WEB_PORT=8787
+    # and HAMROH_WEB_HOST=0.0.0.0 in .env. Bound to localhost on the host so
+    # only your own backend / reverse proxy can reach it.
+    # ports:
+    #   - "127.0.0.1:8787:8787"
     # Graceful shutdown: give CC subprocess time to save state
     stop_grace_period: 15s

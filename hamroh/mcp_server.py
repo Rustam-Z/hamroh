@@ -27,6 +27,8 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.types import Image
 
+from .privacy.turn import call_refusal, reply_refusal
+from .cc_worker.event_handlers import mark_user_visible
 from .tools import discover_tool_classes
 from .tools.base import BaseTool, ToolContext, ToolResult
 
@@ -64,6 +66,9 @@ async def _run_tool(
     Returns the result plus an error string (``None`` on success). Tool
     exceptions are caught and turned into an error ``ToolResult``.
     """
+    refusal = _refusal(tool, kwargs)
+    if refusal is not None:
+        return ToolResult(content=refusal, is_error=True), refusal
     try:
         args = tool.args_model(**kwargs)
         return await tool.run(args), None
@@ -71,6 +76,20 @@ async def _run_tool(
         err = f"{type(exc).__name__}: {exc}"
         log.exception("tool %s failed", tool.name)
         return ToolResult(content=err, is_error=True), err
+
+
+def _refusal(tool: BaseTool, kwargs: dict[str, Any]) -> str | None:
+    """Why this call may not run in the current turn (private-chat rules).
+
+    Second lock behind the private session's tool list: a shared tool in a
+    private turn, a private tool in a shared one, or a private turn reaching
+    another chat through any ``chat_id`` argument is refused here, in our process.
+    """
+    turn = tool.ctx.turn
+    refusal = call_refusal(tool.audience, turn)
+    if refusal is None and isinstance(kwargs.get("chat_id"), int):
+        refusal = reply_refusal(turn, kwargs["chat_id"])
+    return refusal
 
 
 @dataclass(frozen=True)
@@ -187,11 +206,17 @@ def build_fastmcp(
             continue
         instance = cls(ctx)
         instances.append(instance)
-        wrapper = _make_wrapper(instance, db_logger)
-        mcp.add_tool(wrapper, name=instance.name, description=instance.description)
-        log.info("registered MCP tool %s", instance.name)
+        _register(mcp, instance, db_logger)
     ctx.enabled_tools = instances
     return mcp, instances
+
+
+def _register(mcp: FastMCP, instance: BaseTool, db_logger: Any) -> None:
+    """Expose one tool; a tool the user perceives (``user_visible``) counts as a reply."""
+    mcp.add_tool(_make_wrapper(instance, db_logger), name=instance.name, description=instance.description)
+    if instance.user_visible:
+        mark_user_visible(f"mcp__{MCP_SERVER_NAME}__{instance.name}")
+    log.info("registered MCP tool %s", instance.name)
 
 
 def _reject_duplicate_names(classes: list[type[BaseTool]]) -> None:

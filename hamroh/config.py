@@ -55,6 +55,12 @@ def _float(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a number, got {raw!r}") from exc
 
 
+def _path_or_none(name: str) -> Path | None:
+    """An optional file path from the environment, resolved; ``None`` when unset."""
+    value = _env(name, "")
+    return Path(value).resolve() if value else None
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = _env(name)
     if raw is None:
@@ -67,6 +73,57 @@ def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
     if value not in allowed:
         raise RuntimeError(f"{name} must be one of {allowed}, got {value!r}")
     return value
+
+
+@dataclass(frozen=True)
+class WebConfig:
+    """Settings for the web channel (HTTP API next to Telegram).
+
+    Off unless ``HAMROH_WEB_PORT`` is set. Then ``HAMROH_WEB_TOKEN`` is
+    required: every request must send ``Authorization: Bearer <token>``.
+    """
+
+    #: Port for the web API. ``0`` turns the web channel off.
+    #: Env var: ``HAMROH_WEB_PORT`` (default ``0``).
+    port: int = 0
+    #: Address to listen on. Use ``0.0.0.0`` inside Docker.
+    #: Env var: ``HAMROH_WEB_HOST`` (default ``"127.0.0.1"``).
+    host: str = "127.0.0.1"
+    #: Shared secret the frontend sends as a bearer token.
+    #: Env var: ``HAMROH_WEB_TOKEN``.
+    token: str = ""
+    #: Browser origins allowed to call the API directly (CORS), comma
+    #: separated, e.g. ``https://app.example.com``. Empty = no CORS.
+    #: Env var: ``HAMROH_WEB_CORS_ORIGINS``.
+    cors_origins: tuple[str, ...] = ()
+    #: Every web user gets a private chat (see :mod:`hamroh.privacy`): own
+    #: Claude session, own database, narrow tool set. For a frontend whose
+    #: users must never see each other's data.
+    #: Env var: ``HAMROH_WEB_PRIVATE`` (default ``false``).
+    private: bool = False
+
+    @property
+    def enabled(self) -> bool:
+        return self.port > 0
+
+    @classmethod
+    def from_env(cls) -> "WebConfig":
+        cfg = cls(
+            port=_int("HAMROH_WEB_PORT", 0),
+            host=_env("HAMROH_WEB_HOST", "127.0.0.1") or "127.0.0.1",
+            token=_env("HAMROH_WEB_TOKEN", "") or "",
+            cors_origins=tuple(
+                o.strip()
+                for o in (_env("HAMROH_WEB_CORS_ORIGINS", "") or "").split(",")
+                if o.strip()
+            ),
+            private=_bool("HAMROH_WEB_PRIVATE", False),
+        )
+        if cfg.enabled and not cfg.token:
+            raise RuntimeError(
+                "HAMROH_WEB_TOKEN is required when HAMROH_WEB_PORT is set"
+            )
+        return cfg
 
 
 @dataclass(frozen=True)
@@ -208,6 +265,11 @@ class Config:
     #: complete regardless of this setting.
     #: Env var: ``HAMROH_LOG_TRANSCRIPT`` (``"compact"`` or ``"full"``).
     log_transcript: str
+    #: Web channel settings — see :class:`WebConfig`.
+    web: WebConfig = field(default_factory=WebConfig)
+    #: Operator text appended to every private chat's system prompt, e.g. what
+    #: the extension's tools are for. Env var: ``HAMROH_PRIVATE_PROMPT``.
+    private_prompt_path: Path | None = None
 
     # Derived paths
     db_path: Path = field(init=False)
@@ -230,9 +292,15 @@ class Config:
     attachments_dir: Path = field(init=False)
     renders_dir: Path = field(init=False)
     log_dir: Path = field(init=False)
+    #: Private chats' messages and tool audit — never reachable by tools.
+    private_db_path: Path = field(init=False)
+    #: Private chats' Claude session ids (see :mod:`hamroh.privacy.sessions`).
+    sessions_path: Path = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "db_path", self.data_dir / "hamroh.db")
+        object.__setattr__(self, "private_db_path", self.data_dir / "private.db")
+        object.__setattr__(self, "sessions_path", self.data_dir / "sessions.json")
         object.__setattr__(self, "session_id_path", self.data_dir / "session_id")
         object.__setattr__(self, "cc_logs_dir", self.data_dir / "cc_logs")
         # access.json and memories/ live at the repo root, not the gitignored
@@ -279,6 +347,8 @@ class Config:
             log_transcript=_choice(
                 "HAMROH_LOG_TRANSCRIPT", "compact", ("compact", "full")
             ),
+            web=WebConfig.from_env(),
+            private_prompt_path=_path_or_none("HAMROH_PRIVATE_PROMPT"),
         )
         cls._apply_env_path_overrides(cfg)
         return cfg

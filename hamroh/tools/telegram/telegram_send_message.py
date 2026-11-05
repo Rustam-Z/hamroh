@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from ...utils.formatting import chunk_text, markdown_to_telegram_html
 from ...helpers.transcript import ChatRef, MsgRef, log_outbound
+from ...web.chat_ids import is_web_chat
 from ..base import (
     BaseTool,
     OutboundRecord,
@@ -51,6 +52,8 @@ class SendMessageArgs(BaseModel):
 
 class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
     name = "telegram_send_message"
+    #: Also allowed in private chats (replies stay in that chat — see the MCP gate).
+    audience = "both"
     description = (
         "Send a NEW, unthreaded text message to a Telegram chat. Use ONLY "
         "when there is no inbound message to answer — a scheduled reminder "
@@ -73,7 +76,7 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
         # Chunk the RAW text before markdown conversion so each chunk's HTML
         # is self-contained (no mid-tag splits across chunk boundaries).
         raw_chunks = chunk_text(args.text)
-        bodies = [markdown_to_telegram_html(c) for c in raw_chunks]
+        bodies = [_render_chunk(args.chat_id, c) for c in raw_chunks]
 
         message_ids = await self._deliver_chunks(args, bodies)
         await self._persist_chunks(args, message_ids, raw_chunks)
@@ -137,6 +140,14 @@ class TelegramSendMessageTool(BaseTool[SendMessageArgs]):
                     args.reply_to_message_id if i == 0 else None,
                 ),
             )
+
+
+def _render_chunk(chat_id: int, chunk: str) -> str:
+    """Telegram gets HTML; web chats get the Markdown as-is so the frontend
+    renders it with any Markdown library."""
+    if is_web_chat(chat_id):
+        return chunk
+    return markdown_to_telegram_html(chunk)
 
 
 def _build_result(message_ids: list[int], chat_id: int) -> ToolResult:

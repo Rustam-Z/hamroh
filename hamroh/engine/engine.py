@@ -30,6 +30,8 @@ from ..config import Config
 from ..db.messages import mark_messages_consumed, mark_messages_processed
 from ..utils.formatting import chunk_text
 from ..models import ChatMessage
+from ..privacy.sessions import SHARED, session_key
+from .batching import split_batch, split_by_key, split_keyed
 from .format import format_messages_with_context
 from .restore import build_restored_context
 from .typing_indicator import TypingAction, TypingIndicatorMixin, TypingState
@@ -46,8 +48,12 @@ ErrorNotify = Callable[[int, str, "int | None"], Awaitable[None]]
 #: ``Callable[[], ...]`` brackets).
 AsyncHook = Callable[[], Awaitable[None]]
 
+#: Pause before retrying a turn whose session switch failed.
+SWITCH_RETRY_SECONDS = 5.0
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..cc_worker import CcWorker, TurnResult
+    from ..privacy.switcher import SessionSwitcher
     from ..db.database import Database
 
 log = logging.getLogger("hamroh.engine")
@@ -153,6 +159,11 @@ class TurnState:
     #: from the kick batch and OR-ed in by mid-turn injects; gates the
     #: silent-stop nudge — reminder-only turns never nudge.
     awaiting_reply: bool = False
+    #: Session key of the turn (``shared`` or ``chat:<id>``); mid-turn
+    #: injects only take messages of the same session.
+    key: str = SHARED
+    #: True when the turn is a private chat's: its rows go to the private DB.
+    private: bool = False
 
 
 @dataclass
@@ -185,6 +196,11 @@ class EngineOptions:
     db: "Database | None" = None
     typing_action: TypingAction | None = None
     error_notify: ErrorNotify | None = None
+    #: Private chats (see :mod:`hamroh.privacy`): puts the worker in each
+    #: turn's session; ``None`` keeps one shared session for every chat.
+    switcher: "SessionSwitcher | None" = None
+    #: Private chats' database; their rows never touch ``db``.
+    private_db: "Database | None" = None
 
 
 class Engine(TypingIndicatorMixin):
@@ -197,6 +213,8 @@ class Engine(TypingIndicatorMixin):
         self._worker = worker
         self._debounce = options.debounce_ms / 1000.0
         self._db = options.db
+        self._private_db = options.private_db
+        self._switcher = options.switcher
         self._typing_action = options.typing_action
         self._error_notify = options.error_notify
         #: Per-turn user state — see :class:`TurnState`.
@@ -213,7 +231,7 @@ class Engine(TypingIndicatorMixin):
         #: a turn (``_kick`` / ``_maybe_inject``). The reminder loop hangs
         #: advance/close (success) and revert (failure) off these so a
         #: subprocess crash mid-turn doesn't lose the reminder — see #22.
-        self._pending_callbacks: list[TurnCallbacks] = []
+        self._pending_callbacks: list[tuple[str, TurnCallbacks]] = []
         #: Hooks bound to the in-flight turn. ``on_success`` fires in
         #: ``_fire_turn_callbacks`` once the turn ends cleanly; ``on_failure``
         #: fires in ``_fail_turn_callbacks`` when the turn is discarded
@@ -315,9 +333,8 @@ class Engine(TypingIndicatorMixin):
         async with self._lock:
             self._pending.append(msg)
             if on_success is not None:
-                self._pending_callbacks.append(
-                    TurnCallbacks(on_success=on_success, on_failure=on_failure)
-                )
+                hooks = TurnCallbacks(on_success=on_success, on_failure=on_failure)
+                self._pending_callbacks.append((session_key(msg), hooks))
 
         if self._is_processing.is_set():
             await self._maybe_inject()
@@ -335,14 +352,9 @@ class Engine(TypingIndicatorMixin):
         await self._kick()
 
     async def _kick(self) -> None:
-        async with self._lock:
-            if not self._pending or self._is_processing.is_set():
-                return
-            batch = self._pending
-            self._pending = []
-            self._turn_callbacks.extend(self._pending_callbacks)
-            self._pending_callbacks = []
-            self._is_processing.set()
+        batch = await self._take_batch()
+        if not batch or not await self._enter_session(batch):
+            return
         # Skip synthetic reminders (mid=0) — no human waiting on them, so
         # the turn-start typing indicator should be silent for
         # reminder-only turns.
@@ -353,10 +365,8 @@ class Engine(TypingIndicatorMixin):
         self._turn.heartbeat_count = 0
         self._turn.silent_stop_retried = False
         self._turn.awaiting_reply = _batch_awaits_reply(batch)
-        restore = self._restore_context
-        self._restore_context = None
-        self._turn.had_restored_context = restore is not None
-        xml = await format_messages_with_context(batch, self._db)
+        restore = self._take_restore_context()
+        xml = await format_messages_with_context(batch, self._turn_db())
         if restore is not None:
             xml = f"{restore}\n{xml}"
         log.info("starting turn with %d msgs", len(batch))
@@ -365,6 +375,60 @@ class Engine(TypingIndicatorMixin):
         self._log_hot_path("worker-send", batch, self._turn.active_chats)
         await self._worker.send(xml)
         await self._mark_consumed(batch)
+
+    async def _take_batch(self) -> list[ChatMessage]:
+        """Start a turn: drain one session's messages (and their callbacks)
+        from the buffer. Empty when idle-buffer or a turn is already running."""
+        async with self._lock:
+            if not self._pending or self._is_processing.is_set():
+                return []
+            batch, self._pending = split_batch(self._pending)
+            mine, self._pending_callbacks = split_keyed(
+                self._pending_callbacks, session_key(batch[0])
+            )
+            self._turn_callbacks.extend(mine)
+            self._is_processing.set()
+        return batch
+
+    def _take_restore_context(self) -> str | None:
+        """Consume the stashed ``<restored_context>`` digest for this turn.
+        The shared chats' digest never goes into a private chat's session."""
+        restore = None if self._turn.private else self._restore_context
+        if restore is not None:
+            self._restore_context = None
+        self._turn.had_restored_context = restore is not None
+        return restore
+
+    def _turn_db(self) -> "Database | None":
+        """The database the current turn's rows belong in."""
+        if self._turn.private and self._private_db is not None:
+            return self._private_db
+        return self._db
+
+    async def _enter_session(self, batch: list[ChatMessage]) -> bool:
+        """Put the worker in ``batch``'s session. On failure the batch goes
+        back to the front of the queue and is retried in a few seconds."""
+        self._turn.key = session_key(batch[0])
+        self._turn.private = batch[0].private
+        if self._switcher is None:
+            return True
+        try:
+            await self._switcher.enter(batch)
+            return True
+        except Exception:
+            log.exception("session switch to %s failed; retrying", self._turn.key)
+        async with self._lock:
+            self._pending = batch + self._pending
+            key = self._turn.key
+            self._pending_callbacks = [
+                (key, cb) for cb in self._turn_callbacks
+            ] + self._pending_callbacks
+            self._turn_callbacks = []
+            self._is_processing.clear()
+        asyncio.get_running_loop().call_later(
+            SWITCH_RETRY_SECONDS, lambda: asyncio.ensure_future(self._kick())
+        )
+        return False
 
     def _log_hot_path(
         self, stage: str, batch: list[ChatMessage], chats: set[int]
@@ -400,9 +464,10 @@ class Engine(TypingIndicatorMixin):
         """
         keys = [(m.chat_id, m.message_id) for m in batch if m.message_id > 0]
         self._turn.consumed_keys.extend(keys)
-        if self._db is None or not keys:
+        db = self._turn_db()
+        if db is None or not keys:
             return
-        await mark_messages_consumed(self._db, keys)
+        await mark_messages_consumed(db, keys)
 
     async def _maybe_inject(self) -> None:
         """Write pending messages to CC's stdin mid-turn.
@@ -416,16 +481,17 @@ class Engine(TypingIndicatorMixin):
         stdin drain, both ~microseconds for normal payloads.
         """
         async with self._lock:
-            if not self._pending:
+            batch, self._pending = split_by_key(self._pending, self._turn.key)
+            if not batch:
                 return
-            batch = self._pending
-            self._pending = []
-            self._turn_callbacks.extend(self._pending_callbacks)
-            self._pending_callbacks = []
+            mine, self._pending_callbacks = split_keyed(
+                self._pending_callbacks, self._turn.key
+            )
+            self._turn_callbacks.extend(mine)
         self._turn.awaiting_reply = self._turn.awaiting_reply or _batch_awaits_reply(
             batch
         )
-        xml = await format_messages_with_context(batch, self._db)
+        xml = await format_messages_with_context(batch, self._turn_db())
         await self._worker.inject(xml)
         await self._mark_consumed(batch)
         self._log_hot_path("inject", batch, {m.chat_id for m in batch})
@@ -837,15 +903,16 @@ class Engine(TypingIndicatorMixin):
         """
         self._turn.heartbeat_count += 1
         async with self._lock:
-            batch = self._pending
-            self._pending = []
-            self._turn_callbacks.extend(self._pending_callbacks)
-            self._pending_callbacks = []
+            batch, self._pending = split_by_key(self._pending, self._turn.key)
+            mine, self._pending_callbacks = split_keyed(
+                self._pending_callbacks, self._turn.key
+            )
+            self._turn_callbacks.extend(mine)
         if batch:
             self._turn.awaiting_reply = (
                 self._turn.awaiting_reply or _batch_awaits_reply(batch)
             )
-            xml = await format_messages_with_context(batch, self._db)
+            xml = await format_messages_with_context(batch, self._turn_db())
         else:
             xml = HEARTBEAT_CONTINUE_NUDGE
         self._is_processing.set()
@@ -863,8 +930,11 @@ class Engine(TypingIndicatorMixin):
         aborted, and crashed turns never reach it, so their messages stay
         barred from restored-context digests.
         """
-        if self._db is not None and self._turn.consumed_keys:
-            await mark_messages_processed(self._db, self._turn.consumed_keys)
+        db = self._turn_db()
+        if db is not None and self._turn.consumed_keys:
+            await mark_messages_processed(db, self._turn.consumed_keys)
+        if self._switcher is not None:
+            self._switcher.remember()
         self._turn.active_chats.clear()
         await self._fire_turn_callbacks()
 

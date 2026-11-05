@@ -42,6 +42,10 @@ class ChatMessage(BaseModel):
     #: envelope so it can refuse obfuscated requests on-character. Not
     #: persisted — lives only in-memory between dispatcher and engine.
     input_flags: frozenset[str] = Field(default_factory=frozenset, exclude=True)
+    #: True for a private chat's message (see :mod:`hamroh.privacy`). Set at
+    #: the entrance (dispatcher / web inbound); routes the message to its own
+    #: session and database. Not persisted.
+    private: bool = Field(default=False, exclude=True)
 
 
 class ControlAction(BaseModel):
